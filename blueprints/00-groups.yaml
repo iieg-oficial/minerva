@@ -1,0 +1,94 @@
+# Grupos RBAC del ecosistema IIEG — espejan el modelo de roles de mariachi.
+#
+# Roles globales (Usuario.role en mariachi):
+#   tetlamamakani  -> admin global IIEG (superuser de Authentik)
+#   editora        -> staff IIEG (gestor de contenido / editor de capas)
+#   externo        -> usuarios fuera del staff (dependencias, ciudadanos)
+#
+# Grupos por proyecto: la membresia otorga acceso a las apps de ese proyecto.
+# La distincion editor/viewer (project_role en mariachi) se modela mas adelante
+# con grupos hijos o atributos cuando cada servicio se integre por OIDC.
+version: 1
+metadata:
+  name: IIEG - Grupos RBAC
+  labels:
+    blueprints.goauthentik.io/description: Grupos globales y por proyecto del ecosistema IIEG
+entries:
+  - model: authentik_core.group
+    id: group-tetlamamakani
+    identifiers:
+      name: tetlamamakani
+    attrs:
+      is_superuser: true
+      attributes:
+        role: tetlamamakani
+        descripcion: Admin global IIEG
+
+  - model: authentik_core.group
+    id: group-editora
+    identifiers:
+      name: editora
+    attrs:
+      is_superuser: false
+      attributes:
+        role: editora
+        descripcion: Staff IIEG
+
+  - model: authentik_core.group
+    id: group-externo
+    identifiers:
+      name: externo
+    attrs:
+      is_superuser: false
+      attributes:
+        role: externo
+        descripcion: Usuarios fuera del staff IIEG
+
+  # ── Grupos por proyecto ──
+  - model: authentik_core.group
+    id: group-proj-portal
+    identifiers:
+      name: proj-portal
+    attrs:
+      attributes:
+        project: portal
+
+  - model: authentik_core.group
+    id: group-proj-mapalab
+    identifiers:
+      name: proj-mapalab
+    attrs:
+      attributes:
+        project: mapalab
+
+  - model: authentik_core.group
+    id: group-proj-sieej
+    identifiers:
+      name: proj-sieej
+    attrs:
+      attributes:
+        project: sieej
+
+  - model: authentik_core.group
+    id: group-proj-acervo
+    identifiers:
+      name: proj-acervo
+    attrs:
+      attributes:
+        project: acervo
+
+  - model: authentik_core.group
+    id: group-proj-geoserver
+    identifiers:
+      name: proj-geoserver
+    attrs:
+      attributes:
+        project: geoserver
+
+  - model: authentik_core.group
+    id: group-proj-huachicol
+    identifiers:
+      name: proj-huachicol
+    attrs:
+      attributes:
+        project: huachicol
