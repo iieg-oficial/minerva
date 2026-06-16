@@ -1,2 +1,108 @@
+# ─────────────────────────────────────────────
+# Secretos y entorno
+# ─────────────────────────────────────────────
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# ─────────────────────────────────────────────
+# Python (backend, sdk, examples)
+# ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+*.egg-info/
+*.egg
+wheels/
+share/python-wheels/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Lockfiles de gestores (descomenta si no los versionas)
+# uv.lock
+# poetry.lock
+
+# Testing / coverage
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.cache/
+coverage.xml
+*.cover
+
+# Alembic (mantener migraciones versionadas; ignorar temporales)
+# backend/alembic/versions/*.pyc
+
+# ─────────────────────────────────────────────
+# Node / Frontend (Vite)
+# ─────────────────────────────────────────────
+node_modules/
+frontend/dist/
+dist-ssr/
 *.local
+.vite/
+.eslintcache
+
+# Logs npm/yarn/pnpm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─────────────────────────────────────────────
+# Logs y datos en tiempo de ejecución
+# ─────────────────────────────────────────────
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# Volúmenes / datos locales de Docker (Postgres, Redis, etc.)
+data/
+pgdata/
+*.sqlite3
+*.db
+
+# ─────────────────────────────────────────────
+# Claude Code
+# ─────────────────────────────────────────────
+# Config local/personal de cada quien (no versionar). La compartida sí: .claude/settings.json
+.claude/settings.local.json
+
+# ─────────────────────────────────────────────
+# Editores e IDEs
+# ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─────────────────────────────────────────────
+# Sistema operativo
+# ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
