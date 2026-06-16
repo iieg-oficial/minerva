@@ -1,0 +1,5 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+httpx>=0.27
+python-jose[cryptography]>=3.3
+# El SDK se instala desde el repo: pip install -e ../../sdk
