@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "minerva"
+version = "0.1.0"
+description = "Sistema institucional de autenticacion, autorizacion y gestion de accesos del IIEG"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "fastapi>=0.136,<0.137",
+    "uvicorn[standard]>=0.49,<0.50",
+    "pydantic-settings>=2.14",
+    "python-dotenv>=1.1",
+    "sqlmodel>=0.0.38",
+    "alembic>=1.18",
+    "psycopg[binary]>=3.2",
+    "python-jose[cryptography]>=3.3",
+    "bcrypt>=4.0",
+    "email-validator>=2.3",
+    "authlib>=1.7",
+    "httpx>=0.28",
+    "orjson>=3.11",
+    "python-multipart>=0.0.32",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28",
+    "ruff>=0.9",
+    "mypy>=1.13",
+    "ipython>=8",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+# Configuración permisiva de mypy: introduce tipado gradual sin romper el código existente.
+# Endurece estas reglas (p. ej. disallow_untyped_defs) a medida que el código se tipe.
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+# El proyecto usa namespace packages implícitos (varios models.py/schemas.py homónimos);
+# estas opciones permiten a mypy resolver cada archivo a su módulo completo (app.modules.x.models).
+namespace_packages = true
+explicit_package_bases = true
+exclude = ["alembic/", "tests/"]
