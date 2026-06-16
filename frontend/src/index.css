@@ -1,0 +1,121 @@
+@font-face {
+    font-family: 'Garet';
+    src: url('/fonts/Garet-Book.otf') format('opentype');
+    font-weight: 300;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'Garet';
+    src: url('/fonts/Garet-Regular.otf') format('opentype');
+    font-weight: 400;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'Garet';
+    src: url('/fonts/Garet-Medium.otf') format('opentype');
+    font-weight: 500;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'Garet';
+    src: url('/fonts/Garet-Bold.otf') format('opentype');
+    font-weight: 700;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'Garet';
+    src: url('/fonts/Garet-ExtraBold.otf') format('opentype');
+    font-weight: 800;
+    font-style: normal;
+}
+
+:root {
+    --color-bg-base: #ffffff;
+    --color-bg-layout: #f5f5f5;
+    --color-text: #1f1f1f;
+    --color-text-secondary: #595959;
+    --color-text-tertiary: #8c8c8c;
+    --color-border: #d9d9d9;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Garet", system-ui, sans-serif;
+    font-size: 14px;
+    color: var(--color-text);
+    background: var(--color-bg-layout);
+    -webkit-font-smoothing: antialiased;
+}
+
+.login-form-minerva .ant-form-item-label > label {
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    color: #191919 !important;
+    font-family: "Garet", sans-serif !important;
+}
+
+.login-form-minerva .ant-form-item-required::before {
+    display: none !important;
+}
+
+.login-form-minerva .ant-input-affix-wrapper {
+    height: 40px !important;
+    border-radius: 8px !important;
+    background: #F8F8F8 !important;
+    border-color: transparent !important;
+    padding: 0 11px !important;
+}
+
+.login-form-minerva .ant-input-affix-wrapper input,
+.login-form-minerva .ant-input {
+    height: 100% !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #5C2472 !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+}
+
+.login-form-minerva .ant-input-affix-wrapper:hover {
+    background: #fff !important;
+    border-color: #5C2472 !important;
+    box-shadow: 0px 2px 24px rgba(182, 166, 188, 0.6) !important;
+}
+
+.login-form-minerva .ant-input-affix-wrapper:focus-within,
+.login-form-minerva .ant-input-affix-wrapper.ant-input-affix-wrapper-focused {
+    background: #fff !important;
+    border-color: #5C2472 !important;
+    box-shadow: 0 0 0 1px #5C2472 !important;
+}
+
+.login-form-minerva .ant-input-affix-wrapper input::placeholder,
+.login-form-minerva .ant-input::placeholder {
+    color: #8E8E8E !important;
+}
+
+.login-form-minerva .ant-input-outlined {
+    height: 40px !important;
+    border-radius: 8px !important;
+    background: #F8F8F8 !important;
+    border-color: transparent !important;
+    padding: 0 11px !important;
+}
+
+.login-form-minerva .ant-input-outlined:hover {
+    background: #fff !important;
+    border-color: #5C2472 !important;
+    box-shadow: 0px 2px 24px rgba(182, 166, 188, 0.6) !important;
+}
+
+.login-form-minerva .ant-input-outlined:focus-within {
+    background: #fff !important;
+    border-color: #5C2472 !important;
+    box-shadow: 0 0 0 1px #5C2472 !important;
+}
