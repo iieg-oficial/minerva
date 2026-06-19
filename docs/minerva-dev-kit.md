@@ -180,8 +180,9 @@ curl -s "http://localhost:9000/api/v1/me/permissions?application=godin" \
 
 ## 8. Conectar un sistema consumidor (SDK FastAPI)
 
-El SDK vive en [`../sdk`](../sdk) y hay un ejemplo completo en
-[`../examples/godin-consumer`](../examples/godin-consumer).
+El SDK vive en [`../sdk`](../sdk). Para integrar el login completo (redirección,
+canje del code, manifiesto y variables) sigue la
+[guía de integración](./guia-integracion.md).
 
 ```python
 from fastapi import Depends, FastAPI
