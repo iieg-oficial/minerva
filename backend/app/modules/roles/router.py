@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
+from app.core.dependencies.admin import require_minerva_admin
 from app.core.dependencies.auth import get_current_user
 from app.core.dependencies.db import get_db
 from app.modules.permissions.schemas import PermissionRead
@@ -10,7 +11,7 @@ from app.modules.roles.service import RoleService
 from app.modules.users.schemas import UserRead
 from app.shared.pagination import PaginatedResponse
 
-router = APIRouter(prefix="/roles", tags=["Roles"])
+router = APIRouter(prefix="/roles", tags=["Roles"], dependencies=[Depends(require_minerva_admin)])
 
 
 def get_role_service(session: Session = Depends(get_db)) -> RoleService:
