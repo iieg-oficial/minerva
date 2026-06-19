@@ -57,6 +57,23 @@ class ApplicationService:
         result.client_secret_hash = raw_secret
         return result
 
+    def regenerate_secret(self, app_id: str) -> ApplicationWithSecrets:
+        """Genera un nuevo client_secret para la aplicación y lo devuelve una sola vez.
+
+        Útil cuando se perdió el secret original (solo se muestra al crear) o para
+        rotarlo. El client_id no cambia.
+        """
+        app = self.repo.get_by_id(app_id)
+        if not app:
+            raise NotFoundError(detail="Aplicación no encontrada")
+
+        raw_secret = str(uuid.uuid4())
+        app.client_secret_hash = hash_secret(raw_secret)
+        app = self.repo.update(app)
+        result = ApplicationWithSecrets.model_validate(app)
+        result.client_secret_hash = raw_secret
+        return result
+
     def update_application(self, app_id: str, data: ApplicationUpdate) -> ApplicationRead:
         app = self.repo.get_by_id(app_id)
         if not app:

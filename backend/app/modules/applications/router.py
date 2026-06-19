@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlmodel import Session
 
+from app.core.dependencies.admin import require_minerva_admin
 from app.core.dependencies.auth import get_current_user
 from app.core.dependencies.db import get_db
 from app.core.exceptions import BadRequestError
@@ -17,7 +18,7 @@ from app.modules.devkit.manifest import ManifestLoader
 from app.modules.devkit.schemas import ManifestImportResult
 from app.shared.pagination import PaginatedResponse
 
-router = APIRouter(prefix="/applications", tags=["Applications"])
+router = APIRouter(prefix="/applications", tags=["Applications"], dependencies=[Depends(require_minerva_admin)])
 
 
 def get_application_service(session: Session = Depends(get_db)) -> ApplicationService:
@@ -81,6 +82,16 @@ def update_application(
     _current_user: dict = Depends(get_current_user),
 ):
     return service.update_application(application_id, data)
+
+
+@router.post("/{application_id}/regenerate-secret", response_model=ApplicationWithSecrets)
+def regenerate_secret(
+    application_id: str,
+    service: ApplicationService = Depends(get_application_service),
+    _current_user: dict = Depends(get_current_user),
+):
+    """Genera un nuevo client_secret (se muestra una sola vez). El client_id no cambia."""
+    return service.regenerate_secret(application_id)
 
 
 @router.post("/{application_id}/redirect-uris", response_model=RedirectURIRead, status_code=201)

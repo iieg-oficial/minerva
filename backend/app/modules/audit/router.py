@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
+from app.core.dependencies.admin import require_minerva_admin
 from app.core.dependencies.auth import get_current_user
 from app.core.dependencies.db import get_db
 from app.modules.audit.schemas import AuditLogRead
 from app.modules.audit.service import AuditService
 from app.shared.pagination import PaginatedResponse
 
-router = APIRouter(prefix="/audit", tags=["Audit"])
+router = APIRouter(prefix="/audit", tags=["Audit"], dependencies=[Depends(require_minerva_admin)])
 
 
 def get_audit_service(session: Session = Depends(get_db)) -> AuditService:

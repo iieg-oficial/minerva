@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Request
 from sqlmodel import Session
 
+from app.core.dependencies.admin import require_minerva_admin
 from app.core.dependencies.auth import get_current_user
 from app.core.dependencies.db import get_db
 from app.modules.audit.service import AuditService
@@ -24,7 +25,7 @@ def check_permission(
     request: Request,
     service: AuthorizationService = Depends(get_authorization_service),
     audit: AuditService = Depends(get_audit_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(require_minerva_admin),
 ):
     result = service.check_permission(data.user_id, data.application_slug, data.permission)
     audit.log(

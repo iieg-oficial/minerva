@@ -34,6 +34,11 @@ class AuthorizationService:
             all_perms.extend(perms)
         return list({p.id: p for p in all_perms}.values())
 
+    def is_minerva_admin(self, user_id: str) -> bool:
+        """True si el usuario tiene el rol global de administrador de Minerva."""
+        roles = self._get_effective_roles(user_id)
+        return any(r.slug == "minerva.admin" for r in roles)
+
     def check_permission(self, user_id: str, application_slug: str, permission_slug: str) -> dict:
         app = self.app_service.get_application_by_slug(application_slug)
         if not app:
