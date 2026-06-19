@@ -116,6 +116,26 @@ def authorize(
     return RedirectResponse(redirect_url)
 
 
+@router.get("/authorize/url")
+def authorize_url(
+    client_id: str = Query(...),
+    redirect_uri: str = Query(...),
+    state: str = Query(...),
+    scope: str = Query("openid profile email"),
+    response_type: str = Query("code"),
+    service: AuthService = Depends(get_auth_service),
+    current_user: dict = Depends(get_current_user),
+):
+    """Variante JSON de /authorize para el frontend SPA.
+
+    Devuelve la URL de redirección (con el `code`) en lugar de un RedirectResponse,
+    porque un SPA no puede leer el header `Location` de un redirect cross-origin.
+    El frontend hace `window.location` con esta URL.
+    """
+    redirect_url = service.authorize(client_id, redirect_uri, current_user["sub"], state, scope)
+    return {"redirect_url": redirect_url}
+
+
 @router.post("/token", response_model=AuthTokenResponse)
 def token_exchange(
     data: TokenExchange,
