@@ -1,10 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Form, Input, Button, Typography, Flex, Row, Col, theme } from 'antd';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import * as authAPI from '@/api/auth';
 
 const { Title, Text, Link: TypoLink } = Typography;
 const { useToken } = theme;
+
+// Solo permite rutas internas como destino post-login (evita open redirect).
+function safeNext(next) {
+    if (next && next.startsWith('/') && !next.startsWith('//')) {
+        return next;
+    }
+    return '/admin';
+}
 
 const BRAND = {
     numeralia: '#2e4372',
@@ -21,20 +29,23 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [form] = Form.useForm();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const { token } = useToken();
+
+    const next = safeNext(searchParams.get('next'));
 
     useEffect(() => {
         const stored = localStorage.getItem('access_token');
         if (stored) {
-            navigate('/admin', { replace: true });
+            navigate(next, { replace: true });
         }
-    }, [navigate]);
+    }, [navigate, next]);
 
     const onFinish = async (values) => {
         setLoading(true);
         try {
             await authAPI.login(values.email, values.password);
-            navigate('/admin', { replace: true });
+            navigate(next, { replace: true });
         } catch (error) {
             const status = error.response?.status;
             const detail = error.response?.data?.detail;

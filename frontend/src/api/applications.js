@@ -20,6 +20,11 @@ export async function updateApplication(appId, data) {
     return res.data;
 }
 
+export async function regenerateSecret(appId) {
+    const res = await client.post(`/applications/${appId}/regenerate-secret`);
+    return res.data;
+}
+
 export async function listRedirectUris(appId) {
     const res = await client.get(`/applications/${appId}/redirect-uris`);
     return res.data;

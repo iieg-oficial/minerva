@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Typography, Space, Tag, App, Alert, Divider } from 'antd';
-import { PlusOutlined, EditOutlined, LinkOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, LinkOutlined, ReloadOutlined, KeyOutlined } from '@ant-design/icons';
 import * as appsAPI from '@/api/applications';
 import ManifestUploadButton from '@features/admin/components/ManifestUploadButton';
 
@@ -36,24 +36,64 @@ export default function ApplicationsPage() {
 
     useEffect(() => { fetchApps(); }, [fetchApps]);
 
+    // El client_secret solo viaja en la respuesta de creación/regeneración y no
+    // se vuelve a poder consultar: hay que mostrarlo aquí para que el admin lo copie.
+    const showCredentials = (result, { isNew }) => {
+        Modal.success({
+            title: isNew ? 'Aplicación creada' : 'Nuevo client secret generado',
+            width: 540,
+            content: (
+                <div>
+                    <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                        message="Guarda el client secret ahora"
+                        description="Por seguridad no se vuelve a mostrar. Si lo pierdes, tendrás que regenerarlo."
+                    />
+                    <Typography.Paragraph style={{ marginBottom: 4 }}><strong>Client ID</strong></Typography.Paragraph>
+                    <Typography.Paragraph copyable={{ text: result.client_id }} style={{ marginBottom: 16 }}>
+                        <Typography.Text code>{result.client_id}</Typography.Text>
+                    </Typography.Paragraph>
+                    <Typography.Paragraph style={{ marginBottom: 4 }}><strong>Client Secret</strong></Typography.Paragraph>
+                    <Typography.Paragraph copyable={{ text: result.client_secret_hash }} style={{ marginBottom: 0 }}>
+                        <Typography.Text code>{result.client_secret_hash}</Typography.Text>
+                    </Typography.Paragraph>
+                </div>
+            ),
+        });
+    };
+
     const handleCreate = async (values) => {
         try {
             const result = await appsAPI.createApplication(values);
             message.success('Aplicación creada');
-            Modal.info({
-                title: 'Credenciales de la aplicación',
-                content: (
-                    <div>
-                        <p><strong>Client ID:</strong> {result.client_id}</p>
-                    </div>
-                ),
-            });
+            showCredentials(result, { isNew: true });
             setModalOpen(false);
             form.resetFields();
             fetchApps();
         } catch (err) {
             message.error(err.response?.data?.detail || 'Error al crear aplicación');
         }
+    };
+
+    const handleRegenerateSecret = (record) => {
+        Modal.confirm({
+            title: `¿Regenerar el client secret de "${record.name}"?`,
+            content: 'El secret anterior dejará de funcionar. El client_id no cambia; deberás actualizar el sistema consumidor con el nuevo secret.',
+            okText: 'Regenerar',
+            okButtonProps: { danger: true },
+            cancelText: 'Cancelar',
+            onOk: async () => {
+                try {
+                    const result = await appsAPI.regenerateSecret(record.id);
+                    message.success('Client secret regenerado');
+                    showCredentials(result, { isNew: false });
+                } catch (err) {
+                    message.error(err.response?.data?.detail || 'Error al regenerar el secret');
+                }
+            },
+        });
     };
 
     const handleEdit = (app) => {
@@ -107,11 +147,12 @@ export default function ApplicationsPage() {
             render: (v) => <Tag color={v === 'active' ? 'green' : 'default'}>{v}</Tag>,
         },
         {
-            title: '', key: 'actions', width: 100,
+            title: '', key: 'actions', width: 130,
             render: (_, record) => (
                 <Space>
-                    <Button type="text" size="small" icon={<LinkOutlined />} onClick={() => handleUriOpen(record)} />
-                    <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                    <Button type="text" size="small" icon={<LinkOutlined />} title="Redirect URIs" onClick={() => handleUriOpen(record)} />
+                    <Button type="text" size="small" icon={<KeyOutlined />} title="Regenerar client secret" onClick={() => handleRegenerateSecret(record)} />
+                    <Button type="text" size="small" icon={<EditOutlined />} title="Editar" onClick={() => handleEdit(record)} />
                 </Space>
             ),
         },
