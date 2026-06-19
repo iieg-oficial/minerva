@@ -14,7 +14,8 @@ Minerva funciona como el sistema central de identidad y acceso del instituto, si
 >
 > - **Visión y requerimientos:** [`docs/minerva-dev-kit-context.md`](docs/minerva-dev-kit-context.md)
 > - **Guía de uso (levantar, login dev, manifiestos, permisos, SDK):** [`docs/minerva-dev-kit.md`](docs/minerva-dev-kit.md)
-> - **SDK para consumidores (FastAPI):** [`sdk/`](sdk) · **Ejemplo:** [`examples/godin-consumer/`](examples/godin-consumer)
+> - **Integrar tu sistema (login delegado, paso a paso):** [`docs/guia-integracion.md`](docs/guia-integracion.md)
+> - **SDK para consumidores (FastAPI):** [`sdk/`](sdk)
 >
 > Inicio rápido: `cp .env.example .env && docker compose up --build` →
 > API en http://localhost:9000 · panel en http://localhost:3000.
@@ -217,186 +218,25 @@ Para usuarios del IIEG y gobierno con cuenta de Google Workspace.
 
 ## Cómo integrar un nuevo sistema con Minerva
 
-### Paso 1: Registrar la aplicación en Minerva
+El login se delega por completo a Minerva: el usuario se autentica en Minerva y
+vuelve a tu sistema con un JWT y sus permisos. El resumen es:
 
-```http
-POST /applications
-Content-Type: application/json
+1. **Registra tu aplicación** en el panel (o `POST /applications`) y guarda el
+   `client_id` y el `client_secret`; registra tu redirect URI.
+2. **Declara permisos y roles** en un `manifest.minerva.yml` e impórtalo.
+3. **Configura variables** en tu sistema: `MINERVA_ISSUER_URL` la usa tu backend
+   (server-a-server), `MINERVA_LOGIN_URL` la usa el navegador, y tu
+   `MINERVA_JWT_SECRET` debe coincidir con el secreto efectivo de Minerva.
+4. En tu **backend** implementa `/auth/login` (redirige a Minerva),
+   `/auth/callback` (canjea el `code` por el JWT) y `/auth/logout` (single
+   logout), y valida el JWT + permisos.
+5. En tu **frontend** quita el login propio (si lo tenía): un botón manda a
+   `/api/auth/login` y una página de callback recibe el token.
 
-{
-  "name": "Godín",
-  "slug": "godin",
-  "description": "Sistema de gestión de oficios, memos y solicitudes",
-  "homepage_url": "https://godin.iieg.gob.mx"
-}
-```
-
-**Respuesta:**
-```json
-{
-  "id": "uuid",
-  "name": "Godín",
-  "slug": "godin",
-  "client_id": "uuid-del-cliente",
-  "client_secret_hash": "secret-en-texto-plano-solo-en-creacion",
-  "status": "active",
-  ...
-}
-```
-
-> Guarda el `client_id` y `client_secret_hash` (el secret real). El secret no se volverá a mostrar.
-
-### Paso 2: Registrar redirect URIs
-
-```http
-POST /applications/{app_id}/redirect-uris
-Content-Type: application/json
-
-{
-  "uri": "https://godin.iieg.gob.mx/auth/callback",
-  "environment": "production"
-}
-```
-
-### Paso 3: Definir roles y permisos
-
-```http
-POST /roles?application_id={app_id}
-{
-  "name": "Administrador",
-  "slug": "godin.admin"
-}
-
-POST /permissions?application_id={app_id}
-{
-  "name": "Crear oficios",
-  "slug": "godin.oficios.crear"
-}
-```
-
-Asignar permisos a roles:
-```http
-POST /roles/{role_id}/permissions/{permission_id}
-```
-
-### Paso 4: Asignar roles a usuarios o grupos
-
-```http
-POST /groups/users/{user_id}/roles/{role_id}
-```
-
-### Paso 5: Redirigir login desde la aplicación cliente
-
-Cuando un usuario no tenga sesión, redirige al navegador a la página de
-autorización del **frontend** de Minerva (no al API). El frontend muestra el
-login si hace falta y, una vez autenticado, llama al API y regresa al cliente:
-
-```
-GET https://minerva.iieg.gob.mx/authorize
-  ?client_id=CLIENT_ID_DE_GODIN
-  &redirect_uri=https://godin.iieg.gob.mx/auth/callback
-  &response_type=code
-  &scope=openid profile email
-  &state=RANDOM_STATE
-```
-
-> En desarrollo lado-a-lado, el frontend de Minerva corre en
-> `http://localhost:3100` (el API en `http://localhost:9000`). La página
-> `/authorize` lee estos parámetros, autentica al usuario y, vía
-> `GET /auth/authorize/url` (variante JSON de `/auth/authorize`), obtiene la
-> URL de regreso con el `code` y redirige el navegador al cliente.
-
-Minerva redirige de regreso a:
-
-```
-https://godin.iieg.gob.mx/auth/callback?code=AUTH_CODE&state=RANDOM_STATE
-```
-
-### Paso 6: Intercambiar código por token
-
-```http
-POST /auth/token
-Content-Type: application/json
-
-{
-  "client_id": "CLIENT_ID",
-  "client_secret": "CLIENT_SECRET",
-  "code": "AUTH_CODE",
-  "redirect_uri": "https://godin.iieg.gob.mx/auth/callback"
-}
-```
-
-**Respuesta:**
-```json
-{
-  "access_token": "eyJhbGci...",
-  "token_type": "bearer",
-  "expires_in": 28800
-}
-```
-
-### Paso 7: Validar token en la aplicación externa
-
-El token JWT contiene:
-
-```json
-{
-  "sub": "user_id",
-  "email": "usuario@iieg.gob.mx",
-  "name": "Nombre Completo",
-  "iss": "https://minerva.iieg.gob.mx",
-  "aud": "godin",
-  "roles": ["godin.admin"],
-  "permissions": ["godin.oficios.ver", "godin.oficios.crear"],
-  "iat": 1234567890,
-  "exp": 1234571490
-}
-```
-
-Cada sistema debe validar:
-- Firma del JWT (con `JWT_SECRET_KEY` compartido o clave pública)
-- Fecha de expiración (`exp`)
-- Issuer (`iss`)
-- Audience (`aud`)
-- Permisos o roles incluidos
-
-### Ejemplo de integración con FastAPI
-
-```python
-# En tu aplicación externa
-import requests
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.security import HTTPBearer
-from jose import jwt
-
-JWT_SECRET = "misma-clave-que-minerva"
-MINERVA_ISSUER = "https://minerva.iieg.gob.mx"
-APP_SLUG = "godin"
-
-bearer = HTTPBearer(auto_error=False)
-
-def get_current_user(token=Depends(bearer)):
-    try:
-        payload = jwt.decode(token.credentials, JWT_SECRET, algorithms=["HS256"])
-        if payload["iss"] != MINERVA_ISSUER:
-            raise HTTPException(401, "Issuer inválido")
-        return payload
-    except Exception:
-        raise HTTPException(401, "Token inválido")
-
-def require_permission(permission: str):
-    def dependency(user=Depends(get_current_user)):
-        if permission not in user.get("permissions", []):
-            raise HTTPException(403, f"Requiere permiso: {permission}")
-        return user
-    return dependency
-
-app = FastAPI()
-
-@app.post("/oficios")
-def crear_oficio(user=Depends(require_permission("godin.oficios.crear"))):
-    return {"message": "Oficio creado", "user": user["email"]}
-```
+📖 **Guía completa, paso a paso, con los dos escenarios** (sistema con login
+propio que hay que quitar, o sin login que solo redirige), configuración de
+variables, manifiesto, validación del JWT y troubleshooting:
+**[`docs/guia-integracion.md`](docs/guia-integracion.md)**.
 
 ## Estructura del proyecto
 
