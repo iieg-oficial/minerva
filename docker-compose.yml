@@ -10,16 +10,11 @@ services:
     env_file:
       - .env
     environment:
-      # Minerva Dev Kit (ver docs/minerva-dev-kit-context.md). Estos valores
-      # tienen prioridad sobre los heredados para arrancar listo en modo dev.
-      MINERVA_MODE: dev
-      MINERVA_DB_URL: postgresql+psycopg://minerva:minerva@minerva-db:5432/minerva
-      MINERVA_ENABLE_DEV_LOGIN: "true"
-      MINERVA_AUTO_IMPORT_MANIFESTS: "true"
+      # MINERVA_MANIFESTS_PATH es específico de Docker (ruta dentro del contenedor);
+      # el resto de la config Dev Kit (MINERVA_MODE, MINERVA_DB_URL, MINERVA_JWT_*, etc.)
+      # viene íntegramente de .env, que es la única fuente de verdad.
       MINERVA_MANIFESTS_PATH: /app/manifests
-      MINERVA_JWT_ISSUER: http://localhost:9000
-      MINERVA_JWT_SECRET: dev-secret
-      MINERVA_ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+      FRONTEND_URL: http://localhost:${FRONTEND_PORT:-3000}
     volumes:
       - ./backend:/app
       - ./manifests:/app/manifests

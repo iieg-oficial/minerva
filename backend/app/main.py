@@ -60,7 +60,7 @@ def _seed_data() -> None:
 
             redirect_uri = RedirectURI(
                 application_id=minerva_app.id,
-                uri="http://localhost:3000/auth/callback",
+                uri=f"{settings.FRONTEND_URL}/auth/callback",
                 environment="development",
             )
             session.add(redirect_uri)
@@ -151,7 +151,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=[settings.FRONTEND_URL, "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

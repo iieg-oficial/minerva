@@ -1,4 +1,7 @@
-# Manifiesto de ejemplo del Minerva Dev Kit.
+# Manifiesto de EJEMPLO del Minerva Dev Kit (solo de referencia, no se auto-importa).
+# El backend auto-importa al arrancar los archivos que matchean *.minerva.yml, *.minerva.yaml,
+# manifest.yml o manifest.yaml dentro de manifests/ (ver backend/app/main.py:_auto_import_manifests).
+# Este archivo usa el sufijo ".example.yml" a propósito para no matchear ese patrón.
 # Cada sistema consumidor declara aquí su aplicación, permisos y roles.
 # Convención de permisos: {application_code}.{resource}.{action}
 
