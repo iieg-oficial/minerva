@@ -85,6 +85,12 @@ Modifica estos valores en el `.env` con `ADMIN_EMAIL` y `ADMIN_PASSWORD`.
 
 ## Endpoints de la API (MVP)
 
+> **Autorización del panel:** los endpoints de gestión (`/users`, `/applications`,
+> `/roles`, `/permissions`, `/groups`, `/audit` y `/authorization/check`) exigen el
+> rol global `minerva.admin` (dependencia `require_minerva_admin`), no basta con
+> estar autenticado. Los endpoints self-service (`/auth/*`,
+> `/authorization/me/permissions`) solo requieren un token válido.
+
 ### Auth
 
 | Método | Ruta | Descripción |
@@ -95,7 +101,8 @@ Modifica estos valores en el `.env` con `ADMIN_EMAIL` y `ADMIN_PASSWORD`.
 | `GET` | `/auth/me` | Obtener usuario actual con roles y permisos |
 | `GET` | `/auth/google/login` | Iniciar login con Google |
 | `GET` | `/auth/google/callback` | Callback de Google OAuth |
-| `GET` | `/auth/authorize` | Endpoint de autorización OAuth2 |
+| `GET` | `/auth/authorize` | Endpoint de autorización OAuth2 (redirect) |
+| `GET` | `/auth/authorize/url` | Variante JSON de `/auth/authorize` (devuelve la URL de redirección; la usa el frontend SPA) |
 | `POST` | `/auth/token` | Intercambiar código por token |
 | `POST` | `/auth/refresh` | Refrescar token JWT |
 
@@ -280,16 +287,24 @@ POST /groups/users/{user_id}/roles/{role_id}
 
 ### Paso 5: Redirigir login desde la aplicación cliente
 
-Cuando un usuario no tenga sesión, redirigir a:
+Cuando un usuario no tenga sesión, redirige al navegador a la página de
+autorización del **frontend** de Minerva (no al API). El frontend muestra el
+login si hace falta y, una vez autenticado, llama al API y regresa al cliente:
 
 ```
-GET https://minerva.iieg.gob.mx/auth/authorize
+GET https://minerva.iieg.gob.mx/authorize
   ?client_id=CLIENT_ID_DE_GODIN
   &redirect_uri=https://godin.iieg.gob.mx/auth/callback
   &response_type=code
   &scope=openid profile email
   &state=RANDOM_STATE
 ```
+
+> En desarrollo lado-a-lado, el frontend de Minerva corre en
+> `http://localhost:3100` (el API en `http://localhost:9000`). La página
+> `/authorize` lee estos parámetros, autentica al usuario y, vía
+> `GET /auth/authorize/url` (variante JSON de `/auth/authorize`), obtiene la
+> URL de regreso con el `code` y redirige el navegador al cliente.
 
 Minerva redirige de regreso a:
 
