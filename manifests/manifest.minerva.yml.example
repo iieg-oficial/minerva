@@ -1,0 +1,58 @@
+# Manifiesto de EJEMPLO del Minerva Dev Kit (solo de referencia, no se auto-importa).
+# El backend auto-importa al arrancar los archivos que matchean *.minerva.yml, *.minerva.yaml,
+# manifest.yml o manifest.yaml dentro de manifests/ (ver backend/app/main.py:_auto_import_manifests).
+# Este archivo usa el sufijo ".example.yml" a propósito para no matchear ese patrón.
+# Cada sistema consumidor declara aquí su aplicación, permisos y roles.
+# Convención de permisos: {application_code}.{resource}.{action}
+
+application:
+  code: godin
+  name: Godín
+  description: Gestor de oficios, memos y solicitudes de información
+  base_url: http://localhost:8000
+  redirect_uris:
+    - http://localhost:8000/auth/callback
+
+permissions:
+  - key: godin.oficios.view
+    name: Ver oficios
+    description: Permite consultar oficios
+
+  - key: godin.oficios.create
+    name: Crear oficios
+    description: Permite crear nuevos oficios
+
+  - key: godin.oficios.authorize
+    name: Autorizar oficios
+    description: Permite autorizar oficios
+
+  - key: godin.solicitudes.view
+    name: Ver solicitudes
+    description: Permite consultar solicitudes de información
+
+  - key: godin.solicitudes.assign
+    name: Asignar solicitudes
+    description: Permite asignar solicitudes a usuarios
+
+roles:
+  - name: Consulta
+    description: Usuario de solo lectura
+    permissions:
+      - godin.oficios.view
+      - godin.solicitudes.view
+
+  - name: Capturista
+    description: Usuario que puede capturar información
+    permissions:
+      - godin.oficios.view
+      - godin.oficios.create
+      - godin.solicitudes.view
+
+  - name: Administrador
+    description: Control total del sistema
+    permissions:
+      - godin.oficios.view
+      - godin.oficios.create
+      - godin.oficios.authorize
+      - godin.solicitudes.view
+      - godin.solicitudes.assign
