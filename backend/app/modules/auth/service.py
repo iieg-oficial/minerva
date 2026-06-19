@@ -111,7 +111,12 @@ class AuthService:
         if not auth_code:
             raise BadRequestError(detail="Código de autorización inválido o ya usado")
 
-        if datetime.now(timezone.utc) > auth_code.expires_at:
+        # expires_at se guarda en una columna sin timezone, por lo que vuelve naive;
+        # lo normalizamos a UTC para poder compararlo con un datetime aware.
+        expires_at = auth_code.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires_at:
             raise BadRequestError(detail="Código de autorización expirado")
 
         user = self.user_repo.get_by_id(auth_code.user_id)
