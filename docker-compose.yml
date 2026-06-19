@@ -1,126 +1,68 @@
-name: minerva
-
-x-authentik-image: &authentik-image ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2025.8}
-
-x-authentik-env: &authentik-env
-  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
-  AUTHENTIK_REDIS__HOST: redis
-  AUTHENTIK_POSTGRESQL__HOST: db
-  AUTHENTIK_POSTGRESQL__NAME: ${POSTGRES_DB:-authentik}
-  AUTHENTIK_POSTGRESQL__USER: ${POSTGRES_USER:-authentik}
-  AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD}
-  AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
-  AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
-  AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
-  AUTHENTIK_AVATARS: initials
-  AUTHENTIK_COOKIE_DOMAIN: ${MINERVA_COOKIE_DOMAIN}
-  AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL}
-  AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
-  AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
-  # Consumidas por los blueprints via !Env
-  MINERVA_EXTERNAL_URL: ${MINERVA_EXTERNAL_URL}
-  MINERVA_COOKIE_DOMAIN: ${MINERVA_COOKIE_DOMAIN}
-  ACERVO_CONSOLE_UPSTREAM: ${ACERVO_CONSOLE_UPSTREAM}
-
 services:
-  db:
-    image: postgres:18-alpine
-    container_name: minerva-db
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-authentik}
-      POSTGRES_USER: ${POSTGRES_USER:-authentik}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-    volumes:
-      - minerva_db:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-    networks:
-      - minerva_network
-    restart: unless-stopped
-
-  redis:
-    image: redis:8-alpine
-    container_name: minerva-redis
-    command: --save 60 1 --loglevel warning
-    volumes:
-      - minerva_redis:/data
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
-      interval: 30s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
-    networks:
-      - minerva_network
-    restart: unless-stopped
-
-  server:
-    image: *authentik-image
-    container_name: minerva-server
-    command: server
-    environment: *authentik-env
-    volumes:
-      - minerva_media:/media
-      - minerva_templates:/templates
-      - ./blueprints:/blueprints/custom:ro
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: minerva_backend
+    command: /app/scripts/backend-entrypoint.sh uvicorn app.main:app --host 0.0.0.0 --port 9000 --reload
     ports:
-      - "127.0.0.1:${MINERVA_HTTP_PORT:-9000}:9000"
-    healthcheck:
-      test: ["CMD", "ak", "healthcheck"]
-      interval: 30s
-      timeout: 30s
-      retries: 5
-      start_period: 60s
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - minerva_network
-      - iieg-network
-    restart: unless-stopped
-
-  worker:
-    image: *authentik-image
-    container_name: minerva-worker
-    command: worker
-    environment: *authentik-env
-    user: root
+      - "${BACKEND_PORT:-9000}:9000"
+    env_file:
+      - .env
+    environment:
+      # MINERVA_MANIFESTS_PATH es específico de Docker (ruta dentro del contenedor);
+      # el resto de la config Dev Kit (MINERVA_MODE, MINERVA_DB_URL, MINERVA_JWT_*, etc.)
+      # viene íntegramente de .env, que es la única fuente de verdad.
+      MINERVA_MANIFESTS_PATH: /app/manifests
+      FRONTEND_URL: http://localhost:${FRONTEND_PORT:-3000}
     volumes:
-      - minerva_media:/media
-      - minerva_templates:/templates
-      - minerva_certs:/certs
-      - ./blueprints:/blueprints/custom:ro
-    healthcheck:
-      test: ["CMD", "ak", "healthcheck"]
-      interval: 30s
-      timeout: 30s
-      retries: 5
-      start_period: 60s
+      - ./backend:/app
+      - ./manifests:/app/manifests
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
+      postgres:
         condition: service_healthy
     networks:
+      minerva_network:
+        aliases:
+          - minerva
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: minerva_frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    networks:
       - minerva_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: minerva_postgres
     restart: unless-stopped
+    environment:
+      POSTGRES_DB: minerva
+      POSTGRES_USER: minerva
+      POSTGRES_PASSWORD: minerva
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - minerva_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      minerva_network:
+        aliases:
+          - minerva-db
 
 volumes:
-  minerva_db:
-  minerva_redis:
-  minerva_media:
-  minerva_templates:
-  minerva_certs:
+  minerva_postgres_data:
 
 networks:
   minerva_network:
-    name: minerva-net
     driver: bridge
-  iieg-network:
-    external: true
