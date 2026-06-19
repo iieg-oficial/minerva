@@ -1,6 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { App as AntApp } from 'antd';
 import LoginPage from '@features/auth/pages/LoginPage';
+import AuthorizePage from '@features/auth/pages/AuthorizePage';
+import LogoutPage from '@features/auth/pages/LogoutPage';
+import NoAccessPage from '@features/auth/pages/NoAccessPage';
 import DashboardPage from '@features/auth/pages/DashboardPage';
 import AdminLayout from '@features/admin/layout/AdminLayout';
 import ProtectedRoute from '@features/auth/components/ProtectedRoute';
@@ -17,6 +20,9 @@ export default function App() {
         <AntApp>
             <Routes>
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/authorize" element={<AuthorizePage />} />
+                <Route path="/no-access" element={<NoAccessPage />} />
+                <Route path="/logout" element={<LogoutPage />} />
                 <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
                     <Route index element={<DashboardPage />} />
                     <Route path="users" element={<UsersPage />} />
