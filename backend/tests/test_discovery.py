@@ -1,0 +1,60 @@
+"""Tests de los endpoints públicos de descubrimiento OIDC (Fase 2)."""
+
+from sqlmodel import Session
+
+from app.modules.oidc.service import OIDCService
+from tests.conftest import test_engine
+
+
+def _seed_signing_key() -> str:
+    with Session(test_engine) as session:
+        return OIDCService(session).generate_signing_key().kid
+
+
+def test_discovery_document_shape(client):
+    resp = client.get("/.well-known/openid-configuration")
+    assert resp.status_code == 200
+
+    doc = resp.json()
+    assert doc["issuer"]
+    assert doc["jwks_uri"].endswith("/.well-known/jwks.json")
+    assert doc["authorization_endpoint"].endswith("/auth/authorize")
+    assert doc["token_endpoint"].endswith("/auth/token")
+    # El contrato de firma es RS256: lo que congela el modelo de confianza.
+    assert doc["id_token_signing_alg_values_supported"] == ["RS256"]
+    assert doc["response_types_supported"] == ["code"]
+    assert "openid" in doc["scopes_supported"]
+
+
+def test_jwks_endpoint_publishes_public_key(client):
+    kid = _seed_signing_key()
+
+    resp = client.get("/.well-known/jwks.json")
+    assert resp.status_code == 200
+
+    keys = resp.json()["keys"]
+    assert any(k["kid"] == kid for k in keys)
+    entry = next(k for k in keys if k["kid"] == kid)
+    assert entry["kty"] == "RSA"
+    assert entry["use"] == "sig"
+    assert entry["alg"] == "RS256"
+    assert entry["n"] and entry["e"]
+    # NUNCA debe filtrarse material privado en el JWKS.
+    assert "d" not in entry
+    assert "p" not in entry
+
+
+def test_jwks_empty_when_no_keys(client):
+    resp = client.get("/.well-known/jwks.json")
+    assert resp.status_code == 200
+    assert resp.json() == {"keys": []}
+
+
+def test_discovery_allows_any_origin_cors(client):
+    """Los `.well-known` deben ser legibles desde cualquier origen (CORS abierto)."""
+    resp = client.get(
+        "/.well-known/openid-configuration",
+        headers={"Origin": "https://consumidor.example.com"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-origin"] == "*"

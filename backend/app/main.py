@@ -19,6 +19,7 @@ from app.modules.devkit.router import router as devkit_router
 from app.modules.groups.models import UserRole
 from app.modules.groups.router import router as groups_router
 from app.modules.oidc.models import SigningKey  # noqa: F401 - registra la tabla en el metadata
+from app.modules.oidc.router import wellknown_app
 from app.modules.oidc.service import OIDCService
 from app.modules.permissions.models import Permission, RolePermission
 from app.modules.permissions.router import router as permissions_router
@@ -181,6 +182,10 @@ app.include_router(groups_router)
 app.include_router(authorization_router)
 app.include_router(audit_router)
 app.include_router(devkit_router)
+
+# Endpoints públicos de descubrimiento OIDC. Van montados como sub-app por su
+# política de CORS abierta (ver app/modules/oidc/router.py).
+app.mount("/.well-known", wellknown_app)
 
 
 @app.get("/")
