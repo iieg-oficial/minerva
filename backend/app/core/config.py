@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     MINERVA_JWT_SECRET: str = ""
     MINERVA_ACCESS_TOKEN_EXPIRE_MINUTES: int = 0
 
+    # --- OIDC / firma de tokens --------------------------------------------
+    # Algoritmo de firma de los access tokens. Durante la transición a OIDC se
+    # mantiene HS256 (secreto compartido) por defecto; se cambia a RS256 (JWKS)
+    # cuando la infraestructura de claves y refresh tokens esté en producción.
+    MINERVA_SIGNING_ALG: str = "HS256"  # HS256 | RS256
+    # Clave maestra (Fernet) para cifrar la clave privada RSA en reposo en la BD.
+    # OBLIGATORIA en producción. En dev, si está vacía, se deriva una clave estable
+    # del secreto JWT (no apta para producción). Generar con: Fernet.generate_key().
+    MINERVA_KEY_ENCRYPTION_KEY: str = ""
+
     # --- Redis -------------------------------------------------------------
     # Redis tiene un alcance acotado: rate limiting, blacklist de tokens y
     # sesiones efímeras del flujo /authorize. NO es la fuente de verdad de datos.
