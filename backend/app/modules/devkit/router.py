@@ -69,6 +69,12 @@ def me_permissions(
     service: DevKitService = Depends(get_devkit_service),
     current_user: dict = Depends(get_current_user),
 ):
+    """Permisos del usuario autenticado, en *shape lean* (roles por nombre, permisos por slug).
+
+    Endpoint **canónico para sistemas consumidores**: lo consume el `minerva_sdk` y se publica en el
+    discovery OIDC. Para la vista interna del panel admin (objetos completos) ver
+    `GET /authorization/me/permissions`.
+    """
     return service.get_me_permissions(current_user["sub"], application)
 
 
