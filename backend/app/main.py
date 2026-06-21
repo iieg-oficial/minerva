@@ -18,6 +18,8 @@ from app.modules.authorization.router import router as authorization_router
 from app.modules.devkit.router import router as devkit_router
 from app.modules.groups.models import UserRole
 from app.modules.groups.router import router as groups_router
+from app.modules.oidc.models import SigningKey  # noqa: F401 - registra la tabla en el metadata
+from app.modules.oidc.service import OIDCService
 from app.modules.permissions.models import Permission, RolePermission
 from app.modules.permissions.router import router as permissions_router
 from app.modules.roles.models import Role
@@ -137,9 +139,17 @@ def _auto_import_manifests() -> None:
             logger.warning("No se pudo importar el manifiesto %s: %s", path.name, exc)
 
 
+def _seed_signing_key() -> None:
+    """Garantiza que exista una clave de firma RS256 activa al arrancar (idempotente)."""
+    import_models()
+    with Session(engine) as session:
+        OIDCService(session).ensure_active_signing_key()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _seed_data()
+    _seed_signing_key()
     _auto_import_manifests()
     await init_redis()
     try:
