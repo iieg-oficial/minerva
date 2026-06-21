@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from redis.asyncio import Redis
 from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.dependencies.auth import get_current_user
 from app.core.dependencies.db import get_db
+from app.core.rate_limit import enforce_rate_limit
+from app.core.redis import get_redis
 from app.modules.audit.service import AuditService
 from app.modules.auth.schemas import AuthLogin, AuthRegister, AuthTokenResponse, TokenExchange
 from app.modules.auth.service import AuthService
@@ -33,12 +36,19 @@ def register(
 
 
 @router.post("/login", response_model=AuthTokenResponse)
-def login(
+async def login(
     data: AuthLogin,
     request: Request,
     service: AuthService = Depends(get_auth_service),
     audit: AuditService = Depends(get_audit_service),
+    redis: Redis = Depends(get_redis),
 ):
+    await enforce_rate_limit(
+        redis,
+        f"minerva:rl:login:{request.client.host}",
+        settings.RATE_LIMIT_LOGIN_MAX,
+        settings.RATE_LIMIT_LOGIN_WINDOW,
+    )
     try:
         result = service.login(data.email, data.password)
         audit.log("manual_login_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
@@ -103,7 +113,8 @@ def google_callback(code: str):
 
 
 @router.get("/authorize")
-def authorize(
+async def authorize(
+    request: Request,
     client_id: str = Query(...),
     redirect_uri: str = Query(...),
     state: str = Query(...),
@@ -111,13 +122,21 @@ def authorize(
     response_type: str = Query("code"),
     service: AuthService = Depends(get_auth_service),
     current_user: dict = Depends(get_current_user),
+    redis: Redis = Depends(get_redis),
 ):
+    await enforce_rate_limit(
+        redis,
+        f"minerva:rl:authorize:{request.client.host}",
+        settings.RATE_LIMIT_AUTHORIZE_MAX,
+        settings.RATE_LIMIT_AUTHORIZE_WINDOW,
+    )
     redirect_url = service.authorize(client_id, redirect_uri, current_user["sub"], state, scope)
     return RedirectResponse(redirect_url)
 
 
 @router.get("/authorize/url")
-def authorize_url(
+async def authorize_url(
+    request: Request,
     client_id: str = Query(...),
     redirect_uri: str = Query(...),
     state: str = Query(...),
@@ -125,6 +144,7 @@ def authorize_url(
     response_type: str = Query("code"),
     service: AuthService = Depends(get_auth_service),
     current_user: dict = Depends(get_current_user),
+    redis: Redis = Depends(get_redis),
 ):
     """Variante JSON de /authorize para el frontend SPA.
 
@@ -132,6 +152,12 @@ def authorize_url(
     porque un SPA no puede leer el header `Location` de un redirect cross-origin.
     El frontend hace `window.location` con esta URL.
     """
+    await enforce_rate_limit(
+        redis,
+        f"minerva:rl:authorize:{request.client.host}",
+        settings.RATE_LIMIT_AUTHORIZE_MAX,
+        settings.RATE_LIMIT_AUTHORIZE_WINDOW,
+    )
     redirect_url = service.authorize(client_id, redirect_uri, current_user["sub"], state, scope)
     return {"redirect_url": redirect_url}
 
