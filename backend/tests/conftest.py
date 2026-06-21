@@ -10,6 +10,7 @@ from app.core.redis import get_redis
 from app.main import app
 from app.modules.applications.models import Application
 from app.modules.groups.models import UserRole
+from app.modules.oidc.router import wellknown_app
 from app.modules.roles.models import Role
 from app.modules.users.models import User
 
@@ -25,6 +26,8 @@ def override_get_db():
 
 app.dependency_overrides[get_db] = override_get_db
 app.dependency_overrides[get_session] = override_get_db
+# La sub-app `.well-known` mantiene su propio registro de overrides.
+wellknown_app.dependency_overrides[get_db] = override_get_db
 
 
 @pytest.fixture(autouse=True)
