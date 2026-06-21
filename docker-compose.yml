@@ -4,7 +4,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: minerva_backend
-    command: /app/scripts/backend-entrypoint.sh uvicorn app.main:app --host 0.0.0.0 --port 9000 --reload
+    # El entrypoint elige uvicorn (dev) o gunicorn (prod) según MINERVA_MODE (ver .env).
+    command: /app/scripts/backend-entrypoint.sh
     ports:
       - "${BACKEND_PORT:-9000}:9000"
     env_file:
@@ -20,6 +21,8 @@ services:
       - ./manifests:/app/manifests
     depends_on:
       postgres:
+        condition: service_healthy
+      minerva_redis:
         condition: service_healthy
     networks:
       minerva_network:
@@ -37,6 +40,23 @@ services:
       - backend
     networks:
       - minerva_network
+
+  minerva_redis:
+    image: redis:7-alpine
+    container_name: minerva_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      minerva_network:
+        aliases:
+          - minerva-redis
 
   postgres:
     image: postgres:16-alpine

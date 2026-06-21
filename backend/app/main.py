@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.database import engine
 from app.core.models import import_models
+from app.core.redis import close_redis, init_redis
 from app.core.security import hash_password, hash_secret
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.applications.router import router as applications_router
@@ -140,7 +141,11 @@ def _auto_import_manifests() -> None:
 async def lifespan(app: FastAPI):
     _seed_data()
     _auto_import_manifests()
-    yield
+    await init_redis()
+    try:
+        yield
+    finally:
+        await close_redis()
 
 
 app = FastAPI(

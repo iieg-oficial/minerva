@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     MINERVA_JWT_SECRET: str = ""
     MINERVA_ACCESS_TOKEN_EXPIRE_MINUTES: int = 0
 
+    # --- Redis -------------------------------------------------------------
+    # Redis tiene un alcance acotado: rate limiting, blacklist de tokens y
+    # sesiones efímeras del flujo /authorize. NO es la fuente de verdad de datos.
+    REDIS_URL: str = "redis://minerva_redis:6379/0"
+    RATE_LIMIT_LOGIN_MAX: int = 5
+    RATE_LIMIT_LOGIN_WINDOW: int = 900  # segundos (15 min)
+    RATE_LIMIT_AUTHORIZE_MAX: int = 20
+    RATE_LIMIT_AUTHORIZE_WINDOW: int = 60
+
     # --- Valores efectivos -------------------------------------------------
     @property
     def effective_db_url(self) -> str:
