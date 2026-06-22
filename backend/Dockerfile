@@ -19,4 +19,5 @@ RUN mkdir -p /app/uploads /app/manifests
 WORKDIR /app
 EXPOSE 9000
 
-CMD ["/app/scripts/backend-entrypoint.sh", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9000"]
+# El entrypoint elige uvicorn (dev) o gunicorn (prod) según MINERVA_MODE.
+CMD ["/app/scripts/backend-entrypoint.sh"]

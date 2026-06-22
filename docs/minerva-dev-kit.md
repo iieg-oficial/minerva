@@ -182,7 +182,7 @@ curl -s "http://localhost:9000/api/v1/me/permissions?application=godin" \
 
 El SDK vive en [`../sdk`](../sdk). Para integrar el login completo (redirección,
 canje del code, manifiesto y variables) sigue la
-[guía de integración](./guia-integracion.md).
+[guía de integración OIDC](./oidc-integracion.md).
 
 ```python
 from fastapi import Depends, FastAPI
@@ -191,7 +191,7 @@ from minerva_sdk.fastapi import require_permission
 app = FastAPI()
 
 @app.post("/oficios")
-def crear_oficio(user=Depends(require_permission("godin.oficios.create"))):
+async def crear_oficio(user=Depends(require_permission("godin.oficios.create"))):
     return {"message": "Oficio creado", "user": user["email"]}
 ```
 
@@ -200,12 +200,13 @@ Variables del consumidor (desarrollo):
 ```env
 MINERVA_ISSUER_URL=http://localhost:9000
 MINERVA_APPLICATION_CODE=godin
-MINERVA_JWT_SECRET=dev-secret
 MINERVA_PERMISSIONS_CACHE_TTL=300
 ```
 
-`require_permission` valida la firma del JWT y consulta
+`require_permission` (async) valida la firma del JWT con **RS256 contra el JWKS**
+público de Minerva (sin secreto compartido) y consulta
 `GET /api/v1/me/permissions` (con caché). Así se valida **permiso**, no rol.
+Guía completa: [`oidc-integracion.md`](./oidc-integracion.md).
 
 ---
 
@@ -216,7 +217,7 @@ No cambia el código del sistema consumidor; sólo su configuración:
 ```env
 MINERVA_ISSUER_URL=https://minerva.iieg.gob.mx
 MINERVA_APPLICATION_CODE=godin
-# en producción: validación por clave pública / JWKS en lugar del secreto dev
+# La firma se valida siempre contra el JWKS público (RS256); no hay secreto.
 ```
 
 Del lado de Minerva, las variables `MINERVA_*` (DB, issuer, secreto, expiración)
@@ -235,12 +236,16 @@ sólo configuración.
 | `MINERVA_AUTO_IMPORT_MANIFESTS` | Importa manifiestos al arrancar | `true` |
 | `MINERVA_MANIFESTS_PATH` | Carpeta de manifiestos | `/app/manifests` |
 | `MINERVA_JWT_ISSUER` | Issuer (`iss`) de los tokens | `http://localhost:9000` |
-| `MINERVA_JWT_SECRET` | Secreto de firma (HS256) | `dev-secret` |
-| `MINERVA_ACCESS_TOKEN_EXPIRE_MINUTES` | Expiración del token | `480` |
+| `MINERVA_JWT_SECRET` | Base para derivar la clave de cifrado en reposo en dev (ya **no** firma tokens) | `dev-secret` |
+| `MINERVA_ACCESS_TOKEN_EXPIRE_MINUTES` | Expiración del token de sesión interna del panel | `480` |
+| `MINERVA_KEY_ENCRYPTION_KEY` | Clave maestra (Fernet) para cifrar la clave RSA en reposo (obligatoria en prod) | `` |
+| `MINERVA_ACCESS_TOKEN_TTL_MINUTES` | Expiración del access token del canje OIDC | `15` |
+| `MINERVA_REFRESH_TOKEN_TTL_DAYS` | Expiración del refresh token | `30` |
 
 Cuando una variable `MINERVA_*` no está definida, se usa la equivalente
 heredada (`DATABASE_URL`, `JWT_SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`,
-`MINERVA_ISSUER`).
+`MINERVA_ISSUER`). Toda la firma de tokens es **RS256** (clave RSA + JWKS); no
+hay HS256 ni secreto compartido.
 
 ---
 

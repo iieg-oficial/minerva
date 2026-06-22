@@ -19,11 +19,15 @@ pip install -e ./sdk          # desde la raíz del repo Minerva
 |---|---|---|
 | `MINERVA_ISSUER_URL` | URL base de Minerva | `http://localhost:9000` |
 | `MINERVA_APPLICATION_CODE` | Código de tu aplicación (slug) | `` |
-| `MINERVA_JWT_SECRET` | Secreto compartido para validar la firma (modo dev HS256) | `dev-secret` |
-| `MINERVA_JWT_ALGORITHM` | Algoritmo de firma | `HS256` |
 | `MINERVA_EXPECTED_ISSUER` | Si se define, valida el claim `iss` | `` |
+| `MINERVA_VERIFY_AUD` | Verifica que el `aud` sea tu aplicación | `true` |
 | `MINERVA_PERMISSIONS_CACHE_TTL` | TTL de caché de permisos (segundos) | `300` |
-| `MINERVA_VERIFY_SIGNATURE` | Validar firma del JWT | `true` |
+| `MINERVA_JWKS_CACHE_TTL` | TTL de caché del JWKS (segundos) | `3600` |
+| `MINERVA_JWT_SECRET` | Secreto HS256 legacy (solo transición; vacío = solo RS256) | `` |
+| `MINERVA_REQUEST_TIMEOUT` | Timeout de las llamadas a Minerva (segundos) | `10` |
+
+La firma se valida con **RS256 contra el JWKS público** de Minerva: no necesitas
+ningún secreto compartido, solo `MINERVA_ISSUER_URL`.
 
 ## Uso
 
@@ -34,24 +38,25 @@ from minerva_sdk.fastapi import require_permission, get_current_user
 app = FastAPI()
 
 @app.get("/whoami")
-def whoami(user=Depends(get_current_user)):
+async def whoami(user=Depends(get_current_user)):
     return {"email": user["email"], "sub": user["sub"]}
 
 @app.post("/oficios")
-def crear_oficio(user=Depends(require_permission("godin.oficios.create"))):
+async def crear_oficio(user=Depends(require_permission("godin.oficios.create"))):
     return {"message": "Oficio creado", "user": user["email"]}
 ```
 
-`require_permission` valida la firma del token y consulta en tiempo real
+`get_current_user` y `require_permission` son **async**. `require_permission`
+verifica la firma del token (RS256/JWKS) y consulta en tiempo real
 `GET /api/v1/me/permissions?application=<code>` de Minerva (con caché en
-memoria). Si el usuario no tiene el permiso, responde `403`.
+memoria). Si el usuario no tiene el permiso, responde `403`. Si el token fue
+revocado, Minerva responde `401` y el SDK lo propaga.
 
 ## Migración a Minerva Central
 
-Solo cambian las variables de entorno:
+Solo cambia la URL; el JWKS y los endpoints se descubren solos:
 
 ```env
 MINERVA_ISSUER_URL=https://minerva.iieg.gob.mx
 MINERVA_APPLICATION_CODE=godin
-# y, en producción, el mecanismo de validación de firma (clave pública / JWKS)
 ```
