@@ -57,6 +57,14 @@ class ApplicationService:
         result.client_secret_hash = raw_secret
         return result
 
+    def delete_application(self, app_id: str) -> None:
+        """Elimina la aplicación y todo lo derivado de ella (permisos, roles,
+        redirect URIs y asignaciones). Operación destructiva e irreversible."""
+        app = self.repo.get_by_id(app_id)
+        if not app:
+            raise NotFoundError(detail="Aplicación no encontrada")
+        self.repo.delete(app)
+
     def regenerate_secret(self, app_id: str) -> ApplicationWithSecrets:
         """Genera un nuevo client_secret para la aplicación y lo devuelve una sola vez.
 
