@@ -16,6 +16,8 @@ class AuthTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    id_token: str | None = None  # OIDC: identidad del usuario (solo con scope openid)
+    scope: str | None = None
 
 
 class TokenExchange(BaseModel):

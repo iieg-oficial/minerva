@@ -5,12 +5,19 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
-from app.core.security import create_access_token, verify_pkce, verify_secret
+from app.core.security import (
+    create_access_token,
+    create_access_token_rs256,
+    create_id_token,
+    verify_pkce,
+    verify_secret,
+)
 from app.modules.applications.repository import ApplicationRepository
 from app.modules.applications.service import ApplicationService
 from app.modules.auth.repository import AuthCodeRepository
 from app.modules.auth.schemas import AuthRegister
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
+from app.modules.oidc.service import OIDCService
 from app.modules.permissions.repository import RolePermissionRepository
 from app.modules.users.repository import UserRepository
 from app.modules.users.service import UserService
@@ -26,6 +33,7 @@ class AuthService:
         self.auth_code_repo = AuthCodeRepository(session)
         self.app_service = ApplicationService(session)
         self.app_repo = ApplicationRepository(session)
+        self.oidc_service = OIDCService(session)
         self.user_role_repo = UserRoleRepository(session)
         self.group_user_repo = GroupUserRepository(session)
         self.group_role_repo = GroupRoleRepository(session)
@@ -178,15 +186,58 @@ class AuthService:
         self.auth_code_repo.mark_used(auth_code)
 
         all_perms, all_role_slugs = self._get_user_permissions(user.id, app.slug)
-        token = create_access_token(
-            user_id=user.id,
-            email=user.email,
-            name=user.full_name,
-            application_slug=app.slug,
-            roles=all_role_slugs,
-            permissions=all_perms,
-        )
-        return {"access_token": token, "token_type": "bearer", "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60}
+        scope = auth_code.scope or ""
+        wants_openid = "openid" in scope.split()
+
+        # El access token honra MINERVA_SIGNING_ALG (RS256 con JWKS o HS256 en
+        # transición). El id_token es OIDC puro y SIEMPRE va firmado con RS256,
+        # porque solo tiene sentido verificarlo contra el JWKS.
+        if settings.MINERVA_SIGNING_ALG == "RS256" or wants_openid:
+            kid, private_pem = self.oidc_service.get_active_private_pem()
+
+        if settings.MINERVA_SIGNING_ALG == "RS256":
+            access_token = create_access_token_rs256(
+                user_id=user.id,
+                email=user.email,
+                name=user.full_name,
+                kid=kid,
+                private_key_pem=private_pem,
+                application_slug=app.slug,
+                roles=all_role_slugs,
+                permissions=all_perms,
+            )
+        else:
+            access_token = create_access_token(
+                user_id=user.id,
+                email=user.email,
+                name=user.full_name,
+                application_slug=app.slug,
+                roles=all_role_slugs,
+                permissions=all_perms,
+            )
+
+        result = {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": settings.effective_token_expire_minutes * 60,
+            "scope": scope or None,
+        }
+
+        if wants_openid:
+            # aud del id_token = client_id (distinto del access token, cuyo aud es
+            # el slug de la app). Lleva nonce y auth_time capturados en /authorize.
+            result["id_token"] = create_id_token(
+                user_id=user.id,
+                email=user.email,
+                name=user.full_name,
+                client_id=client_id,
+                kid=kid,
+                private_key_pem=private_pem,
+                nonce=auth_code.nonce,
+                auth_time=auth_code.auth_time,
+            )
+
+        return result
 
     def _get_user_permissions(self, user_id: str, app_slug: str) -> tuple[list[str], list[str]]:
         direct_roles = self.user_role_repo.list_roles_for_user(user_id)
