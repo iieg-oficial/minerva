@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
-from app.modules.auth.models import AuthCode
+from app.modules.auth.models import AuthCode, RefreshToken
 
 
 class AuthCodeRepository:
@@ -46,3 +46,59 @@ class AuthCodeRepository:
         auth_code.used = True
         self.session.add(auth_code)
         self.session.commit()
+
+
+class RefreshTokenRepository:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def create(
+        self,
+        token_hash: str,
+        family_id: str,
+        user_id: str,
+        client_id: str,
+        scope: str | None,
+        access_jti: str | None,
+        ttl_days: int,
+    ) -> RefreshToken:
+        refresh = RefreshToken(
+            token_hash=token_hash,
+            family_id=family_id,
+            user_id=user_id,
+            client_id=client_id,
+            scope=scope,
+            access_jti=access_jti,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=ttl_days),
+        )
+        self.session.add(refresh)
+        self.session.commit()
+        self.session.refresh(refresh)
+        return refresh
+
+    def get_by_hash(self, token_hash: str) -> RefreshToken | None:
+        return self.session.exec(select(RefreshToken).where(RefreshToken.token_hash == token_hash)).first()
+
+    def mark_rotated(self, refresh: RefreshToken) -> None:
+        refresh.status = "rotated"
+        self.session.add(refresh)
+        self.session.commit()
+
+    def revoke(self, refresh: RefreshToken) -> None:
+        refresh.status = "revoked"
+        self.session.add(refresh)
+        self.session.commit()
+
+    def revoke_family(self, family_id: str) -> list[str]:
+        """Revoca toda la familia (detección de reúso). Devuelve los access_jti
+        afectados para poder ponerlos en la blacklist."""
+        members = list(self.session.exec(select(RefreshToken).where(RefreshToken.family_id == family_id)).all())
+        jtis: list[str] = []
+        for member in members:
+            if member.status != "revoked":
+                member.status = "revoked"
+                self.session.add(member)
+            if member.access_jti:
+                jtis.append(member.access_jti)
+        self.session.commit()
+        return jtis

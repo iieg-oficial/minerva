@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     # OBLIGATORIA en producción. En dev, si está vacía, se deriva una clave estable
     # del secreto JWT (no apta para producción). Generar con: Fernet.generate_key().
     MINERVA_KEY_ENCRYPTION_KEY: str = ""
+    # TTL de los tokens emitidos por el canje OIDC (/auth/token). Se mantienen
+    # SEPARADOS del TTL de la sesión interna del panel (effective_token_expire_minutes)
+    # para poder tener access tokens cortos sin forzar re-login del panel admin.
+    # access token corto + refresh token = ciclo de vida estándar OIDC.
+    MINERVA_ACCESS_TOKEN_TTL_MINUTES: int = 15
+    MINERVA_REFRESH_TOKEN_TTL_DAYS: int = 30
 
     # --- Redis -------------------------------------------------------------
     # Redis tiene un alcance acotado: rate limiting, blacklist de tokens y
