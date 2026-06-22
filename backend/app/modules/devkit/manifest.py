@@ -3,7 +3,7 @@
 Lee archivos `manifest.minerva.yml` y hace upsert de aplicación, permisos,
 roles, relación rol-permiso y un registro de importación.
 
-Reglas de validación (ver `docs/minerva-dev-kit-context.md`, secciones 8 y 9):
+Reglas de validación (ver `docs/integracion.md`, sección 2):
   * `application.code` debe existir.
   * Los permisos deben seguir la convención `{application_code}.{resource}.{action}`.
   * Los roles no pueden referenciar permisos inexistentes en el manifiesto.

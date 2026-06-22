@@ -22,8 +22,9 @@ al usuario, valida sus permisos y devuelve un **JWT**.
 - Convención de permisos: `{application_code}.{resource}.{action}`
   (acciones: `view, create, update, delete, assign, approve, authorize, export, import, manage`).
 
-Fuentes de verdad del producto: `docs/minerva-dev-kit-context.md` (visión/arquitectura),
-`docs/minerva-dev-kit.md` (guía de uso) y `docs/oidc-integracion.md` (integración OIDC).
+Fuentes de verdad del producto: `docs/arquitectura.md` (visión/arquitectura, con
+diagramas), `docs/glosario.md` (terminología OIDC/OAuth), `docs/despliegue.md` (Dev/Prod
++ mantenimiento) y `docs/integracion.md` (integración de sistemas consumidores).
 Los markdown de pasos futuros/roadmap son internos y **no** se trackean en el repo.
 
 ## Mapa del monorepo
