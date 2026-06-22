@@ -13,6 +13,7 @@ class OpenIDConfiguration(BaseModel):
     issuer: str
     authorization_endpoint: str
     token_endpoint: str
+    userinfo_endpoint: str
     jwks_uri: str
     response_types_supported: list[str]
     grant_types_supported: list[str]

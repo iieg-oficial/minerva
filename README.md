@@ -31,7 +31,7 @@ Minerva funciona como el sistema central de identidad y acceso del instituto, si
 | Capa | Tecnología |
 |---|---|
 | Backend | Python 3.12, FastAPI, SQLModel, Alembic, PostgreSQL |
-| Auth | JWT (HS256), Passlib + bcrypt, Authlib (Google OAuth) |
+| Auth | OIDC (Authorization Code + PKCE), JWT RS256/JWKS, bcrypt |
 | Frontend | React 19, Ant Design 6, Vite |
 | Infra | Docker, Docker Compose, Nginx |
 | Calidad | Ruff, Pytest |
@@ -75,9 +75,10 @@ Modifica estos valores en el `.env` con `ADMIN_EMAIL` y `ADMIN_PASSWORD`.
 | `APP_ENV` | Entorno (development / production) | development |
 | `APP_DEBUG` | Modo debug | true |
 | `DATABASE_URL` | URL de conexión a PostgreSQL | postgresql+psycopg://minerva:minerva@postgres:5432/minerva |
-| `JWT_SECRET_KEY` | Clave secreta para firmar JWT | (cambiar en producción) |
-| `JWT_ALGORITHM` | Algoritmo JWT | HS256 |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Expiración del token (minutos) | 480 |
+| `JWT_SECRET_KEY` | Base para derivar la clave de cifrado en reposo en dev (la firma de tokens es RS256, no usa este secreto) | (cambiar en producción) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Expiración del token de sesión interna del panel (minutos) | 480 |
+| `MINERVA_ACCESS_TOKEN_TTL_MINUTES` | Expiración del access token emitido por el canje OIDC (minutos) | 15 |
+| `MINERVA_KEY_ENCRYPTION_KEY` | Clave Fernet para cifrar la clave privada RSA en reposo (obligatoria en producción) | (vacío en dev) |
 | `GOOGLE_CLIENT_ID` | Client ID de Google OAuth | (vacío) |
 | `GOOGLE_CLIENT_SECRET` | Client Secret de Google OAuth | (vacío) |
 | `GOOGLE_REDIRECT_URI` | URI de callback para Google OAuth | http://localhost:8000/auth/google/callback |
@@ -102,10 +103,14 @@ Modifica estos valores en el `.env` con `ADMIN_EMAIL` y `ADMIN_PASSWORD`.
 | `GET` | `/auth/me` | Obtener usuario actual con roles y permisos |
 | `GET` | `/auth/google/login` | Iniciar login con Google |
 | `GET` | `/auth/google/callback` | Callback de Google OAuth |
-| `GET` | `/auth/authorize` | Endpoint de autorización OAuth2 (redirect) |
+| `GET` | `/auth/authorize` | Endpoint de autorización OIDC (redirect; soporta `prompt`/`max_age`) |
 | `GET` | `/auth/authorize/url` | Variante JSON de `/auth/authorize` (devuelve la URL de redirección; la usa el frontend SPA) |
-| `POST` | `/auth/token` | Intercambiar código por token |
-| `POST` | `/auth/refresh` | Refrescar token JWT |
+| `POST` | `/auth/token` | Intercambiar código por tokens (`authorization_code`/`refresh_token`; PKCE obligatorio para clientes públicos) |
+| `POST` | `/auth/revoke` | Revocar un refresh token y su familia (RFC 7009) |
+| `POST` | `/auth/refresh` | Refrescar el token de sesión interna del panel |
+| `GET` | `/userinfo` | Claims de identidad filtrados por scope (OIDC Core 5.3, Bearer, CORS abierto) |
+| `GET` | `/.well-known/openid-configuration` | Discovery OIDC |
+| `GET` | `/.well-known/jwks.json` | Claves públicas RS256 (JWKS) |
 
 ### Users
 
@@ -122,7 +127,7 @@ Modifica estos valores en el `.env` con `ADMIN_EMAIL` y `ADMIN_PASSWORD`.
 | Método | Ruta | Descripción |
 |---|---|---|
 | `GET` | `/applications` | Listar aplicaciones |
-| `POST` | `/applications` | Crear aplicación (genera client_id y client_secret) |
+| `POST` | `/applications` | Crear aplicación (genera client_id y client_secret; `is_public: true` registra un cliente público sin secret) |
 | `GET` | `/applications/{app_id}` | Obtener aplicación |
 | `PATCH` | `/applications/{app_id}` | Actualizar aplicación |
 | `POST` | `/applications/{app_id}/redirect-uris` | Agregar redirect URI |
@@ -297,6 +302,11 @@ minerva/
         auth.js                 # Auth API calls
       features/auth/pages/
         LoginPage.jsx           # Login institucional
+        AuthorizePage.jsx       # Punto de entrada OIDC para sistemas consumidores
+  examples/
+    godin-consumer/             # Ejemplo de integración con el SDK (cliente público, PKCE)
+  sdk/
+    minerva_sdk/                # SDK para sistemas consumidores (get_current_user, require_permission)
 ```
 
 ## Pruebas
@@ -311,12 +321,20 @@ pytest tests/ -v
 
 ### MVP vs producción
 
-- **Refresh tokens**: El endpoint `/auth/refresh` extiende la sesión con un nuevo JWT, pero no implementa refresh token separado. **TODO**: Implementar refresh tokens con rotación.
-- **Google OAuth**: Los endpoints `/auth/google/login` y `/auth/google/callback` están preparados pero requieren configuración de `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`. **TODO**: Completar integración con Authlib para intercambio de tokens.
-- **OAuth2/OpenID Connect**: El flujo `/authorize` y `/token` es una implementación simplificada. **TODO**: Evolucionar hacia un flujo completo compatible con OAuth2/OpenID Connect.
-- **Sesiones**: Los JWT son stateless (no hay tabla de sesiones activas). Para blacklisting de tokens se necesitaría una tabla de tokens revocados.
-- **Roles por aplicación**: Los roles y permisos están asociados a una aplicación específica.
-- **Grupos**: Los usuarios heredan roles de los grupos a los que pertenecen. Los roles directos + roles de grupo se combinan para calcular permisos efectivos.
+- **OIDC**: el flujo `/authorize` + `/token` es un proveedor OIDC conforme
+  (Authorization Code + PKCE, discovery, JWKS, `/userinfo`, clientes públicos,
+  `prompt`/`max_age`, refresh con rotación y revocación) — ver
+  [`docs/oidc-integracion.md`](docs/oidc-integracion.md).
+- **Google OAuth**: los endpoints `/auth/google/login` y `/auth/google/callback`
+  están preparados pero requieren configuración de `GOOGLE_CLIENT_ID` y
+  `GOOGLE_CLIENT_SECRET`. **TODO**: completar integración con Authlib para el
+  intercambio de tokens (se rastrea en un issue aparte).
+- **Sesiones**: la blacklist de access tokens revocados vive en Redis (`jti`),
+  con alcance acotado (rate limiting, blacklist, no es fuente de verdad).
+- **Roles por aplicación**: los roles y permisos están asociados a una aplicación específica.
+- **Grupos**: los usuarios heredan roles de los grupos a los que pertenecen. Los roles directos + roles de grupo se combinan para calcular permisos efectivos.
+- **Endurecimiento de producción** (TLS, secret manager, runbook de rotación de
+  claves, observabilidad, backups): pendiente, ver `docs/oidc-pendiente.md` sección 3.
 
 ## Licencia
 

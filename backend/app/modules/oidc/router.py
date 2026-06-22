@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
 from app.core.config import settings
+from app.core.dependencies.auth import get_current_user
 from app.core.dependencies.db import get_db
 from app.modules.oidc.schemas import JWKS, OpenIDConfiguration
 from app.modules.oidc.service import OIDCService
@@ -31,13 +32,14 @@ def _build_discovery() -> OpenIDConfiguration:
         issuer=issuer,
         authorization_endpoint=f"{issuer}/auth/authorize",
         token_endpoint=f"{issuer}/auth/token",
+        userinfo_endpoint=f"{issuer}/userinfo",
         jwks_uri=f"{issuer}/.well-known/jwks.json",
         response_types_supported=["code"],
         grant_types_supported=["authorization_code", "refresh_token"],
         subject_types_supported=["public"],
         id_token_signing_alg_values_supported=["RS256"],
         scopes_supported=["openid", "profile", "email"],
-        token_endpoint_auth_methods_supported=["client_secret_post"],
+        token_endpoint_auth_methods_supported=["client_secret_post", "none"],
         code_challenge_methods_supported=["S256"],
         claims_supported=["sub", "iss", "aud", "exp", "iat", "email", "name", "roles", "permissions"],
     )
@@ -71,3 +73,48 @@ def openid_configuration() -> OpenIDConfiguration:
 def jwks(service: OIDCService = Depends(get_oidc_service)) -> JWKS:
     """JWKS: claves públicas para que los consumidores verifiquen la firma RS256."""
     return JWKS(**service.build_jwks())
+
+
+# Sub-app dedicada a `/userinfo` (OIDC Core 5.3), con el mismo CORS abierto que
+# `wellknown_app` por la misma razón: el Bearer viaja en el header `Authorization`
+# (no en cookies), así que `allow_credentials=False` no limita a ningún consumidor
+# legítimo. Vive fuera de `/.well-known` porque por convención OIDC `userinfo_endpoint`
+# cuelga de la raíz del issuer, no del path de discovery.
+userinfo_app = FastAPI(
+    title="Minerva UserInfo",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+
+userinfo_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
+
+
+def _userinfo_claims(payload: dict) -> dict:
+    """Filtra los claims de identidad del access token por el `scope` con el que
+    se emitió (OIDC Core 5.4). El access token ya lleva `name`/`email`/
+    `email_verified` calculados al emitirse (ver `AuthService._issue_tokens`), así
+    que no hace falta volver a consultar la BD."""
+    scopes = set(payload.get("scope", "").split())
+    claims = {"sub": payload["sub"]}
+    if "profile" in scopes:
+        claims["name"] = payload.get("name")
+        claims["preferred_username"] = payload.get("email")
+    if "email" in scopes:
+        claims["email"] = payload.get("email")
+        claims["email_verified"] = payload.get("email_verified", False)
+    return claims
+
+
+@userinfo_app.get("")
+@userinfo_app.get("/")
+def userinfo(current_user: dict = Depends(get_current_user)) -> dict:
+    """OIDC UserInfo (Core 5.3): claims de identidad filtrados por el scope del
+    access token presentado como Bearer."""
+    return _userinfo_claims(current_user)

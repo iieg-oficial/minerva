@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Typography, Space, Tag, App, Alert, Divider } from 'antd';
-import { PlusOutlined, EditOutlined, LinkOutlined, ReloadOutlined, KeyOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, LinkOutlined, ReloadOutlined, KeyOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons';
 import * as appsAPI from '@/api/applications';
 import ManifestUploadButton from '@features/admin/components/ManifestUploadButton';
 
@@ -19,7 +19,7 @@ export default function ApplicationsPage() {
     const [form] = Form.useForm();
     const [editForm] = Form.useForm();
     const [uriForm] = Form.useForm();
-    const { message } = App.useApp();
+    const { message, modal } = App.useApp();
 
     const fetchApps = useCallback(async () => {
         setLoading(true);
@@ -39,7 +39,7 @@ export default function ApplicationsPage() {
     // El client_secret solo viaja en la respuesta de creación/regeneración y no
     // se vuelve a poder consultar: hay que mostrarlo aquí para que el admin lo copie.
     const showCredentials = (result, { isNew }) => {
-        Modal.success({
+        modal.success({
             title: isNew ? 'Aplicación creada' : 'Nuevo client secret generado',
             width: 540,
             content: (
@@ -64,21 +64,50 @@ export default function ApplicationsPage() {
         });
     };
 
+    // Al importar un manifiesto que crea la aplicación, el backend devuelve el
+    // client_secret una sola vez: lo mostramos igual que en el alta manual.
+    const handleManifestImported = (res) => {
+        fetchApps();
+        if (res?.client_secret) {
+            showCredentials({ client_id: res.client_id, client_secret_hash: res.client_secret }, { isNew: true });
+        }
+    };
+
     const handleCreate = async (values) => {
         try {
             const result = await appsAPI.createApplication(values);
-            message.success('Aplicación creada');
-            showCredentials(result, { isNew: true });
             setModalOpen(false);
             form.resetFields();
             fetchApps();
+            message.success('Aplicación creada');
+            showCredentials(result, { isNew: true });
         } catch (err) {
             message.error(err.response?.data?.detail || 'Error al crear aplicación');
         }
     };
 
+    const handleDelete = (record) => {
+        modal.confirm({
+            title: `¿Eliminar la aplicación "${record.name}"?`,
+            width: 520,
+            content: 'Se eliminarán también sus permisos, roles, redirect URIs y las asignaciones de esos roles a usuarios y grupos. Esta acción no se puede deshacer.',
+            okText: 'Eliminar',
+            okButtonProps: { danger: true },
+            cancelText: 'Cancelar',
+            onOk: async () => {
+                try {
+                    await appsAPI.deleteApplication(record.id);
+                    message.success('Aplicación eliminada');
+                    fetchApps();
+                } catch (err) {
+                    message.error(err.response?.data?.detail || 'Error al eliminar la aplicación');
+                }
+            },
+        });
+    };
+
     const handleRegenerateSecret = (record) => {
-        Modal.confirm({
+        modal.confirm({
             title: `¿Regenerar el client secret de "${record.name}"?`,
             content: 'El secret anterior dejará de funcionar. El client_id no cambia; deberás actualizar el sistema consumidor con el nuevo secret.',
             okText: 'Regenerar',
@@ -147,12 +176,21 @@ export default function ApplicationsPage() {
             render: (v) => <Tag color={v === 'active' ? 'green' : 'default'}>{v}</Tag>,
         },
         {
-            title: '', key: 'actions', width: 130,
+            title: '', key: 'actions', width: 190,
             render: (_, record) => (
-                <Space>
+                <Space size={0}>
                     <Button type="text" size="small" icon={<LinkOutlined />} title="Redirect URIs" onClick={() => handleUriOpen(record)} />
+                    <ManifestUploadButton
+                        appId={record.id}
+                        type="text"
+                        size="small"
+                        icon={<UploadOutlined />}
+                        title="Actualizar manifiesto"
+                        onImported={fetchApps}
+                    >{null}</ManifestUploadButton>
                     <Button type="text" size="small" icon={<KeyOutlined />} title="Regenerar client secret" onClick={() => handleRegenerateSecret(record)} />
                     <Button type="text" size="small" icon={<EditOutlined />} title="Editar" onClick={() => handleEdit(record)} />
+                    <Button type="text" size="small" danger icon={<DeleteOutlined />} title="Eliminar" onClick={() => handleDelete(record)} />
                 </Space>
             ),
         },
@@ -164,7 +202,7 @@ export default function ApplicationsPage() {
                 <Title level={4} style={{ margin: 0 }}>Aplicaciones</Title>
                 <Space>
                     <Button icon={<ReloadOutlined />} onClick={fetchApps}>Actualizar</Button>
-                    <ManifestUploadButton onImported={fetchApps} />
+                    <ManifestUploadButton onImported={handleManifestImported} />
                     <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingApp(null); form.resetFields(); setModalOpen(true); }}>
                         Nueva aplicación
                     </Button>
@@ -194,7 +232,7 @@ export default function ApplicationsPage() {
                         description={
                             <Space direction="vertical" size={8}>
                                 <span>Puedes dar de alta la aplicación junto con sus permisos y roles subiendo su manifest.minerva.yml.</span>
-                                <ManifestUploadButton onImported={() => { setModalOpen(false); fetchApps(); }}>
+                                <ManifestUploadButton onImported={(res) => { setModalOpen(false); handleManifestImported(res); }}>
                                     Crear desde manifiesto
                                 </ManifestUploadButton>
                             </Space>

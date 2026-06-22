@@ -37,7 +37,7 @@ def ctx():
 
 def _tokens(client, ctx: dict) -> dict:
     with Session(test_engine) as session:
-        url = AuthService(session).authorize(ctx["client_id"], REDIRECT_URI, ctx["user_id"], "s", "openid")
+        url, _ = AuthService(session).authorize(ctx["client_id"], REDIRECT_URI, ctx["user_id"], "s", "openid")
     code = url.split("code=")[1].split("&")[0]
     resp = client.post(
         "/auth/token",

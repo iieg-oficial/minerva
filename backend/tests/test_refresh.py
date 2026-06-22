@@ -40,7 +40,7 @@ def app_ctx():
 def _initial_tokens(client, ctx: dict) -> dict:
     """Recorre code -> token y devuelve el cuerpo (con refresh_token)."""
     with Session(test_engine) as session:
-        url = AuthService(session).authorize(ctx["client_id"], REDIRECT_URI, ctx["user_id"], "s", "openid profile")
+        url, _ = AuthService(session).authorize(ctx["client_id"], REDIRECT_URI, ctx["user_id"], "s", "openid profile")
     code = url.split("code=")[1].split("&")[0]
     resp = client.post(
         "/auth/token",

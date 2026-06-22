@@ -61,7 +61,7 @@ def test_pkce_happy_path(seeded):
     challenge = _challenge(RFC_VERIFIER)
     with Session(test_engine) as session:
         svc = AuthService(session)
-        url = svc.authorize(
+        url, _ = svc.authorize(
             seeded["client_id"],
             REDIRECT_URI,
             seeded["user_id"],
@@ -70,7 +70,7 @@ def test_pkce_happy_path(seeded):
             code_challenge=challenge,
             code_challenge_method="S256",
         )
-        result = svc.exchange_token(seeded["client_id"], CLIENT_SECRET, _code_from_url(url), REDIRECT_URI, RFC_VERIFIER)
+        result = svc.exchange_token(seeded["client_id"], _code_from_url(url), REDIRECT_URI, CLIENT_SECRET, RFC_VERIFIER)
     assert "access_token" in result
 
 
@@ -78,22 +78,22 @@ def test_pkce_wrong_verifier_rejected(seeded):
     challenge = _challenge(RFC_VERIFIER)
     with Session(test_engine) as session:
         svc = AuthService(session)
-        url = svc.authorize(
+        url, _ = svc.authorize(
             seeded["client_id"], REDIRECT_URI, seeded["user_id"], "s", "openid", code_challenge=challenge
         )
         with pytest.raises(BadRequestError):
-            svc.exchange_token(seeded["client_id"], CLIENT_SECRET, _code_from_url(url), REDIRECT_URI, "otro-verifier")
+            svc.exchange_token(seeded["client_id"], _code_from_url(url), REDIRECT_URI, CLIENT_SECRET, "otro-verifier")
 
 
 def test_pkce_missing_verifier_rejected(seeded):
     challenge = _challenge(RFC_VERIFIER)
     with Session(test_engine) as session:
         svc = AuthService(session)
-        url = svc.authorize(
+        url, _ = svc.authorize(
             seeded["client_id"], REDIRECT_URI, seeded["user_id"], "s", "openid", code_challenge=challenge
         )
         with pytest.raises(BadRequestError):
-            svc.exchange_token(seeded["client_id"], CLIENT_SECRET, _code_from_url(url), REDIRECT_URI, None)
+            svc.exchange_token(seeded["client_id"], _code_from_url(url), REDIRECT_URI, CLIENT_SECRET, None)
 
 
 def test_authorize_rejects_plain_method(seeded):
@@ -115,16 +115,16 @@ def test_confidential_client_without_pkce_still_works(seeded):
     """Compatibilidad: un cliente confidencial sin challenge no necesita verifier."""
     with Session(test_engine) as session:
         svc = AuthService(session)
-        url = svc.authorize(seeded["client_id"], REDIRECT_URI, seeded["user_id"], "s", "openid")
-        result = svc.exchange_token(seeded["client_id"], CLIENT_SECRET, _code_from_url(url), REDIRECT_URI)
+        url, _ = svc.authorize(seeded["client_id"], REDIRECT_URI, seeded["user_id"], "s", "openid")
+        result = svc.exchange_token(seeded["client_id"], _code_from_url(url), REDIRECT_URI, CLIENT_SECRET)
     assert "access_token" in result
 
 
 def test_exchange_rejects_redirect_uri_mismatch(seeded):
     with Session(test_engine) as session:
         svc = AuthService(session)
-        url = svc.authorize(seeded["client_id"], REDIRECT_URI, seeded["user_id"], "s", "openid")
+        url, _ = svc.authorize(seeded["client_id"], REDIRECT_URI, seeded["user_id"], "s", "openid")
         with pytest.raises(BadRequestError):
             svc.exchange_token(
-                seeded["client_id"], CLIENT_SECRET, _code_from_url(url), "https://malicioso.example.com/callback"
+                seeded["client_id"], _code_from_url(url), "https://malicioso.example.com/callback", CLIENT_SECRET
             )
