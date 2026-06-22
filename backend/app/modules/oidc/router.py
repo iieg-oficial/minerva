@@ -33,11 +33,12 @@ def _build_discovery() -> OpenIDConfiguration:
         token_endpoint=f"{issuer}/auth/token",
         jwks_uri=f"{issuer}/.well-known/jwks.json",
         response_types_supported=["code"],
-        grant_types_supported=["authorization_code"],
+        grant_types_supported=["authorization_code", "refresh_token"],
         subject_types_supported=["public"],
         id_token_signing_alg_values_supported=["RS256"],
         scopes_supported=["openid", "profile", "email"],
         token_endpoint_auth_methods_supported=["client_secret_post"],
+        code_challenge_methods_supported=["S256"],
         claims_supported=["sub", "iss", "aud", "exp", "iat", "email", "name", "roles", "permissions"],
     )
 
