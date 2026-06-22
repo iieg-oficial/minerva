@@ -22,12 +22,19 @@ salvo `MINERVA_ISSUER_URL`.
 | `/auth/authorize` | GET | Inicia el flujo; devuelve un `code` |
 | `/auth/token` | POST (form-urlencoded o JSON) | Canjea `code` → tokens; y `grant_type=refresh_token` |
 | `/auth/revoke` | POST | Revoca un refresh token y su familia (RFC 7009) |
+| `/userinfo` | GET (Bearer, CORS abierto) | Claims de identidad filtrados por el scope del access token (OIDC Core 5.3) |
 | `/api/v1/me/permissions?application=<code>` | GET (Bearer) | Permisos del usuario para tu app (lo usa el SDK) |
 
 El discovery anuncia: `response_types=["code"]`,
 `grant_types=["authorization_code","refresh_token"]`,
 `id_token_signing_alg=["RS256"]`, `code_challenge_methods=["S256"]`,
-`scopes=["openid","profile","email"]`.
+`scopes=["openid","profile","email"]`,
+`token_endpoint_auth_methods=["client_secret_post","none"]` (`"none"` para
+clientes públicos, ver sección 5.1).
+
+`/authorize` acepta además `prompt` (`none`/`login`) y `max_age` (segundos desde
+el último login) según OIDC Core 3.1.2.1. Sin sesión y sin `prompt=none`,
+redirige a la página de login de Minerva y retoma el flujo tras autenticar.
 
 ---
 
@@ -146,6 +153,12 @@ Necesitas un `client_id` y un `client_secret`:
 > Si Minerva **auto-importa** el manifiesto al arrancar, la app se crea con un secret
 > aleatorio que no se muestra: usa *Regenerar client secret* en el panel.
 
+**Clientes públicos** (SPA/móvil sin backend que pueda guardar un secret): registra
+la app con `"is_public": true` en el `POST /applications` — no se genera
+`client_secret` (queda `null`), y el canje (`/auth/token`) exige PKCE en su lugar
+(sin `client_secret` en el body). Ver `examples/godin-consumer/` para un ejemplo
+end-to-end de esta variante.
+
 ### 5.2 Declarar permisos y roles (manifiesto)
 
 El `manifest.minerva.yml` declara la aplicación, sus **permisos** y sus **roles**:
@@ -250,3 +263,5 @@ Si tu sistema usaba el flujo previo con `MINERVA_JWT_SECRET` (HS256):
       **sin** `MINERVA_JWT_SECRET`.
 - [ ] Endpoints protegidos con `require_permission("<app>.<recurso>.<accion>")`.
 - [ ] Logout que cierra también la sesión en Minerva (single logout).
+
+Ejemplo completo de referencia: `examples/godin-consumer/`.

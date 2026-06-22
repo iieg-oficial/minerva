@@ -1,4 +1,4 @@
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -6,7 +6,7 @@ from redis.asyncio import Redis
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.core.dependencies.auth import get_current_user
+from app.core.dependencies.auth import get_current_user, get_optional_user
 from app.core.dependencies.db import get_db
 from app.core.exceptions import BadRequestError
 from app.core.rate_limit import enforce_rate_limit
@@ -17,6 +17,14 @@ from app.modules.auth.schemas import AuthLogin, AuthRegister, AuthTokenResponse
 from app.modules.auth.service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+def _login_redirect_url(request: Request) -> str:
+    """URL de login con `next=` apuntando al `/authorize` original. Reutiliza el
+    patrón `next=` que ya soporta el frontend (`LoginPage.jsx`/`AuthorizePage.jsx`)
+    para retomar el flujo tras autenticar — sin sesión nueva en Redis."""
+    next_path = f"/authorize?{request.url.query}"
+    return f"{settings.FRONTEND_URL}/login?next={quote(next_path, safe='')}"
 
 
 def get_auth_service(session: Session = Depends(get_db)) -> AuthService:
@@ -127,17 +135,32 @@ async def authorize(
     code_challenge: str | None = Query(None),
     code_challenge_method: str | None = Query(None),
     nonce: str | None = Query(None),
+    prompt: str | None = Query(None),
+    max_age: int | None = Query(None),
     service: AuthService = Depends(get_auth_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
     redis: Redis = Depends(get_redis),
 ):
+    """Inicia el flujo `/authorize`. Modo A: SPA con Bearer ya presente. Modo B:
+    un sistema externo redirige aquí el navegador SIN Bearer (no hay JS de por
+    medio) — sin sesión, se redirige a login y se retoma con `?next=` tras
+    autenticar (mismo patrón que ya usa `AuthorizePage.jsx`)."""
     await enforce_rate_limit(
         redis,
         f"minerva:rl:authorize:{request.client.host}",
         settings.RATE_LIMIT_AUTHORIZE_MAX,
         settings.RATE_LIMIT_AUTHORIZE_WINDOW,
     )
-    redirect_url = service.authorize(
+    # Valida client_id/redirect_uri ANTES de cualquier redirect (incluso sin
+    # sesión): nunca se redirige a un destino no confiable (evita open redirect).
+    service.validate_client_and_redirect(client_id, redirect_uri)
+
+    if current_user is None:
+        if prompt == "none":
+            return RedirectResponse(f"{redirect_uri}?error=login_required&state={state}")
+        return RedirectResponse(_login_redirect_url(request))
+
+    redirect_url, reauth_reason = service.authorize(
         client_id,
         redirect_uri,
         current_user["sub"],
@@ -146,7 +169,14 @@ async def authorize(
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
         nonce=nonce,
+        prompt=prompt,
+        max_age=max_age,
     )
+    if reauth_reason is not None:
+        if prompt == "none":
+            return RedirectResponse(f"{redirect_uri}?error=login_required&state={state}")
+        return RedirectResponse(_login_redirect_url(request))
+    assert redirect_url is not None  # garantizado: solo es None junto con reauth_reason
     return RedirectResponse(redirect_url)
 
 
@@ -161,6 +191,8 @@ async def authorize_url(
     code_challenge: str | None = Query(None),
     code_challenge_method: str | None = Query(None),
     nonce: str | None = Query(None),
+    prompt: str | None = Query(None),
+    max_age: int | None = Query(None),
     service: AuthService = Depends(get_auth_service),
     current_user: dict = Depends(get_current_user),
     redis: Redis = Depends(get_redis),
@@ -169,7 +201,8 @@ async def authorize_url(
 
     Devuelve la URL de redirección (con el `code`) en lugar de un RedirectResponse,
     porque un SPA no puede leer el header `Location` de un redirect cross-origin.
-    El frontend hace `window.location` con esta URL.
+    El frontend hace `window.location` con esta URL. Es Modo A puro: la SPA ya
+    garantiza Bearer antes de llamar aquí (sigue exigiéndolo, no usa `get_optional_user`).
     """
     await enforce_rate_limit(
         redis,
@@ -177,7 +210,7 @@ async def authorize_url(
         settings.RATE_LIMIT_AUTHORIZE_MAX,
         settings.RATE_LIMIT_AUTHORIZE_WINDOW,
     )
-    redirect_url = service.authorize(
+    redirect_url, reauth_reason = service.authorize(
         client_id,
         redirect_uri,
         current_user["sub"],
@@ -186,7 +219,15 @@ async def authorize_url(
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
         nonce=nonce,
+        prompt=prompt,
+        max_age=max_age,
     )
+    if reauth_reason is not None:
+        if prompt == "none":
+            return {"redirect_url": f"{redirect_uri}?error=login_required&state={state}"}
+        # La SPA sigue esta URL igual que ya hace con la del code: reusa el mismo
+        # contrato de respuesta ({"redirect_url": ...}), sin cambios en el frontend.
+        return {"redirect_url": _login_redirect_url(request)}
     return {"redirect_url": redirect_url}
 
 
@@ -213,11 +254,11 @@ async def token_exchange(
 
     if grant_type == "refresh_token":
         client_id = body.get("client_id")
-        client_secret = body.get("client_secret")
+        client_secret = body.get("client_secret")  # opcional: ausente en clientes públicos
         refresh_token = body.get("refresh_token")
-        if not all([client_id, client_secret, refresh_token]):
+        if not client_id or not refresh_token:
             raise BadRequestError(detail="Faltan parámetros requeridos para refrescar el token")
-        result, revoked_jtis = service.rotate_refresh_token(client_id, client_secret, refresh_token)
+        result, revoked_jtis = service.rotate_refresh_token(client_id, refresh_token, client_secret=client_secret)
         for jti in revoked_jtis:
             await revoke_jti(redis, jti, settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60)
         audit.log("token_refresh_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
@@ -227,13 +268,15 @@ async def token_exchange(
         raise BadRequestError(detail="grant_type no soportado; use authorization_code o refresh_token")
 
     client_id = body.get("client_id")
-    client_secret = body.get("client_secret")
+    client_secret = body.get("client_secret")  # opcional: ausente en clientes públicos
     code = body.get("code")
     redirect_uri = body.get("redirect_uri")
-    if not all([client_id, client_secret, code, redirect_uri]):
+    if not all([client_id, code, redirect_uri]):
         raise BadRequestError(detail="Faltan parámetros requeridos para el canje del código")
 
-    result = service.exchange_token(client_id, client_secret, code, redirect_uri, body.get("code_verifier"))
+    result = service.exchange_token(
+        client_id, code, redirect_uri, client_secret=client_secret, code_verifier=body.get("code_verifier")
+    )
     audit.log("token_exchange_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
     return result
 
@@ -249,12 +292,12 @@ async def revoke_token(
     los access tokens asociados. Responde 200 aunque el token no exista."""
     body = await _read_token_request(request)
     client_id = body.get("client_id")
-    client_secret = body.get("client_secret")
+    client_secret = body.get("client_secret")  # opcional: ausente en clientes públicos
     token = body.get("token") or body.get("refresh_token")
-    if not all([client_id, client_secret, token]):
+    if not client_id or not token:
         raise BadRequestError(detail="Faltan parámetros requeridos para revocar el token")
 
-    revoked_jtis = service.revoke_refresh_token(client_id, client_secret, token)
+    revoked_jtis = service.revoke_refresh_token(client_id, token, client_secret=client_secret)
     for jti in revoked_jtis:
         await revoke_jti(redis, jti, settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60)
     audit.log("token_revoke", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))

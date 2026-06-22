@@ -19,7 +19,7 @@ from app.modules.applications.service import ApplicationService
 from app.modules.auth.repository import AuthCodeRepository, RefreshTokenRepository
 from app.modules.auth.schemas import AuthRegister
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
-from app.modules.oidc.service import OIDCService
+from app.modules.oidc.service import OIDCService, claims_for_scopes
 from app.modules.permissions.repository import RolePermissionRepository
 from app.modules.users.repository import UserRepository
 from app.modules.users.service import UserService
@@ -112,6 +112,32 @@ class AuthService:
             ],
         }
 
+    def validate_client_and_redirect(self, client_id: str, redirect_uri: str) -> None:
+        """Valida que la app exista, esté activa y que `redirect_uri` esté registrada.
+
+        Se extrae como método propio porque hay que llamarlo ANTES de decidir si
+        se redirige a login (Modo B, ver router): nunca se redirige a un destino
+        sin validar primero que sea uno legítimo (evita open redirect)."""
+        app = self.app_service.get_application_by_client_id(client_id)
+        if not app:
+            raise BadRequestError(detail="Aplicación no encontrada")
+        if app.status != "active":
+            raise ForbiddenError(detail="Aplicación inactiva")
+        if not self.app_service.validate_redirect_uri(client_id, redirect_uri):
+            raise BadRequestError(detail="redirect_uri no autorizada para esta aplicación")
+
+    def _requires_reauth(self, user, prompt: str | None, max_age: int | None) -> bool:
+        if prompt == "login":
+            return True
+        if max_age is not None:
+            last = user.last_login_at
+            if last is None:
+                return True
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - last).total_seconds() > max_age
+        return False
+
     def authorize(
         self,
         client_id: str,
@@ -122,15 +148,15 @@ class AuthService:
         code_challenge: str | None = None,
         code_challenge_method: str | None = None,
         nonce: str | None = None,
-    ) -> str:
+        prompt: str | None = None,
+        max_age: int | None = None,
+    ) -> tuple[str | None, str | None]:
+        """Devuelve `(redirect_url, reauth_reason)`. Si `reauth_reason` no es
+        `None` (`"login"` o `"max_age"`), el caller (router) decide la respuesta
+        HTTP — no se modela como excepción porque no es un caso de error, es una
+        señal de control de flujo esperada por `prompt`/`max_age` (OIDC Core 3.1.2.1)."""
         app = self.app_service.get_application_by_client_id(client_id)
-        if not app:
-            raise BadRequestError(detail="Aplicación no encontrada")
-        if app.status != "active":
-            raise ForbiddenError(detail="Aplicación inactiva")
-
-        if not self.app_service.validate_redirect_uri(client_id, redirect_uri):
-            raise BadRequestError(detail="redirect_uri no autorizada para esta aplicación")
+        self.validate_client_and_redirect(client_id, redirect_uri)
 
         # PKCE: si el cliente envía un challenge, solo se admite el método S256
         # (se rechaza "plain" por ser un downgrade inseguro). El método es
@@ -143,11 +169,19 @@ class AuthService:
         elif code_challenge_method is not None:
             raise BadRequestError(detail="code_challenge_method enviado sin code_challenge")
 
+        # Clientes públicos (sin client_secret): PKCE es la única forma de ligar
+        # el código al solicitante legítimo, así que es obligatorio.
+        if app.client_secret_hash is None and code_challenge is None:
+            raise BadRequestError(detail="code_challenge (PKCE) requerido para clientes públicos")
+
         user = self.user_repo.get_by_id(user_id)
         if not user:
             raise NotFoundError(detail="Usuario no encontrado")
         if user.status != "active":
             raise ForbiddenError(detail="Usuario inactivo")
+
+        if self._requires_reauth(user, prompt, max_age):
+            return None, ("login" if prompt == "login" else "max_age")
 
         auth_time = int(datetime.now(timezone.utc).timestamp())
         auth_code = self.auth_code_repo.create_code(
@@ -160,22 +194,26 @@ class AuthService:
             nonce=nonce,
             auth_time=auth_time,
         )
-        return redirect_uri + f"?code={auth_code.code}&state={state}"
+        return redirect_uri + f"?code={auth_code.code}&state={state}", None
 
     def exchange_token(
         self,
         client_id: str,
-        client_secret: str,
         code: str,
         redirect_uri: str,
+        client_secret: str | None = None,
         code_verifier: str | None = None,
     ) -> dict:
         app = self.app_service.get_application_by_client_id(client_id)
         if not app:
             raise BadRequestError(detail="Aplicación no encontrada")
 
-        if not verify_secret(client_secret, app.client_secret_hash):
-            raise ForbiddenError(detail="client_secret inválido")
+        if app.client_secret_hash is not None:
+            if not client_secret or not verify_secret(client_secret, app.client_secret_hash):
+                raise ForbiddenError(detail="client_secret inválido")
+        elif not code_verifier:
+            # Cliente público: sin secret, PKCE es obligatorio en el canje.
+            raise BadRequestError(detail="code_verifier requerido (PKCE) para clientes públicos")
 
         auth_code = self.auth_code_repo.get_by_code(code)
         if not auth_code:
@@ -248,6 +286,8 @@ class AuthService:
             application_slug=app.slug,
             roles=roles,
             permissions=permissions,
+            scope=scope,
+            email_verified=user.auth_provider == "google",
             jti=jti,
             expires_minutes=access_ttl,
         )
@@ -272,14 +312,14 @@ class AuthService:
         }
         if wants_openid:
             # aud del id_token = client_id (distinto del access token, cuyo aud es
-            # el slug de la app). Lleva nonce y auth_time capturados en /authorize.
+            # el slug de la app). Lleva nonce y auth_time capturados en /authorize,
+            # y claims de identidad filtrados por scope (OIDC Core 5.4).
             result["id_token"] = create_id_token(
                 user_id=user.id,
-                email=user.email,
-                name=user.full_name,
                 client_id=app.client_id,
                 kid=kid,
                 private_key_pem=private_pem,
+                claims=claims_for_scopes(user, scope),
                 nonce=nonce,
                 auth_time=auth_time,
                 expires_minutes=access_ttl,
@@ -287,7 +327,7 @@ class AuthService:
         return result
 
     def rotate_refresh_token(
-        self, client_id: str, client_secret: str, refresh_token_raw: str
+        self, client_id: str, refresh_token_raw: str, client_secret: str | None = None
     ) -> tuple[dict, list[str]]:
         """Canjea un refresh token por uno nuevo (rotación) y un access token nuevo.
 
@@ -297,8 +337,9 @@ class AuthService:
         app = self.app_service.get_application_by_client_id(client_id)
         if not app:
             raise BadRequestError(detail="Aplicación no encontrada")
-        if not verify_secret(client_secret, app.client_secret_hash):
-            raise ForbiddenError(detail="client_secret inválido")
+        if app.client_secret_hash is not None:
+            if not client_secret or not verify_secret(client_secret, app.client_secret_hash):
+                raise ForbiddenError(detail="client_secret inválido")
 
         refresh = self.refresh_repo.get_by_hash(hash_token(refresh_token_raw))
         if not refresh:
@@ -334,15 +375,18 @@ class AuthService:
         )
         return response, [refresh.access_jti] if refresh.access_jti else []
 
-    def revoke_refresh_token(self, client_id: str, client_secret: str, refresh_token_raw: str) -> list[str]:
+    def revoke_refresh_token(
+        self, client_id: str, refresh_token_raw: str, client_secret: str | None = None
+    ) -> list[str]:
         """Revoca un refresh token y toda su familia (RFC 7009). Devuelve los jtis
         de access tokens a poner en la blacklist. Idempotente y silencioso si el
         token no existe (no se filtra información)."""
         app = self.app_service.get_application_by_client_id(client_id)
         if not app:
             raise BadRequestError(detail="Aplicación no encontrada")
-        if not verify_secret(client_secret, app.client_secret_hash):
-            raise ForbiddenError(detail="client_secret inválido")
+        if app.client_secret_hash is not None:
+            if not client_secret or not verify_secret(client_secret, app.client_secret_hash):
+                raise ForbiddenError(detail="client_secret inválido")
 
         refresh = self.refresh_repo.get_by_hash(hash_token(refresh_token_raw))
         if not refresh or refresh.client_id != client_id:

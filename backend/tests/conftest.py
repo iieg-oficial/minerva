@@ -10,7 +10,7 @@ from app.core.redis import get_redis
 from app.main import app
 from app.modules.applications.models import Application
 from app.modules.groups.models import UserRole
-from app.modules.oidc.router import wellknown_app
+from app.modules.oidc.router import userinfo_app, wellknown_app
 from app.modules.roles.models import Role
 from app.modules.users.models import User
 
@@ -26,8 +26,10 @@ def override_get_db():
 
 app.dependency_overrides[get_db] = override_get_db
 app.dependency_overrides[get_session] = override_get_db
-# La sub-app `.well-known` mantiene su propio registro de overrides.
+# Las sub-apps (`.well-known`, `/userinfo`) mantienen su propio registro de
+# overrides: son ASGI apps separadas, no heredan los de `app`.
 wellknown_app.dependency_overrides[get_db] = override_get_db
+userinfo_app.dependency_overrides[get_db] = override_get_db
 
 
 @pytest.fixture(autouse=True)
@@ -47,8 +49,10 @@ def fresh_redis():
     """
     fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
     app.dependency_overrides[get_redis] = lambda: fake
+    userinfo_app.dependency_overrides[get_redis] = lambda: fake
     yield fake
     app.dependency_overrides.pop(get_redis, None)
+    userinfo_app.dependency_overrides.pop(get_redis, None)
 
 
 @pytest.fixture

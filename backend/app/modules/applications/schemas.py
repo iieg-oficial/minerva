@@ -11,7 +11,9 @@ class ApplicationBase(BaseModel):
 
 
 class ApplicationCreate(ApplicationBase):
-    pass
+    is_public: bool = False
+    """Cliente público (SPA/móvil sin `client_secret`): el canje OIDC exige PKCE
+    en su lugar. Si es `False` (default), se genera un `client_secret` como hoy."""
 
 
 class ApplicationUpdate(BaseModel):

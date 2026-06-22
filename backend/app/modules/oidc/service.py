@@ -10,6 +10,21 @@ from app.core.exceptions import AppException
 from app.core.security import create_access_token_rs256, create_dev_token_rs256
 from app.modules.oidc.models import SigningKey
 from app.modules.oidc.repository import SigningKeyRepository
+from app.modules.users.models import User
+
+
+def claims_for_scopes(user: User, scope: str) -> dict:
+    """Mapea scopes OIDC a claims de identidad (OIDC Core 5.4). No incluye `sub`:
+    es obligatorio y el caller siempre lo fija aparte, sin depender del scope."""
+    scopes = set(scope.split())
+    claims: dict = {}
+    if "profile" in scopes:
+        claims["name"] = user.full_name
+        claims["preferred_username"] = user.email
+    if "email" in scopes:
+        claims["email"] = user.email
+        claims["email_verified"] = user.auth_provider == "google"
+    return claims
 
 
 def _generate_rsa_keypair() -> tuple[str, str]:
