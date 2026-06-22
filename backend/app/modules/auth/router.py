@@ -120,6 +120,9 @@ async def authorize(
     state: str = Query(...),
     scope: str = Query("openid profile email"),
     response_type: str = Query("code"),
+    code_challenge: str | None = Query(None),
+    code_challenge_method: str | None = Query(None),
+    nonce: str | None = Query(None),
     service: AuthService = Depends(get_auth_service),
     current_user: dict = Depends(get_current_user),
     redis: Redis = Depends(get_redis),
@@ -130,7 +133,16 @@ async def authorize(
         settings.RATE_LIMIT_AUTHORIZE_MAX,
         settings.RATE_LIMIT_AUTHORIZE_WINDOW,
     )
-    redirect_url = service.authorize(client_id, redirect_uri, current_user["sub"], state, scope)
+    redirect_url = service.authorize(
+        client_id,
+        redirect_uri,
+        current_user["sub"],
+        state,
+        scope,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+        nonce=nonce,
+    )
     return RedirectResponse(redirect_url)
 
 
@@ -142,6 +154,9 @@ async def authorize_url(
     state: str = Query(...),
     scope: str = Query("openid profile email"),
     response_type: str = Query("code"),
+    code_challenge: str | None = Query(None),
+    code_challenge_method: str | None = Query(None),
+    nonce: str | None = Query(None),
     service: AuthService = Depends(get_auth_service),
     current_user: dict = Depends(get_current_user),
     redis: Redis = Depends(get_redis),
@@ -158,7 +173,16 @@ async def authorize_url(
         settings.RATE_LIMIT_AUTHORIZE_MAX,
         settings.RATE_LIMIT_AUTHORIZE_WINDOW,
     )
-    redirect_url = service.authorize(client_id, redirect_uri, current_user["sub"], state, scope)
+    redirect_url = service.authorize(
+        client_id,
+        redirect_uri,
+        current_user["sub"],
+        state,
+        scope,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+        nonce=nonce,
+    )
     return {"redirect_url": redirect_url}
 
 
@@ -169,7 +193,9 @@ def token_exchange(
     service: AuthService = Depends(get_auth_service),
     audit: AuditService = Depends(get_audit_service),
 ):
-    result = service.exchange_token(data.client_id, data.client_secret, data.code, data.redirect_uri)
+    result = service.exchange_token(
+        data.client_id, data.client_secret, data.code, data.redirect_uri, data.code_verifier
+    )
     audit.log("token_exchange_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
     return result
 

@@ -5,7 +5,7 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
-from app.core.security import create_access_token, verify_secret
+from app.core.security import create_access_token, verify_pkce, verify_secret
 from app.modules.applications.repository import ApplicationRepository
 from app.modules.applications.service import ApplicationService
 from app.modules.auth.repository import AuthCodeRepository
@@ -80,7 +80,17 @@ class AuthService:
             ],
         }
 
-    def authorize(self, client_id: str, redirect_uri: str, user_id: str, state: str, scope: str) -> str:
+    def authorize(
+        self,
+        client_id: str,
+        redirect_uri: str,
+        user_id: str,
+        state: str,
+        scope: str,
+        code_challenge: str | None = None,
+        code_challenge_method: str | None = None,
+        nonce: str | None = None,
+    ) -> str:
         app = self.app_service.get_application_by_client_id(client_id)
         if not app:
             raise BadRequestError(detail="Aplicación no encontrada")
@@ -90,16 +100,44 @@ class AuthService:
         if not self.app_service.validate_redirect_uri(client_id, redirect_uri):
             raise BadRequestError(detail="redirect_uri no autorizada para esta aplicación")
 
+        # PKCE: si el cliente envía un challenge, solo se admite el método S256
+        # (se rechaza "plain" por ser un downgrade inseguro). El método es
+        # opcional y, si se omite junto al challenge, se asume S256.
+        if code_challenge is not None:
+            method = code_challenge_method or "S256"
+            if method != "S256":
+                raise BadRequestError(detail="code_challenge_method no soportado; use S256")
+            code_challenge_method = method
+        elif code_challenge_method is not None:
+            raise BadRequestError(detail="code_challenge_method enviado sin code_challenge")
+
         user = self.user_repo.get_by_id(user_id)
         if not user:
             raise NotFoundError(detail="Usuario no encontrado")
         if user.status != "active":
             raise ForbiddenError(detail="Usuario inactivo")
 
-        auth_code = self.auth_code_repo.create_code(client_id, user_id, redirect_uri, scope)
+        auth_time = int(datetime.now(timezone.utc).timestamp())
+        auth_code = self.auth_code_repo.create_code(
+            client_id,
+            user_id,
+            redirect_uri,
+            scope,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            nonce=nonce,
+            auth_time=auth_time,
+        )
         return redirect_uri + f"?code={auth_code.code}&state={state}"
 
-    def exchange_token(self, client_id: str, client_secret: str, code: str, redirect_uri: str) -> dict:
+    def exchange_token(
+        self,
+        client_id: str,
+        client_secret: str,
+        code: str,
+        redirect_uri: str,
+        code_verifier: str | None = None,
+    ) -> dict:
         app = self.app_service.get_application_by_client_id(client_id)
         if not app:
             raise BadRequestError(detail="Aplicación no encontrada")
@@ -111,6 +149,13 @@ class AuthService:
         if not auth_code:
             raise BadRequestError(detail="Código de autorización inválido o ya usado")
 
+        # El código está ligado al client y al redirect_uri con que se emitió:
+        # ambos deben coincidir exactamente en el canje (RFC 6749 §4.1.3).
+        if auth_code.client_id != client_id:
+            raise BadRequestError(detail="El código no pertenece a esta aplicación")
+        if auth_code.redirect_uri != redirect_uri:
+            raise BadRequestError(detail="redirect_uri no coincide con el del código")
+
         # expires_at se guarda en una columna sin timezone, por lo que vuelve naive;
         # lo normalizamos a UTC para poder compararlo con un datetime aware.
         expires_at = auth_code.expires_at
@@ -118,6 +163,13 @@ class AuthService:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) > expires_at:
             raise BadRequestError(detail="Código de autorización expirado")
+
+        # PKCE: si el código se emitió con challenge, exige un verifier válido.
+        if auth_code.code_challenge is not None:
+            if not code_verifier:
+                raise BadRequestError(detail="code_verifier requerido (PKCE)")
+            if not verify_pkce(code_verifier, auth_code.code_challenge):
+                raise BadRequestError(detail="code_verifier inválido (PKCE)")
 
         user = self.user_repo.get_by_id(auth_code.user_id)
         if not user:

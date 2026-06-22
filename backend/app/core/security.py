@@ -1,3 +1,6 @@
+import base64
+import hashlib
+import secrets
 import uuid
 from datetime import datetime, timezone
 
@@ -5,6 +8,17 @@ import bcrypt
 from jose import JWTError, jwt
 
 from app.core.config import settings
+
+
+def verify_pkce(code_verifier: str, code_challenge: str) -> bool:
+    """Verifica un par PKCE con método S256 (RFC 7636).
+
+    challenge == BASE64URL-SIN-PADDING(SHA256(verifier)). Comparación en tiempo
+    constante para no filtrar información por temporización.
+    """
+    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    expected = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return secrets.compare_digest(expected, code_challenge)
 
 
 def hash_password(password: str) -> str:
