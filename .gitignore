@@ -106,3 +106,10 @@ pgdata/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ─────────────────────────────────────────────
+# Documentación interna (pasos futuros / roadmap): no se trackea,
+# son notas de implementación internas.
+# ─────────────────────────────────────────────
+docs/oidc-pendiente.md
+docs/minerva-roadmap-checklist.md

@@ -45,4 +45,10 @@ def get_my_permissions(
     service: AuthorizationService = Depends(get_authorization_service),
     current_user: dict = Depends(get_current_user),
 ):
+    """Permisos del usuario autenticado, en *shape rico* (objetos Role/Permission completos).
+
+    Endpoint **interno del panel admin** de Minerva (lo consume `frontend/src/api/authorization.js`).
+    NO es el endpoint canónico para sistemas consumidores: esos usan `GET /api/v1/me/permissions`
+    (devkit), que es el publicado en el discovery OIDC y el que valida el SDK.
+    """
     return service.get_me_permissions(current_user["sub"], application_slug)

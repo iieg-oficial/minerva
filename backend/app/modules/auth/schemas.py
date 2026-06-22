@@ -16,6 +16,9 @@ class AuthTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    id_token: str | None = None  # OIDC: identidad del usuario (solo con scope openid)
+    scope: str | None = None
+    refresh_token: str | None = None  # se rota en cada uso (RFC 6749 §10.4)
 
 
 class TokenExchange(BaseModel):
@@ -23,6 +26,7 @@ class TokenExchange(BaseModel):
     client_secret: str
     code: str
     redirect_uri: str
+    code_verifier: str | None = None  # PKCE (RFC 7636)
 
 
 class AuthorizeQuery(BaseModel):
@@ -31,3 +35,6 @@ class AuthorizeQuery(BaseModel):
     state: str
     scope: str = "openid profile email"
     response_type: str = "code"
+    code_challenge: str | None = None
+    code_challenge_method: str | None = None
+    nonce: str | None = None

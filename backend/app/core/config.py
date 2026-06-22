@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://minerva:minerva@localhost:5432/minerva"
     SECRET_KEY: str = "change-me-in-production-use-long-random-string"
 
+    # JWT_SECRET_KEY ya no firma tokens (todo es RS256). Se conserva solo como
+    # base para derivar la clave de cifrado en reposo en modo dev (ver core/crypto.py).
     JWT_SECRET_KEY: str = "change-me-in-production-use-long-random-string"
-    JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
     ADMIN_EMAIL: str = "admin@iieg.gob.mx"
@@ -49,6 +50,28 @@ class Settings(BaseSettings):
     MINERVA_JWT_ISSUER: str = ""
     MINERVA_JWT_SECRET: str = ""
     MINERVA_ACCESS_TOKEN_EXPIRE_MINUTES: int = 0
+
+    # --- OIDC / firma de tokens --------------------------------------------
+    # Toda la firma es RS256 (clave RSA + JWKS). No hay HS256 ni secreto compartido.
+    # Clave maestra (Fernet) para cifrar la clave privada RSA en reposo en la BD.
+    # OBLIGATORIA en producción. En dev, si está vacía, se deriva una clave estable
+    # del secreto JWT (no apta para producción). Generar con: Fernet.generate_key().
+    MINERVA_KEY_ENCRYPTION_KEY: str = ""
+    # TTL de los tokens emitidos por el canje OIDC (/auth/token). Se mantienen
+    # SEPARADOS del TTL de la sesión interna del panel (effective_token_expire_minutes)
+    # para poder tener access tokens cortos sin forzar re-login del panel admin.
+    # access token corto + refresh token = ciclo de vida estándar OIDC.
+    MINERVA_ACCESS_TOKEN_TTL_MINUTES: int = 15
+    MINERVA_REFRESH_TOKEN_TTL_DAYS: int = 30
+
+    # --- Redis -------------------------------------------------------------
+    # Redis tiene un alcance acotado: rate limiting, blacklist de tokens y
+    # sesiones efímeras del flujo /authorize. NO es la fuente de verdad de datos.
+    REDIS_URL: str = "redis://minerva_redis:6379/0"
+    RATE_LIMIT_LOGIN_MAX: int = 5
+    RATE_LIMIT_LOGIN_WINDOW: int = 900  # segundos (15 min)
+    RATE_LIMIT_AUTHORIZE_MAX: int = 20
+    RATE_LIMIT_AUTHORIZE_WINDOW: int = 60
 
     # --- Valores efectivos -------------------------------------------------
     @property

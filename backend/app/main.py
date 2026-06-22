@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.database import engine
 from app.core.models import import_models
+from app.core.redis import close_redis, init_redis
 from app.core.security import hash_password, hash_secret
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.applications.router import router as applications_router
@@ -17,6 +18,9 @@ from app.modules.authorization.router import router as authorization_router
 from app.modules.devkit.router import router as devkit_router
 from app.modules.groups.models import UserRole
 from app.modules.groups.router import router as groups_router
+from app.modules.oidc.models import SigningKey  # noqa: F401 - registra la tabla en el metadata
+from app.modules.oidc.router import wellknown_app
+from app.modules.oidc.service import OIDCService
 from app.modules.permissions.models import Permission, RolePermission
 from app.modules.permissions.router import router as permissions_router
 from app.modules.roles.models import Role
@@ -136,11 +140,23 @@ def _auto_import_manifests() -> None:
             logger.warning("No se pudo importar el manifiesto %s: %s", path.name, exc)
 
 
+def _seed_signing_key() -> None:
+    """Garantiza que exista una clave de firma RS256 activa al arrancar (idempotente)."""
+    import_models()
+    with Session(engine) as session:
+        OIDCService(session).ensure_active_signing_key()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _seed_data()
+    _seed_signing_key()
     _auto_import_manifests()
-    yield
+    await init_redis()
+    try:
+        yield
+    finally:
+        await close_redis()
 
 
 app = FastAPI(
@@ -166,6 +182,10 @@ app.include_router(groups_router)
 app.include_router(authorization_router)
 app.include_router(audit_router)
 app.include_router(devkit_router)
+
+# Endpoints públicos de descubrimiento OIDC. Van montados como sub-app por su
+# política de CORS abierta (ver app/modules/oidc/router.py).
+app.mount("/.well-known", wellknown_app)
 
 
 @app.get("/")

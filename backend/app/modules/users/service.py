@@ -3,7 +3,7 @@ import logging
 from sqlmodel import Session
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import hash_password, verify_password
 from app.modules.audit.repository import AuditRepository
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
@@ -90,7 +90,9 @@ class UserService:
         if not verify_password(password, user.hashed_password):
             raise BadRequestError(detail="Credenciales inválidas")
 
-        return create_access_token(user.id, user.email, user.full_name)
+        from app.modules.oidc.service import OIDCService
+
+        return OIDCService(self.session).issue_session_token(user.id, user.email, user.full_name)
 
     def get_or_create_google_user(self, email: str, name: str, provider_subject: str) -> User:
         user = self.repo.get_by_email(email)

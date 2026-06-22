@@ -1,3 +1,4 @@
+import fakeredis.aioredis
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -5,9 +6,11 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.core.database import get_session
 from app.core.dependencies.db import get_db
 from app.core.models import import_models
+from app.core.redis import get_redis
 from app.main import app
 from app.modules.applications.models import Application
 from app.modules.groups.models import UserRole
+from app.modules.oidc.router import wellknown_app
 from app.modules.roles.models import Role
 from app.modules.users.models import User
 
@@ -23,6 +26,8 @@ def override_get_db():
 
 app.dependency_overrides[get_db] = override_get_db
 app.dependency_overrides[get_session] = override_get_db
+# La sub-app `.well-known` mantiene su propio registro de overrides.
+wellknown_app.dependency_overrides[get_db] = override_get_db
 
 
 @pytest.fixture(autouse=True)
@@ -33,8 +38,27 @@ def setup_db():
     SQLModel.metadata.drop_all(test_engine)
 
 
+@pytest.fixture(autouse=True)
+def fresh_redis():
+    """Inyecta un Redis falso aislado por test (el lifespan no corre con TestClient).
+
+    Cada test recibe una instancia limpia, así el rate limiting no arrastra
+    contadores entre tests. Devuelve el cliente por si el test quiere inspeccionarlo.
+    """
+    fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    app.dependency_overrides[get_redis] = lambda: fake
+    yield fake
+    app.dependency_overrides.pop(get_redis, None)
+
+
 @pytest.fixture
 def client():
+    # Toda la firma es RS256: cualquier flujo HTTP que emita/valide tokens necesita
+    # una clave de firma activa (en producción la siembra el lifespan).
+    from app.modules.oidc.service import OIDCService
+
+    with Session(test_engine) as session:
+        OIDCService(session).ensure_active_signing_key()
     return TestClient(app)
 
 
@@ -51,16 +75,12 @@ def _grant_minerva_admin(email: str) -> None:
             app_row = Application(name="Minerva", slug="minerva", status="active")
             session.add(app_row)
             session.flush()
-        role = session.exec(
-            select(Role).where(Role.application_id == app_row.id, Role.slug == "minerva.admin")
-        ).first()
+        role = session.exec(select(Role).where(Role.application_id == app_row.id, Role.slug == "minerva.admin")).first()
         if not role:
             role = Role(application_id=app_row.id, name="Administrador", slug="minerva.admin")
             session.add(role)
             session.flush()
-        link = session.exec(
-            select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id)
-        ).first()
+        link = session.exec(select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id)).first()
         if not link:
             session.add(UserRole(user_id=user.id, role_id=role.id))
         session.commit()
