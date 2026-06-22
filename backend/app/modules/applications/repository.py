@@ -3,6 +3,10 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 
 from app.modules.applications.models import Application, RedirectURI
+from app.modules.devkit.models import ManifestImport
+from app.modules.groups.models import GroupRole, UserRole
+from app.modules.permissions.models import Permission, RolePermission
+from app.modules.roles.models import Role
 
 
 class ApplicationRepository:
@@ -38,6 +42,51 @@ class ApplicationRepository:
         self.session.commit()
         self.session.refresh(app)
         return app
+
+    def delete(self, app: Application) -> None:
+        """Elimina la aplicación y todo lo derivado de ella.
+
+        Borra en cascada manualmente (las FKs no declaran ON DELETE CASCADE):
+        redirect URIs, permisos, roles, sus vínculos rol-permiso, las
+        asignaciones de esos roles a usuarios y grupos, y el historial de
+        importaciones de manifiesto. Es una operación destructiva e irreversible.
+
+        Se hace `flush()` por niveles de dependencia para forzar el orden de los
+        DELETE: sin `relationship()` declaradas, la unit of work de SQLAlchemy no
+        ordena el borrado entre tablas y violaría las FKs en PostgreSQL.
+        """
+        roles = self.session.exec(select(Role).where(Role.application_id == app.id)).all()
+        permissions = self.session.exec(select(Permission).where(Permission.application_id == app.id)).all()
+
+        # Nivel 1: vínculos y asignaciones que dependen de roles/permisos de la app.
+        for role in roles:
+            for link in self.session.exec(select(RolePermission).where(RolePermission.role_id == role.id)).all():
+                self.session.delete(link)
+            for user_role in self.session.exec(select(UserRole).where(UserRole.role_id == role.id)).all():
+                self.session.delete(user_role)
+            for group_role in self.session.exec(select(GroupRole).where(GroupRole.role_id == role.id)).all():
+                self.session.delete(group_role)
+        # Vínculos rol-permiso que apuntan a permisos de la app (por si quedaron
+        # ligados a roles de otra aplicación).
+        for perm in permissions:
+            for link in self.session.exec(select(RolePermission).where(RolePermission.permission_id == perm.id)).all():
+                self.session.delete(link)
+        self.session.flush()
+
+        # Nivel 2: roles, permisos, redirect URIs e historial (referencian a la app).
+        for role in roles:
+            self.session.delete(role)
+        for perm in permissions:
+            self.session.delete(perm)
+        for uri in self.session.exec(select(RedirectURI).where(RedirectURI.application_id == app.id)).all():
+            self.session.delete(uri)
+        for record in self.session.exec(select(ManifestImport).where(ManifestImport.application_id == app.id)).all():
+            self.session.delete(record)
+        self.session.flush()
+
+        # Nivel 3: la aplicación.
+        self.session.delete(app)
+        self.session.commit()
 
 
 class RedirectURIRepository:
