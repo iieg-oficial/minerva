@@ -40,10 +40,11 @@ incluye aquí.
 
 ---
 
-## 2. Cierre / retrocompatibilidad (Fase 8)
+## 2. Cierre (Fase 8)
 
-- Flag `MINERVA_LEGACY_TOKEN_ENABLED` para apagar HS256 tras la migración.
-- Plan de deprecación de HS256 documentado y comunicado a consumidores (≥30 días).
+> HS256 fue **eliminado por completo** (todo es RS256): no hay flags de legacy ni
+> plan de deprecación que documentar.
+
 - `examples/godin-consumer/`: ejemplo mínimo de consumidor con el SDK actualizado
   (RS256, PKCE, refresh) — referenciado en `CLAUDE.md` pero ausente.
 - README raíz con el flujo OIDC completo.

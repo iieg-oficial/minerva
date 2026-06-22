@@ -53,6 +53,12 @@ def fresh_redis():
 
 @pytest.fixture
 def client():
+    # Toda la firma es RS256: cualquier flujo HTTP que emita/valide tokens necesita
+    # una clave de firma activa (en producción la siembra el lifespan).
+    from app.modules.oidc.service import OIDCService
+
+    with Session(test_engine) as session:
+        OIDCService(session).ensure_active_signing_key()
     return TestClient(app)
 
 

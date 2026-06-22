@@ -7,6 +7,7 @@ from sqlmodel import Session
 
 from app.core.crypto import decrypt_secret, encrypt_secret
 from app.core.exceptions import AppException
+from app.core.security import create_access_token_rs256, create_dev_token_rs256
 from app.modules.oidc.models import SigningKey
 from app.modules.oidc.repository import SigningKeyRepository
 
@@ -82,3 +83,47 @@ class OIDCService:
         if current is not None:
             self.repo.mark_retired(current)
         return self.generate_signing_key()
+
+    # --- Emisión de tokens de sesión interna -------------------------------
+    # Tokens del panel/login y del Dev Kit. Se firman con la clave activa (RS256),
+    # igual que los tokens de consumidores: un solo mecanismo de firma.
+
+    def issue_session_token(
+        self,
+        user_id: str,
+        email: str,
+        name: str,
+        application_slug: str = "minerva",
+        roles: list[str] | None = None,
+        permissions: list[str] | None = None,
+    ) -> str:
+        kid, private_pem = self.get_active_private_pem()
+        return create_access_token_rs256(
+            user_id=user_id,
+            email=email,
+            name=name,
+            kid=kid,
+            private_key_pem=private_pem,
+            application_slug=application_slug,
+            roles=roles,
+            permissions=permissions,
+        )
+
+    def issue_dev_token(
+        self,
+        user_id: str,
+        email: str,
+        name: str,
+        applications: list[str] | None = None,
+        roles_by_application: dict[str, list[str]] | None = None,
+    ) -> str:
+        kid, private_pem = self.get_active_private_pem()
+        return create_dev_token_rs256(
+            user_id=user_id,
+            email=email,
+            name=name,
+            kid=kid,
+            private_key_pem=private_pem,
+            applications=applications,
+            roles_by_application=roles_by_application,
+        )

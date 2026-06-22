@@ -49,7 +49,6 @@ def setup():
     _jwks_cache["exp"] = time.time() + 3600
     config.settings.application_code = "godin"
     config.settings.verify_aud = True
-    config.settings.jwt_secret = ""
     config.settings.expected_issuer = ""
     yield private_pem
     _jwks_cache["jwks"] = None
@@ -70,8 +69,8 @@ def test_wrong_audience_rejected(setup):
     assert exc.value.status_code == 401
 
 
-def test_hs256_rejected_when_no_secret(setup):
-    # Token HS256 sin secreto configurado → algoritmo no soportado (anti-confusión).
+def test_hs256_rejected(setup):
+    # Solo RS256: un token HS256 se rechaza (anti-confusión de algoritmo).
     token = jwt.encode({"sub": "u1", "aud": "godin"}, "secreto-cualquiera", algorithm="HS256")
     with pytest.raises(HTTPException) as exc:
         asyncio.run(_decode(token))

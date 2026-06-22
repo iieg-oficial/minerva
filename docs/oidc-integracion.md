@@ -118,7 +118,6 @@ async def crear_oficio(user=Depends(require_permission("godin.oficios.create")))
 | `MINERVA_EXPECTED_ISSUER` | `` | Si se define, valida el claim `iss`. |
 | `MINERVA_PERMISSIONS_CACHE_TTL` | `300` | Caché de permisos (s). |
 | `MINERVA_JWKS_CACHE_TTL` | `3600` | Caché del JWKS (s). |
-| `MINERVA_JWT_SECRET` | `` | **Solo** para validar HS256 legacy; vacío = solo RS256. |
 
 **La revocación se aplica del lado de Minerva:** `require_permission` consulta
 `/api/v1/me/permissions`, y un token revocado recibe `401`, que el SDK propaga.
@@ -135,19 +134,19 @@ no cambia con OIDC.
 
 ---
 
-## 6. Migrar de HS256 (legacy) a RS256/JWKS
+## 6. Migrar de un flujo con secreto compartido
 
-Si tu sistema ya usaba el flujo con secreto compartido:
+Si tu sistema usaba el flujo previo con `MINERVA_JWT_SECRET` (HS256):
 
-1. Sube la versión del `minerva_sdk` (la que valida RS256/JWKS).
-2. **Elimina `MINERVA_JWT_SECRET`** de tu `.env` (déjalo vacío). El SDK pasa a validar
-   solo RS256 contra el JWKS.
+1. Sube la versión del `minerva_sdk` (valida RS256/JWKS).
+2. **Elimina `MINERVA_JWT_SECRET`** de tu `.env`: ya no se usa. La firma se valida
+   contra el JWKS público.
 3. Conserva `MINERVA_ISSUER_URL` y `MINERVA_APPLICATION_CODE`.
 4. No tienes que tocar tu lógica de permisos: `require_permission` no cambia.
 
-Durante la transición ambos algoritmos conviven (Minerva selecciona por `kid`/`alg`),
-así que puedes migrar sistema por sistema. El `MINERVA_SIGNING_ALG` del servidor ya
-está en `RS256` por defecto para los tokens del canje.
+> Minerva firma **todo** con RS256 (no hay HS256 ni secreto compartido en ningún
+> lado). El JWKS publica la clave activa y las retiradas, así que la rotación de
+> claves es transparente para tu sistema.
 
 ---
 
@@ -159,9 +158,9 @@ está en `RS256` por defecto para los tokens del canje.
   el header del JWT; el verificador elige la clave por `kid`.
 - **Cifrado en reposo**: la clave privada RSA se guarda **cifrada con Fernet**
   (`MINERVA_KEY_ENCRYPTION_KEY`, obligatoria en producción). Nunca en texto plano.
-- **Coexistencia HS256/RS256**: los tokens internos de sesión del panel siguen en
-  HS256; los del canje OIDC en RS256. `get_current_user` detecta el `alg` y valida por
-  la ruta correcta.
+- **Firma unificada RS256**: **todo** se firma con la clave RSA activa — tokens de
+  consumidores (canje OIDC) y tokens de sesión interna del panel (login, dev-login).
+  No hay HS256 ni secreto compartido. `get_current_user` valida siempre contra el JWKS.
 - **Ciclo de vida del token**: access corto (`MINERVA_ACCESS_TOKEN_TTL_MINUTES=15`) +
   refresh con rotación y detección de reúso (`MINERVA_REFRESH_TOKEN_TTL_DAYS=30`). El
   TTL del canje está **separado** del de la sesión interna del panel.

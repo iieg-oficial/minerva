@@ -1,10 +1,12 @@
 # Guía de integración de un sistema con Minerva
 
-> **Nota (2026-06):** esta guía describe el flujo de transición con **firma HS256
-> y secreto compartido** (`MINERVA_JWT_SECRET`). Sigue funcionando, pero para
-> **sistemas nuevos** la vía recomendada es **OIDC con RS256/JWKS** (sin secreto
-> compartido), documentada en **`docs/oidc-integracion.md`**. El registro de la app,
-> el manifiesto y la asignación de roles (§2–§3) son comunes a ambos enfoques.
+> **Nota (2026-06):** Minerva firma **todo con RS256** y **ya no soporta HS256 ni el
+> secreto compartido `MINERVA_JWT_SECRET`**. Por eso la sección de **validación del
+> JWT por secreto compartido (§5)** de esta guía **quedó obsoleta**: para validar
+> tokens usa el `minerva_sdk` (RS256/JWKS) según **`docs/oidc-integracion.md`**.
+> Lo que sí sigue vigente aquí es el **registro de la app, el manifiesto, la
+> asignación de roles (§2–§3) y el flujo de redirect de login (§5 salvo la
+> validación, §6)**.
 
 Esta guía explica, paso a paso, cómo conectar un sistema (un "consumidor") a
 Minerva para que **todo el login se delegue a Minerva**: el usuario se autentica

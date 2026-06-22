@@ -264,16 +264,7 @@ async def revoke_token(
 @router.post("/refresh", response_model=AuthTokenResponse)
 def refresh_token(
     request: Request,
+    service: AuthService = Depends(get_auth_service),
     current_user: dict = Depends(get_current_user),
 ):
-    from app.core.security import create_access_token
-
-    token = create_access_token(
-        user_id=current_user["sub"],
-        email=current_user["email"],
-        name=current_user.get("name", ""),
-        application_slug=current_user.get("aud", ""),
-        roles=current_user.get("roles", []),
-        permissions=current_user.get("permissions", []),
-    )
-    return {"access_token": token, "token_type": "bearer", "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60}
+    return service.reissue_session_token(current_user)

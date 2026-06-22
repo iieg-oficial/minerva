@@ -2,7 +2,6 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
-from app.core.security import create_dev_token
 from app.modules.applications.repository import ApplicationRepository
 from app.modules.devkit.manifest import ManifestLoader
 from app.modules.devkit.schemas import (
@@ -15,6 +14,7 @@ from app.modules.devkit.schemas import (
 )
 from app.modules.groups.models import UserRole
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
+from app.modules.oidc.service import OIDCService
 from app.modules.permissions.repository import RolePermissionRepository
 from app.modules.roles.repository import RoleRepository
 from app.modules.users.models import User
@@ -70,7 +70,7 @@ class DevKitService:
             slug = self._app_slug(role.application_id)
             roles_by_app.setdefault(slug, []).append(role.name)
 
-        token = create_dev_token(
+        token = OIDCService(self.session).issue_dev_token(
             user_id=user.id,
             email=user.email,
             name=user.full_name,

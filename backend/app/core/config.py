@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://minerva:minerva@localhost:5432/minerva"
     SECRET_KEY: str = "change-me-in-production-use-long-random-string"
 
+    # JWT_SECRET_KEY ya no firma tokens (todo es RS256). Se conserva solo como
+    # base para derivar la clave de cifrado en reposo en modo dev (ver core/crypto.py).
     JWT_SECRET_KEY: str = "change-me-in-production-use-long-random-string"
-    JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
     ADMIN_EMAIL: str = "admin@iieg.gob.mx"
@@ -51,10 +52,7 @@ class Settings(BaseSettings):
     MINERVA_ACCESS_TOKEN_EXPIRE_MINUTES: int = 0
 
     # --- OIDC / firma de tokens --------------------------------------------
-    # Algoritmo de firma de los access tokens. Durante la transición a OIDC se
-    # mantiene HS256 (secreto compartido) por defecto; se cambia a RS256 (JWKS)
-    # cuando la infraestructura de claves y refresh tokens esté en producción.
-    MINERVA_SIGNING_ALG: str = "RS256"  # HS256 | RS256
+    # Toda la firma es RS256 (clave RSA + JWKS). No hay HS256 ni secreto compartido.
     # Clave maestra (Fernet) para cifrar la clave privada RSA en reposo en la BD.
     # OBLIGATORIA en producción. En dev, si está vacía, se deriva una clave estable
     # del secreto JWT (no apta para producción). Generar con: Fernet.generate_key().
