@@ -23,6 +23,7 @@ class TokenExchange(BaseModel):
     client_secret: str
     code: str
     redirect_uri: str
+    code_verifier: str | None = None  # PKCE (RFC 7636)
 
 
 class AuthorizeQuery(BaseModel):
@@ -31,3 +32,6 @@ class AuthorizeQuery(BaseModel):
     state: str
     scope: str = "openid profile email"
     response_type: str = "code"
+    code_challenge: str | None = None
+    code_challenge_method: str | None = None
+    nonce: str | None = None
