@@ -5,9 +5,8 @@ integra con el **Authorization Code Flow + PKCE**, valida los tokens con **RS256
 contra el JWKS público** de Minerva y consulta permisos en tiempo real. **Ya no
 se comparte ningún secreto de firma**: basta la URL de Minerva.
 
-> Esta es la vía recomendada para sistemas nuevos. El flujo previo con secreto
-> compartido HS256 (`docs/guia-integracion.md`) sigue funcionando como transición,
-> pero los sistemas nuevos deberían nacer en RS256/JWKS con el `minerva_sdk`.
+> Minerva firma **todo con RS256** y valida contra el JWKS público: no hay HS256 ni
+> secreto compartido en ningún lado. Esta es la guía de integración vigente.
 
 ---
 
@@ -126,11 +125,68 @@ async def crear_oficio(user=Depends(require_permission("godin.oficios.create")))
 
 ## 5. Registrar la app y declarar permisos
 
-Igual que en la guía base: registra la aplicación (obtén `client_id`/`client_secret`),
-agrega la **redirect URI** exacta, y declara permisos/roles con un
-`manifest.minerva.yml` (`{application_code}.{recurso}.{accion}`). Ver
-`docs/guia-integracion.md` §2–§3 (registro, manifiesto, asignación de roles), que
-no cambia con OIDC.
+### 5.1 Registrar la aplicación
+
+Necesitas un `client_id` y un `client_secret`:
+
+- **Panel admin** (recomendado): *Nueva aplicación* → nombre y `slug` (el slug es el
+  `application_code`, p. ej. `godin`). Copia el **Client ID** y el **Client Secret**
+  (el secret **solo se muestra una vez**; si lo pierdes, usa *Regenerar client secret*).
+  Luego agrega la **redirect URI** exacta (botón 🔗).
+- **API**:
+  ```bash
+  POST /applications
+  { "name": "Godín", "slug": "godin", "homepage_url": "http://localhost:3000" }
+  # → devuelve client_id y client_secret (una sola vez)
+
+  POST /applications/{app_id}/redirect-uris
+  { "uri": "http://localhost:3000/api/auth/callback", "environment": "development" }
+  ```
+
+> Si Minerva **auto-importa** el manifiesto al arrancar, la app se crea con un secret
+> aleatorio que no se muestra: usa *Regenerar client secret* en el panel.
+
+### 5.2 Declarar permisos y roles (manifiesto)
+
+El `manifest.minerva.yml` declara la aplicación, sus **permisos** y sus **roles**:
+
+```yaml
+application:
+  code: godin                 # slug único, == MINERVA_APPLICATION_CODE
+  name: Godín
+  redirect_uris:
+    - http://localhost:3000/api/auth/callback
+
+permissions:
+  - key: godin.oficios.view     # {application_code}.{recurso}.{accion}
+    name: Ver oficios
+  - key: godin.oficios.create
+    name: Crear oficios
+
+roles:
+  - name: Capturista
+    permissions: [godin.oficios.view, godin.oficios.create]
+```
+
+- `key` sigue `{application_code}.{recurso}.{accion}` (acciones válidas:
+  `view create update delete assign approve authorize export import manage`).
+- Los roles solo referencian permisos del mismo manifiesto.
+- Importar: `POST /api/v1/manifests/import -F "file=@manifest.minerva.yml"`, o automático
+  al arrancar dejándolo en `MINERVA_MANIFESTS_PATH` (idempotente, no regenera secrets).
+
+> Importar el manifiesto **no asigna** roles a usuarios: eso se hace en el panel o por
+> `POST /api/v1/access-assignments`. Un usuario sin rol de tu app autentica pero debe
+> tratarse como "sin acceso".
+
+### 5.3 Single logout y reemplazo del login propio
+
+- **Logout**: tras cerrar la sesión local, redirige a
+  `{MINERVA_LOGIN_URL}/logout?redirect_uri={FRONTEND_URL}/` para cerrar **también** la
+  sesión en Minerva (si no, Minerva re-autoriza en silencio y el usuario no puede salir).
+- **Si tu sistema ya tenía login propio, quita**: el formulario de login y su manejo de
+  contraseñas, los endpoints `login`/`register`, los **roles locales** y cualquier
+  `if user.role == 'admin'` (el acceso se decide por **permisos** de Minerva). Sustitúyelo
+  por: botón → `/auth/login`, página de callback, y la validación con el SDK.
 
 ---
 
@@ -172,7 +228,19 @@ Si tu sistema usaba el flujo previo con `MINERVA_JWT_SECRET` (HS256):
 
 ---
 
-## 8. Checklist de integración OIDC
+## 8. Troubleshooting
+
+| Síntoma | Causa probable | Arreglo |
+|---|---|---|
+| `401` al validar el token | el SDK no alcanza el JWKS, o el `aud` no coincide | revisa `MINERVA_ISSUER_URL` (alcanzable desde tu backend) y que `MINERVA_APPLICATION_CODE` == tu slug |
+| `No se pudo obtener el JWKS` | `MINERVA_ISSUER_URL` no resoluble desde el contenedor | usa `host.docker.internal:9000` + `extra_hosts` en tu compose |
+| `redirect_uri no autorizada` | la URI no está registrada exacta | regístrala (panel 🔗 o API) idéntica a la que mandas en `/authorize` |
+| `code_verifier inválido (PKCE)` | el `code_verifier` no corresponde al `code_challenge` | usa el mismo `verifier` que generó el `challenge` del `/authorize` |
+| El access token expira muy seguido | es corto (15 min) por diseño | implementa el `grant_type=refresh_token` para renovarlo |
+| Usuario entra pero todo da 403 | autenticado pero sin rol/permiso de tu app | asígnale un rol (panel o `POST /api/v1/access-assignments`) |
+| No puede cerrar sesión (reentra solo) | falta el single logout | redirige a `{MINERVA_LOGIN_URL}/logout` |
+
+## 9. Checklist de integración OIDC
 
 - [ ] App registrada (`client_id` + `client_secret`) y redirect URI exacta.
 - [ ] `manifest.minerva.yml` importado (permisos + roles) y roles asignados.

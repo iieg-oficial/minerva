@@ -14,7 +14,7 @@ Minerva funciona como el sistema central de identidad y acceso del instituto, si
 >
 > - **Visión y requerimientos:** [`docs/minerva-dev-kit-context.md`](docs/minerva-dev-kit-context.md)
 > - **Guía de uso (levantar, login dev, manifiestos, permisos, SDK):** [`docs/minerva-dev-kit.md`](docs/minerva-dev-kit.md)
-> - **Integrar tu sistema (login delegado, paso a paso):** [`docs/guia-integracion.md`](docs/guia-integracion.md)
+> - **Integrar tu sistema (OIDC, login delegado, paso a paso):** [`docs/oidc-integracion.md`](docs/oidc-integracion.md)
 > - **SDK para consumidores (FastAPI):** [`sdk/`](sdk)
 >
 > Inicio rápido: `cp .env.example .env && docker compose up --build` →
@@ -233,10 +233,9 @@ vuelve a tu sistema con un JWT y sus permisos. El resumen es:
 5. En tu **frontend** quita el login propio (si lo tenía): un botón manda a
    `/api/auth/login` y una página de callback recibe el token.
 
-📖 **Guía completa, paso a paso, con los dos escenarios** (sistema con login
-propio que hay que quitar, o sin login que solo redirige), configuración de
-variables, manifiesto, validación del JWT y troubleshooting:
-**[`docs/guia-integracion.md`](docs/guia-integracion.md)**.
+📖 **Guía completa de integración OIDC**, paso a paso (registro, manifiesto, flujo
+Authorization Code + PKCE, validación con el SDK RS256/JWKS, refresh y troubleshooting):
+**[`docs/oidc-integracion.md`](docs/oidc-integracion.md)**.
 
 ## Estructura del proyecto
 
