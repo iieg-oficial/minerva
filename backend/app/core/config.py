@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # Algoritmo de firma de los access tokens. Durante la transición a OIDC se
     # mantiene HS256 (secreto compartido) por defecto; se cambia a RS256 (JWKS)
     # cuando la infraestructura de claves y refresh tokens esté en producción.
-    MINERVA_SIGNING_ALG: str = "HS256"  # HS256 | RS256
+    MINERVA_SIGNING_ALG: str = "RS256"  # HS256 | RS256
     # Clave maestra (Fernet) para cifrar la clave privada RSA en reposo en la BD.
     # OBLIGATORIA en producción. En dev, si está vacía, se deriva una clave estable
     # del secreto JWT (no apta para producción). Generar con: Fernet.generate_key().

@@ -10,6 +10,7 @@ from app.core.exceptions import BadRequestError
 from app.core.security import hash_secret, verify_pkce
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.auth.service import AuthService
+from app.modules.oidc.service import OIDCService
 from app.modules.users.models import User
 from tests.conftest import test_engine
 
@@ -46,6 +47,8 @@ def seeded():
         session.commit()
         session.refresh(app_row)
         session.refresh(user)
+        # El canje firma access token (RS256) e id_token: requiere clave activa.
+        OIDCService(session).ensure_active_signing_key()
         return {"client_id": app_row.client_id, "user_id": user.id}
 
 

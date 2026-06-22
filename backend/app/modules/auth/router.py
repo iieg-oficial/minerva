@@ -1,3 +1,5 @@
+from urllib.parse import parse_qs
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from redis.asyncio import Redis
@@ -6,10 +8,11 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.dependencies.auth import get_current_user
 from app.core.dependencies.db import get_db
+from app.core.exceptions import BadRequestError
 from app.core.rate_limit import enforce_rate_limit
 from app.core.redis import get_redis
 from app.modules.audit.service import AuditService
-from app.modules.auth.schemas import AuthLogin, AuthRegister, AuthTokenResponse, TokenExchange
+from app.modules.auth.schemas import AuthLogin, AuthRegister, AuthTokenResponse
 from app.modules.auth.service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -186,16 +189,37 @@ async def authorize_url(
     return {"redirect_url": redirect_url}
 
 
+async def _read_token_request(request: Request) -> dict:
+    """Lee el cuerpo del canje aceptando el estándar OIDC (form-urlencoded) y el
+    JSON legacy que ya usaba el frontend. El form-urlencoded se parsea a mano para
+    no depender de python-multipart."""
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        return await request.json()
+    raw = (await request.body()).decode("utf-8")
+    return {key: values[0] for key, values in parse_qs(raw).items()}
+
+
 @router.post("/token", response_model=AuthTokenResponse)
-def token_exchange(
-    data: TokenExchange,
+async def token_exchange(
     request: Request,
     service: AuthService = Depends(get_auth_service),
     audit: AuditService = Depends(get_audit_service),
 ):
-    result = service.exchange_token(
-        data.client_id, data.client_secret, data.code, data.redirect_uri, data.code_verifier
-    )
+    body = await _read_token_request(request)
+
+    grant_type = body.get("grant_type")
+    if grant_type is not None and grant_type != "authorization_code":
+        raise BadRequestError(detail="grant_type no soportado; use authorization_code")
+
+    client_id = body.get("client_id")
+    client_secret = body.get("client_secret")
+    code = body.get("code")
+    redirect_uri = body.get("redirect_uri")
+    if not all([client_id, client_secret, code, redirect_uri]):
+        raise BadRequestError(detail="Faltan parámetros requeridos para el canje del código")
+
+    result = service.exchange_token(client_id, client_secret, code, redirect_uri, body.get("code_verifier"))
     audit.log("token_exchange_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
     return result
 
