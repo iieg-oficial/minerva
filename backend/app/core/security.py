@@ -180,6 +180,15 @@ def create_id_token(
     return jwt.encode(payload, private_key_pem, algorithm="RS256", headers={"kid": kid})
 
 
+def unverified_alg(token: str) -> str | None:
+    """Lee el `alg` del header SIN verificar la firma, para decidir qué ruta de
+    validación usar (HS256 interno vs RS256/JWKS de consumidores)."""
+    try:
+        return jwt.get_unverified_header(token).get("alg")
+    except JWTError:
+        return None
+
+
 def decode_token_rs256(token: str, jwks: dict, audience: str | None = None) -> dict:
     """Valida un JWT RS256 contra un JWKS, seleccionando la clave por `kid`.
 
