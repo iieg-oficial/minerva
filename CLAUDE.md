@@ -22,8 +22,9 @@ al usuario, valida sus permisos y devuelve un **JWT**.
 - Convención de permisos: `{application_code}.{resource}.{action}`
   (acciones: `view, create, update, delete, assign, approve, authorize, export, import, manage`).
 
-Fuentes de verdad del producto: `docs/minerva-dev-kit-context.md`, `docs/minerva-dev-kit.md`,
-`docs/minerva-roadmap-checklist.md`.
+Fuentes de verdad del producto: `docs/minerva-dev-kit-context.md` (visión/arquitectura),
+`docs/minerva-dev-kit.md` (guía de uso) y `docs/oidc-integracion.md` (integración OIDC).
+Los markdown de pasos futuros/roadmap son internos y **no** se trackean en el repo.
 
 ## Mapa del monorepo
 
@@ -34,7 +35,7 @@ Fuentes de verdad del producto: `docs/minerva-dev-kit-context.md`, `docs/minerva
 | `sdk/` | `minerva_sdk`: helpers para que sistemas consumidores validen permisos | `require_permission`, `get_current_user` |
 | `manifests/` | YAML que declaran apps/permisos/roles | Convención `{app}.{recurso}.{accion}` |
 | `examples/` | `godin-consumer`: ejemplo de integración con el SDK | Referencia de cómo se consume Minerva |
-| `docs/` | Visión, guía operativa y roadmap | Fuentes de verdad |
+| `docs/` | Arquitectura general, docs de módulos y guías de integración | Fuentes de verdad |
 
 ## Reglas globales de trabajo
 
