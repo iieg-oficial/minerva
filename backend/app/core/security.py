@@ -10,6 +10,12 @@ from jose import JWTError, jwt
 from app.core.config import settings
 
 
+def hash_token(token: str) -> str:
+    """Hash SHA-256 de un token de alta entropía (refresh token), para guardarlo
+    en BD sin almacenar el valor en claro. El lookup se hace por este hash."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def verify_pkce(code_verifier: str, code_challenge: str) -> bool:
     """Verifica un par PKCE con método S256 (RFC 7636).
 
@@ -115,9 +121,16 @@ def create_access_token_rs256(
     application_slug: str = "",
     roles: list[str] | None = None,
     permissions: list[str] | None = None,
+    jti: str | None = None,
+    expires_minutes: int | None = None,
 ) -> str:
-    """Access token firmado con RS256. Incluye `jti` para revocación (blacklist)."""
+    """Access token firmado con RS256. Incluye `jti` para revocación (blacklist).
+
+    `jti` puede inyectarse para vincular el token a un refresh token; si se omite,
+    se genera uno. `expires_minutes` permite un TTL distinto al de la sesión interna.
+    """
     now = datetime.now(timezone.utc)
+    minutes = expires_minutes if expires_minutes is not None else settings.effective_token_expire_minutes
     payload = {
         "sub": str(user_id),
         "email": email,
@@ -126,9 +139,9 @@ def create_access_token_rs256(
         "aud": application_slug or "minerva",
         "roles": roles or [],
         "permissions": permissions or [],
-        "jti": uuid.uuid4().hex,
+        "jti": jti or uuid.uuid4().hex,
         "iat": int(now.timestamp()),
-        "exp": int(now.timestamp()) + (settings.effective_token_expire_minutes * 60),
+        "exp": int(now.timestamp()) + (minutes * 60),
     }
     return jwt.encode(payload, private_key_pem, algorithm="RS256", headers={"kid": kid})
 
@@ -142,6 +155,7 @@ def create_id_token(
     private_key_pem: str,
     nonce: str | None = None,
     auth_time: int | None = None,
+    expires_minutes: int | None = None,
 ) -> str:
     """ID Token OIDC (identidad). `aud` = `client_id` (distinto del access token).
 
@@ -149,6 +163,7 @@ def create_id_token(
     el access token es para los recursos.
     """
     now = datetime.now(timezone.utc)
+    minutes = expires_minutes if expires_minutes is not None else settings.effective_token_expire_minutes
     payload = {
         "sub": str(user_id),
         "iss": settings.effective_jwt_issuer,
@@ -156,7 +171,7 @@ def create_id_token(
         "email": email,
         "name": name,
         "iat": int(now.timestamp()),
-        "exp": int(now.timestamp()) + (settings.effective_token_expire_minutes * 60),
+        "exp": int(now.timestamp()) + (minutes * 60),
     }
     if nonce is not None:
         payload["nonce"] = nonce

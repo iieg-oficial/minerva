@@ -1,4 +1,6 @@
 import logging
+import secrets
+import uuid
 from datetime import datetime, timezone
 
 from sqlmodel import Session
@@ -9,12 +11,13 @@ from app.core.security import (
     create_access_token,
     create_access_token_rs256,
     create_id_token,
+    hash_token,
     verify_pkce,
     verify_secret,
 )
 from app.modules.applications.repository import ApplicationRepository
 from app.modules.applications.service import ApplicationService
-from app.modules.auth.repository import AuthCodeRepository
+from app.modules.auth.repository import AuthCodeRepository, RefreshTokenRepository
 from app.modules.auth.schemas import AuthRegister
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
 from app.modules.oidc.service import OIDCService
@@ -31,6 +34,7 @@ class AuthService:
         self.user_service = UserService(session)
         self.user_repo = UserRepository(session)
         self.auth_code_repo = AuthCodeRepository(session)
+        self.refresh_repo = RefreshTokenRepository(session)
         self.app_service = ApplicationService(session)
         self.app_repo = ApplicationRepository(session)
         self.oidc_service = OIDCService(session)
@@ -186,8 +190,33 @@ class AuthService:
         self.auth_code_repo.mark_used(auth_code)
 
         all_perms, all_role_slugs = self._get_user_permissions(user.id, app.slug)
-        scope = auth_code.scope or ""
+        return self._issue_tokens(
+            user=user,
+            app=app,
+            scope=auth_code.scope or "",
+            roles=all_role_slugs,
+            permissions=all_perms,
+            family_id=str(uuid.uuid4()),
+            nonce=auth_code.nonce,
+            auth_time=auth_code.auth_time,
+        )
+
+    def _issue_tokens(
+        self,
+        user,
+        app,
+        scope: str,
+        roles: list[str],
+        permissions: list[str],
+        family_id: str,
+        nonce: str | None = None,
+        auth_time: int | None = None,
+    ) -> dict:
+        """Emite el bundle de tokens (access + refresh + id_token) y persiste el
+        refresh token. Compartido por el canje del código y la rotación."""
         wants_openid = "openid" in scope.split()
+        access_ttl = settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES
+        jti: str | None = uuid.uuid4().hex
 
         # El access token honra MINERVA_SIGNING_ALG (RS256 con JWKS o HS256 en
         # transición). El id_token es OIDC puro y SIEMPRE va firmado con RS256,
@@ -203,8 +232,10 @@ class AuthService:
                 kid=kid,
                 private_key_pem=private_pem,
                 application_slug=app.slug,
-                roles=all_role_slugs,
-                permissions=all_perms,
+                roles=roles,
+                permissions=permissions,
+                jti=jti,
+                expires_minutes=access_ttl,
             )
         else:
             access_token = create_access_token(
@@ -212,17 +243,29 @@ class AuthService:
                 email=user.email,
                 name=user.full_name,
                 application_slug=app.slug,
-                roles=all_role_slugs,
-                permissions=all_perms,
+                roles=roles,
+                permissions=permissions,
             )
+            jti = None  # HS256 no lleva jti
+
+        raw_refresh = secrets.token_urlsafe(32)
+        self.refresh_repo.create(
+            token_hash=hash_token(raw_refresh),
+            family_id=family_id,
+            user_id=user.id,
+            client_id=app.client_id,
+            scope=scope or None,
+            access_jti=jti,
+            ttl_days=settings.MINERVA_REFRESH_TOKEN_TTL_DAYS,
+        )
 
         result = {
             "access_token": access_token,
             "token_type": "bearer",
-            "expires_in": settings.effective_token_expire_minutes * 60,
+            "expires_in": access_ttl * 60,
             "scope": scope or None,
+            "refresh_token": raw_refresh,
         }
-
         if wants_openid:
             # aud del id_token = client_id (distinto del access token, cuyo aud es
             # el slug de la app). Lleva nonce y auth_time capturados en /authorize.
@@ -230,14 +273,77 @@ class AuthService:
                 user_id=user.id,
                 email=user.email,
                 name=user.full_name,
-                client_id=client_id,
+                client_id=app.client_id,
                 kid=kid,
                 private_key_pem=private_pem,
-                nonce=auth_code.nonce,
-                auth_time=auth_code.auth_time,
+                nonce=nonce,
+                auth_time=auth_time,
+                expires_minutes=access_ttl,
             )
-
         return result
+
+    def rotate_refresh_token(
+        self, client_id: str, client_secret: str, refresh_token_raw: str
+    ) -> tuple[dict, list[str]]:
+        """Canjea un refresh token por uno nuevo (rotación) y un access token nuevo.
+
+        Devuelve (respuesta, jtis_a_revocar). Si se reutiliza un token ya rotado o
+        revocado (posible robo), revoca toda la familia y rechaza.
+        """
+        app = self.app_service.get_application_by_client_id(client_id)
+        if not app:
+            raise BadRequestError(detail="Aplicación no encontrada")
+        if not verify_secret(client_secret, app.client_secret_hash):
+            raise ForbiddenError(detail="client_secret inválido")
+
+        refresh = self.refresh_repo.get_by_hash(hash_token(refresh_token_raw))
+        if not refresh:
+            raise BadRequestError(detail="refresh token inválido")
+        if refresh.client_id != client_id:
+            raise BadRequestError(detail="El refresh token no pertenece a esta aplicación")
+
+        if refresh.status != "active":
+            # Reúso de un token ya rotado/revocado → posible robo: revoca la familia.
+            self.refresh_repo.revoke_family(refresh.family_id)
+            raise BadRequestError(detail="refresh token ya utilizado; la sesión fue revocada por seguridad")
+
+        expires_at = refresh.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires_at:
+            self.refresh_repo.revoke(refresh)
+            raise BadRequestError(detail="refresh token expirado")
+
+        user = self.user_repo.get_by_id(refresh.user_id)
+        if not user or user.status != "active":
+            raise ForbiddenError(detail="Usuario inválido o inactivo")
+
+        self.refresh_repo.mark_rotated(refresh)
+        perms, role_slugs = self._get_user_permissions(user.id, app.slug)
+        response = self._issue_tokens(
+            user=user,
+            app=app,
+            scope=refresh.scope or "",
+            roles=role_slugs,
+            permissions=perms,
+            family_id=refresh.family_id,
+        )
+        return response, [refresh.access_jti] if refresh.access_jti else []
+
+    def revoke_refresh_token(self, client_id: str, client_secret: str, refresh_token_raw: str) -> list[str]:
+        """Revoca un refresh token y toda su familia (RFC 7009). Devuelve los jtis
+        de access tokens a poner en la blacklist. Idempotente y silencioso si el
+        token no existe (no se filtra información)."""
+        app = self.app_service.get_application_by_client_id(client_id)
+        if not app:
+            raise BadRequestError(detail="Aplicación no encontrada")
+        if not verify_secret(client_secret, app.client_secret_hash):
+            raise ForbiddenError(detail="client_secret inválido")
+
+        refresh = self.refresh_repo.get_by_hash(hash_token(refresh_token_raw))
+        if not refresh or refresh.client_id != client_id:
+            return []
+        return self.refresh_repo.revoke_family(refresh.family_id)
 
     def _get_user_permissions(self, user_id: str, app_slug: str) -> tuple[list[str], list[str]]:
         direct_roles = self.user_role_repo.list_roles_for_user(user_id)

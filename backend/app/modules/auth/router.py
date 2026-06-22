@@ -11,6 +11,7 @@ from app.core.dependencies.db import get_db
 from app.core.exceptions import BadRequestError
 from app.core.rate_limit import enforce_rate_limit
 from app.core.redis import get_redis
+from app.core.token_blacklist import revoke_jti
 from app.modules.audit.service import AuditService
 from app.modules.auth.schemas import AuthLogin, AuthRegister, AuthTokenResponse
 from app.modules.auth.service import AuthService
@@ -205,12 +206,25 @@ async def token_exchange(
     request: Request,
     service: AuthService = Depends(get_auth_service),
     audit: AuditService = Depends(get_audit_service),
+    redis: Redis = Depends(get_redis),
 ):
     body = await _read_token_request(request)
+    grant_type = body.get("grant_type", "authorization_code")
 
-    grant_type = body.get("grant_type")
-    if grant_type is not None and grant_type != "authorization_code":
-        raise BadRequestError(detail="grant_type no soportado; use authorization_code")
+    if grant_type == "refresh_token":
+        client_id = body.get("client_id")
+        client_secret = body.get("client_secret")
+        refresh_token = body.get("refresh_token")
+        if not all([client_id, client_secret, refresh_token]):
+            raise BadRequestError(detail="Faltan parámetros requeridos para refrescar el token")
+        result, revoked_jtis = service.rotate_refresh_token(client_id, client_secret, refresh_token)
+        for jti in revoked_jtis:
+            await revoke_jti(redis, jti, settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60)
+        audit.log("token_refresh_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
+        return result
+
+    if grant_type != "authorization_code":
+        raise BadRequestError(detail="grant_type no soportado; use authorization_code o refresh_token")
 
     client_id = body.get("client_id")
     client_secret = body.get("client_secret")
@@ -222,6 +236,29 @@ async def token_exchange(
     result = service.exchange_token(client_id, client_secret, code, redirect_uri, body.get("code_verifier"))
     audit.log("token_exchange_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
     return result
+
+
+@router.post("/revoke")
+async def revoke_token(
+    request: Request,
+    service: AuthService = Depends(get_auth_service),
+    audit: AuditService = Depends(get_audit_service),
+    redis: Redis = Depends(get_redis),
+):
+    """Revocación de refresh token (RFC 7009). Revoca toda la familia y blacklista
+    los access tokens asociados. Responde 200 aunque el token no exista."""
+    body = await _read_token_request(request)
+    client_id = body.get("client_id")
+    client_secret = body.get("client_secret")
+    token = body.get("token") or body.get("refresh_token")
+    if not all([client_id, client_secret, token]):
+        raise BadRequestError(detail="Faltan parámetros requeridos para revocar el token")
+
+    revoked_jtis = service.revoke_refresh_token(client_id, client_secret, token)
+    for jti in revoked_jtis:
+        await revoke_jti(redis, jti, settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60)
+    audit.log("token_revoke", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
+    return {"revoked": True}
 
 
 @router.post("/refresh", response_model=AuthTokenResponse)
