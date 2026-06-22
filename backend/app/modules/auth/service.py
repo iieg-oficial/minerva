@@ -8,7 +8,6 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.core.security import (
-    create_access_token,
     create_access_token_rs256,
     create_id_token,
     hash_token,
@@ -48,8 +47,29 @@ class AuthService:
 
         user_data = UserCreate(email=data.email, full_name=data.full_name, password=data.password)
         user = self.user_service.create_user(user_data)
-        token = create_access_token(user.id, user.email, user.full_name)
-        return {"access_token": token, "token_type": "bearer", "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60}
+        token = self.oidc_service.issue_session_token(user.id, user.email, user.full_name)
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "expires_in": settings.effective_token_expire_minutes * 60,
+        }
+
+    def reissue_session_token(self, current_user: dict) -> dict:
+        """Reemite el token de sesión interna (panel) a partir de los claims del
+        token actual. RS256, como toda la firma del sistema."""
+        token = self.oidc_service.issue_session_token(
+            user_id=current_user["sub"],
+            email=current_user["email"],
+            name=current_user.get("name", ""),
+            application_slug=current_user.get("aud", "minerva"),
+            roles=current_user.get("roles", []),
+            permissions=current_user.get("permissions", []),
+        )
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "expires_in": settings.effective_token_expire_minutes * 60,
+        }
 
     def login(self, email: str, password: str) -> dict:
         token = self.user_service.authenticate(email, password)
@@ -216,37 +236,21 @@ class AuthService:
         refresh token. Compartido por el canje del código y la rotación."""
         wants_openid = "openid" in scope.split()
         access_ttl = settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES
-        jti: str | None = uuid.uuid4().hex
+        jti = uuid.uuid4().hex
+        kid, private_pem = self.oidc_service.get_active_private_pem()
 
-        # El access token honra MINERVA_SIGNING_ALG (RS256 con JWKS o HS256 en
-        # transición). El id_token es OIDC puro y SIEMPRE va firmado con RS256,
-        # porque solo tiene sentido verificarlo contra el JWKS.
-        if settings.MINERVA_SIGNING_ALG == "RS256" or wants_openid:
-            kid, private_pem = self.oidc_service.get_active_private_pem()
-
-        if settings.MINERVA_SIGNING_ALG == "RS256":
-            access_token = create_access_token_rs256(
-                user_id=user.id,
-                email=user.email,
-                name=user.full_name,
-                kid=kid,
-                private_key_pem=private_pem,
-                application_slug=app.slug,
-                roles=roles,
-                permissions=permissions,
-                jti=jti,
-                expires_minutes=access_ttl,
-            )
-        else:
-            access_token = create_access_token(
-                user_id=user.id,
-                email=user.email,
-                name=user.full_name,
-                application_slug=app.slug,
-                roles=roles,
-                permissions=permissions,
-            )
-            jti = None  # HS256 no lleva jti
+        access_token = create_access_token_rs256(
+            user_id=user.id,
+            email=user.email,
+            name=user.full_name,
+            kid=kid,
+            private_key_pem=private_pem,
+            application_slug=app.slug,
+            roles=roles,
+            permissions=permissions,
+            jti=jti,
+            expires_minutes=access_ttl,
+        )
 
         raw_refresh = secrets.token_urlsafe(32)
         self.refresh_repo.create(

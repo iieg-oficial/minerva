@@ -47,12 +47,6 @@ def test_jwks_endpoint_publishes_public_key(client):
     assert "p" not in entry
 
 
-def test_jwks_empty_when_no_keys(client):
-    resp = client.get("/.well-known/jwks.json")
-    assert resp.status_code == 200
-    assert resp.json() == {"keys": []}
-
-
 def test_discovery_allows_any_origin_cors(client):
     """Los `.well-known` deben ser legibles desde cualquier origen (CORS abierto)."""
     resp = client.get(

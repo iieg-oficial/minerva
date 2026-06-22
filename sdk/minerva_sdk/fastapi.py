@@ -49,25 +49,23 @@ async def _decode(token: str) -> dict:
     except JWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Token inválido: {exc}")
 
+    # El algoritmo se fija a RS256 (único soportado) para evitar ataques de
+    # confusión de algoritmo. No hay validación HS256.
+    if alg != "RS256":
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Algoritmo de token no soportado: {alg}")
+
     # El audience esperado es el código de esta aplicación (= aud del access token).
     audience = settings.application_code if (settings.verify_aud and settings.application_code) else None
 
     try:
-        if alg == "RS256":
-            jwks = await _get_jwks()
-            payload = jwt.decode(
-                token,
-                jwks,
-                algorithms=["RS256"],
-                audience=audience,
-                options={"verify_aud": audience is not None},
-            )
-        elif alg == "HS256" and settings.jwt_secret:
-            # Ruta legacy de transición. El algoritmo se fija explícitamente para
-            # evitar ataques de confusión de algoritmo.
-            payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"], options={"verify_aud": False})
-        else:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Algoritmo de token no soportado: {alg}")
+        jwks = await _get_jwks()
+        payload = jwt.decode(
+            token,
+            jwks,
+            algorithms=["RS256"],
+            audience=audience,
+            options={"verify_aud": audience is not None},
+        )
     except JWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Token inválido: {exc}")
     except httpx.HTTPError as exc:

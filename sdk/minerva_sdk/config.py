@@ -20,9 +20,6 @@ class MinervaSettings:
     jwks_cache_ttl: int = int(os.getenv("MINERVA_JWKS_CACHE_TTL", "3600"))
     # Verifica que el `aud` del access token sea esta aplicación. Recomendado.
     verify_aud: bool = os.getenv("MINERVA_VERIFY_AUD", "true").lower() == "true"
-    # Secreto compartido SOLO para validar tokens HS256 legacy (transición). Si se
-    # deja vacío, el SDK solo acepta RS256 (recomendado en producción).
-    jwt_secret: str = os.getenv("MINERVA_JWT_SECRET", "")
     request_timeout: float = float(os.getenv("MINERVA_REQUEST_TIMEOUT", "10"))
 
 
