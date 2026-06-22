@@ -38,3 +38,15 @@ class SigningKeyRepository:
         self.session.commit()
         self.session.refresh(key)
         return key
+
+    def purge_retired_before(self, cutoff: datetime) -> int:
+        """Borra claves retiradas cuya rotación ocurrió antes de `cutoff`. Solo se
+        deben purgar una vez pasada la ventana de solapamiento (vida máxima de un
+        access/id token firmado con esa clave) para no invalidar tokens vigentes."""
+        keys = self.session.exec(
+            select(SigningKey).where(SigningKey.status == "retired", SigningKey.rotated_at < cutoff)
+        ).all()
+        for key in keys:
+            self.session.delete(key)
+        self.session.commit()
+        return len(keys)

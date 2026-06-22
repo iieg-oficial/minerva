@@ -8,7 +8,7 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.dependencies.auth import get_current_user, get_optional_user
 from app.core.dependencies.db import get_db
-from app.core.exceptions import BadRequestError
+from app.core.exceptions import BadRequestError, TooManyRequestsError
 from app.core.rate_limit import enforce_rate_limit
 from app.core.redis import get_redis
 from app.core.token_blacklist import revoke_jti
@@ -17,6 +17,30 @@ from app.modules.auth.schemas import AuthLogin, AuthRegister, AuthTokenResponse
 from app.modules.auth.service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+async def _enforce_rate_limit_audited(
+    redis: Redis,
+    key: str,
+    max_requests: int,
+    window: int,
+    audit: AuditService,
+    request: Request,
+    endpoint: str,
+) -> None:
+    """Igual que `enforce_rate_limit`, pero deja registro en AuditLog al dispararse
+    el límite (señal de fuerza bruta visible junto a login/token, no solo un 429
+    silencioso)."""
+    try:
+        await enforce_rate_limit(redis, key, max_requests, window)
+    except TooManyRequestsError:
+        audit.log(
+            "rate_limit_exceeded",
+            ip_address=request.client.host,
+            user_agent=request.headers.get("user-agent"),
+            event_metadata={"endpoint": endpoint},
+        )
+        raise
 
 
 def _login_redirect_url(request: Request) -> str:
@@ -55,11 +79,14 @@ async def login(
     audit: AuditService = Depends(get_audit_service),
     redis: Redis = Depends(get_redis),
 ):
-    await enforce_rate_limit(
+    await _enforce_rate_limit_audited(
         redis,
         f"minerva:rl:login:{request.client.host}",
         settings.RATE_LIMIT_LOGIN_MAX,
         settings.RATE_LIMIT_LOGIN_WINDOW,
+        audit,
+        request,
+        "login",
     )
     try:
         result = service.login(data.email, data.password)
@@ -140,16 +167,20 @@ async def authorize(
     service: AuthService = Depends(get_auth_service),
     current_user: dict | None = Depends(get_optional_user),
     redis: Redis = Depends(get_redis),
+    audit: AuditService = Depends(get_audit_service),
 ):
     """Inicia el flujo `/authorize`. Modo A: SPA con Bearer ya presente. Modo B:
     un sistema externo redirige aquí el navegador SIN Bearer (no hay JS de por
     medio) — sin sesión, se redirige a login y se retoma con `?next=` tras
     autenticar (mismo patrón que ya usa `AuthorizePage.jsx`)."""
-    await enforce_rate_limit(
+    await _enforce_rate_limit_audited(
         redis,
         f"minerva:rl:authorize:{request.client.host}",
         settings.RATE_LIMIT_AUTHORIZE_MAX,
         settings.RATE_LIMIT_AUTHORIZE_WINDOW,
+        audit,
+        request,
+        "authorize",
     )
     # Valida client_id/redirect_uri ANTES de cualquier redirect (incluso sin
     # sesión): nunca se redirige a un destino no confiable (evita open redirect).
@@ -196,6 +227,7 @@ async def authorize_url(
     service: AuthService = Depends(get_auth_service),
     current_user: dict = Depends(get_current_user),
     redis: Redis = Depends(get_redis),
+    audit: AuditService = Depends(get_audit_service),
 ):
     """Variante JSON de /authorize para el frontend SPA.
 
@@ -204,11 +236,14 @@ async def authorize_url(
     El frontend hace `window.location` con esta URL. Es Modo A puro: la SPA ya
     garantiza Bearer antes de llamar aquí (sigue exigiéndolo, no usa `get_optional_user`).
     """
-    await enforce_rate_limit(
+    await _enforce_rate_limit_audited(
         redis,
         f"minerva:rl:authorize:{request.client.host}",
         settings.RATE_LIMIT_AUTHORIZE_MAX,
         settings.RATE_LIMIT_AUTHORIZE_WINDOW,
+        audit,
+        request,
+        "authorize_url",
     )
     redirect_url, reauth_reason = service.authorize(
         client_id,

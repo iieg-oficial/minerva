@@ -45,6 +45,10 @@ services:
     image: redis:7-alpine
     container_name: minerva_redis
     restart: unless-stopped
+    # Sin persistencia (RDB/AOF) a propósito: Redis aquí solo guarda rate limiting,
+    # blacklist de tokens y sesiones efímeras de /authorize (ver MINERVA dependencies
+    # en backend/app/core/config.py), nunca la fuente de verdad de datos. Perder este
+    # estado en un restart solo relaja temporalmente el rate-limiting; no corrompe nada.
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "${REDIS_PORT:-6379}:6379"
