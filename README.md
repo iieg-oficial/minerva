@@ -12,9 +12,10 @@ Minerva funciona como el sistema central de identidad y acceso del instituto, si
 > mediante manifiestos YAML, administrar roles/usuarios y desarrollar bajo el
 > mismo contrato (`/api/v1`).
 >
-> - **Visión y requerimientos:** [`docs/minerva-dev-kit-context.md`](docs/minerva-dev-kit-context.md)
-> - **Guía de uso (levantar, login dev, manifiestos, permisos, SDK):** [`docs/minerva-dev-kit.md`](docs/minerva-dev-kit.md)
-> - **Integrar tu sistema (OIDC, login delegado, paso a paso):** [`docs/oidc-integracion.md`](docs/oidc-integracion.md)
+> - **Arquitectura (con diagramas):** [`docs/arquitectura.md`](docs/arquitectura.md)
+> - **Glosario OIDC/OAuth:** [`docs/glosario.md`](docs/glosario.md)
+> - **Despliegue Dev/Prod + mantenimiento:** [`docs/despliegue.md`](docs/despliegue.md)
+> - **Integrar tu sistema (OIDC, login delegado, paso a paso):** [`docs/integracion.md`](docs/integracion.md)
 > - **SDK para consumidores (FastAPI):** [`sdk/`](sdk)
 >
 > Inicio rápido: `cp .env.example .env && docker compose up --build` →
@@ -57,7 +58,7 @@ Una vez levantado:
 - **Frontend (login / panel admin)**: http://localhost:3000
 
 > El backend se expone en el puerto **9000** (contrato Minerva Dev Kit). El
-> contrato de desarrollo vive bajo `/api/v1` (ver [`docs/minerva-dev-kit.md`](docs/minerva-dev-kit.md)).
+> contrato de desarrollo vive bajo `/api/v1` (ver [`docs/integracion.md`](docs/integracion.md)).
 
 ### Usuario administrador por defecto
 
@@ -240,7 +241,7 @@ vuelve a tu sistema con un JWT y sus permisos. El resumen es:
 
 📖 **Guía completa de integración OIDC**, paso a paso (registro, manifiesto, flujo
 Authorization Code + PKCE, validación con el SDK RS256/JWKS, refresh y troubleshooting):
-**[`docs/oidc-integracion.md`](docs/oidc-integracion.md)**.
+**[`docs/integracion.md`](docs/integracion.md)**.
 
 ## Estructura del proyecto
 
@@ -324,7 +325,7 @@ pytest tests/ -v
 - **OIDC**: el flujo `/authorize` + `/token` es un proveedor OIDC conforme
   (Authorization Code + PKCE, discovery, JWKS, `/userinfo`, clientes públicos,
   `prompt`/`max_age`, refresh con rotación y revocación) — ver
-  [`docs/oidc-integracion.md`](docs/oidc-integracion.md).
+  [`docs/arquitectura.md`](docs/arquitectura.md) e [`docs/integracion.md`](docs/integracion.md).
 - **Google OAuth**: los endpoints `/auth/google/login` y `/auth/google/callback`
   están preparados pero requieren configuración de `GOOGLE_CLIENT_ID` y
   `GOOGLE_CLIENT_SECRET`. **TODO**: completar integración con Authlib para el
@@ -334,7 +335,7 @@ pytest tests/ -v
 - **Roles por aplicación**: los roles y permisos están asociados a una aplicación específica.
 - **Grupos**: los usuarios heredan roles de los grupos a los que pertenecen. Los roles directos + roles de grupo se combinan para calcular permisos efectivos.
 - **Endurecimiento de producción** (TLS, secret manager, runbook de rotación de
-  claves, observabilidad, backups): pendiente, ver `docs/oidc-pendiente.md` sección 3.
+  claves, observabilidad, backups): ver [`docs/despliegue.md`](docs/despliegue.md) sección 2.4.
 
 ## Licencia
 
