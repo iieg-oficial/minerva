@@ -20,6 +20,7 @@ class OpenIDConfiguration(BaseModel):
     id_token_signing_alg_values_supported: list[str]
     scopes_supported: list[str]
     token_endpoint_auth_methods_supported: list[str]
+    code_challenge_methods_supported: list[str]
     claims_supported: list[str]
 
 

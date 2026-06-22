@@ -24,6 +24,9 @@ def test_discovery_document_shape(client):
     assert doc["id_token_signing_alg_values_supported"] == ["RS256"]
     assert doc["response_types_supported"] == ["code"]
     assert "openid" in doc["scopes_supported"]
+    # Anuncia lo que el servidor realmente soporta: PKCE S256 y refresh tokens.
+    assert doc["code_challenge_methods_supported"] == ["S256"]
+    assert "refresh_token" in doc["grant_types_supported"]
 
 
 def test_jwks_endpoint_publishes_public_key(client):
