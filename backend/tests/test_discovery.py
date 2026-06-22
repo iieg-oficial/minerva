@@ -20,6 +20,9 @@ def test_discovery_document_shape(client):
     assert doc["jwks_uri"].endswith("/.well-known/jwks.json")
     assert doc["authorization_endpoint"].endswith("/auth/authorize")
     assert doc["token_endpoint"].endswith("/auth/token")
+    assert doc["userinfo_endpoint"].endswith("/userinfo")
+    # Clientes públicos (SPA/móvil sin client_secret) están soportados.
+    assert "none" in doc["token_endpoint_auth_methods_supported"]
     # El contrato de firma es RS256: lo que congela el modelo de confianza.
     assert doc["id_token_signing_alg_values_supported"] == ["RS256"]
     assert doc["response_types_supported"] == ["code"]

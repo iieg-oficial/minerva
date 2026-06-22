@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # access token corto + refresh token = ciclo de vida estándar OIDC.
     MINERVA_ACCESS_TOKEN_TTL_MINUTES: int = 15
     MINERVA_REFRESH_TOKEN_TTL_DAYS: int = 30
+    # Caché del JWKS (Redis) para no reconstruirlo desde BD en cada request que
+    # valida un token. Con TTL corto, un caché stale nunca rechaza un JWKS válido
+    # dentro de la ventana (build_jwks() ya incluye claves retiradas).
+    MINERVA_JWKS_CACHE_TTL_SECONDS: int = 300
 
     # --- Redis -------------------------------------------------------------
     # Redis tiene un alcance acotado: rate limiting, blacklist de tokens y

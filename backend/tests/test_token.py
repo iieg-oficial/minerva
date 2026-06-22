@@ -37,7 +37,7 @@ def app_ctx():
 
 def _mint_code(ctx: dict, scope: str = "openid profile email", nonce: str | None = "n-123") -> str:
     with Session(test_engine) as session:
-        url = AuthService(session).authorize(
+        url, _ = AuthService(session).authorize(
             ctx["client_id"], REDIRECT_URI, ctx["user_id"], "state-x", scope, nonce=nonce
         )
     return url.split("code=")[1].split("&")[0]

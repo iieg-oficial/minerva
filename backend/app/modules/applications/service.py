@@ -43,14 +43,14 @@ class ApplicationService:
         if existing:
             raise ConflictError(detail="Ya existe una aplicación con ese slug")
 
-        raw_secret = str(uuid.uuid4())
+        raw_secret = None if data.is_public else str(uuid.uuid4())
         app = Application(
             name=data.name,
             slug=data.slug,
             description=data.description,
             homepage_url=data.homepage_url,
             client_id=str(uuid.uuid4()),
-            client_secret_hash=hash_secret(raw_secret),
+            client_secret_hash=hash_secret(raw_secret) if raw_secret is not None else None,
         )
         app = self.repo.create(app)
         result = ApplicationWithSecrets.model_validate(app)
