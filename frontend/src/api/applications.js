@@ -20,6 +20,10 @@ export async function updateApplication(appId, data) {
     return res.data;
 }
 
+export async function deleteApplication(appId) {
+    await client.delete(`/applications/${appId}`);
+}
+
 export async function regenerateSecret(appId) {
     const res = await client.post(`/applications/${appId}/regenerate-secret`);
     return res.data;
@@ -39,6 +43,15 @@ export async function importManifest(file) {
     const formData = new FormData();
     formData.append('file', file);
     const res = await client.post('/applications/import-manifest', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+}
+
+export async function updateManifest(appId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await client.post(`/applications/${appId}/import-manifest`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
     });
     return res.data;

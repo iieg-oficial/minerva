@@ -14,7 +14,7 @@ from app.modules.applications.schemas import (
     RedirectURIRead,
 )
 from app.modules.applications.service import ApplicationService
-from app.modules.devkit.manifest import ManifestLoader
+from app.modules.devkit.manifest import ManifestLoader, parse_manifest, validate_manifest
 from app.modules.devkit.schemas import ManifestImportResult
 from app.shared.pagination import PaginatedResponse
 
@@ -82,6 +82,40 @@ def update_application(
     _current_user: dict = Depends(get_current_user),
 ):
     return service.update_application(application_id, data)
+
+
+@router.delete("/{application_id}", status_code=204)
+def delete_application(
+    application_id: str,
+    service: ApplicationService = Depends(get_application_service),
+    _current_user: dict = Depends(get_current_user),
+):
+    """Elimina la aplicación con sus permisos, roles, redirect URIs y asignaciones."""
+    service.delete_application(application_id)
+
+
+@router.post("/{application_id}/import-manifest", response_model=ManifestImportResult)
+async def update_application_manifest(
+    application_id: str,
+    file: UploadFile = File(..., description="Archivo manifest.minerva.yml"),
+    service: ApplicationService = Depends(get_application_service),
+    session: Session = Depends(get_db),
+    _current_user: dict = Depends(get_current_user),
+):
+    """Recarga el manifiesto de una aplicación existente (upsert de permisos/roles).
+
+    A diferencia del import global, exige que el `application.code` del manifiesto
+    coincida con el slug de la aplicación, para no modificar otra app por error.
+    """
+    app = service.get_application(application_id)
+    content = (await file.read()).decode("utf-8")
+    if not content.strip():
+        raise BadRequestError(detail="El manifiesto está vacío")
+    code = validate_manifest(parse_manifest(content))
+    if code != app.slug:
+        raise BadRequestError(detail=f"El manifiesto pertenece a `{code}` pero la aplicación es `{app.slug}`")
+    source = file.filename or "manifest.minerva.yml"
+    return ManifestLoader(session).import_manifest(content, source)
 
 
 @router.post("/{application_id}/regenerate-secret", response_model=ApplicationWithSecrets)

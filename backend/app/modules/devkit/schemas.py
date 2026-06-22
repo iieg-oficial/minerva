@@ -68,6 +68,10 @@ class ManifestImportResult(BaseModel):
     roles_upserted: int
     role_permissions_linked: int
     import_id: str
+    # Solo se rellenan cuando la importación crea la aplicación: el client_secret
+    # se muestra una sola vez (no se vuelve a poder consultar).
+    client_id: str | None = None
+    client_secret: str | None = None
 
 
 class ManifestImportRequest(BaseModel):

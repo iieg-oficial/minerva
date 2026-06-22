@@ -43,19 +43,27 @@ class ApplicationService:
         if existing:
             raise ConflictError(detail="Ya existe una aplicación con ese slug")
 
-        raw_secret = str(uuid.uuid4())
+        raw_secret = None if data.is_public else str(uuid.uuid4())
         app = Application(
             name=data.name,
             slug=data.slug,
             description=data.description,
             homepage_url=data.homepage_url,
             client_id=str(uuid.uuid4()),
-            client_secret_hash=hash_secret(raw_secret),
+            client_secret_hash=hash_secret(raw_secret) if raw_secret is not None else None,
         )
         app = self.repo.create(app)
         result = ApplicationWithSecrets.model_validate(app)
         result.client_secret_hash = raw_secret
         return result
+
+    def delete_application(self, app_id: str) -> None:
+        """Elimina la aplicación y todo lo derivado de ella (permisos, roles,
+        redirect URIs y asignaciones). Operación destructiva e irreversible."""
+        app = self.repo.get_by_id(app_id)
+        if not app:
+            raise NotFoundError(detail="Aplicación no encontrada")
+        self.repo.delete(app)
 
     def regenerate_secret(self, app_id: str) -> ApplicationWithSecrets:
         """Genera un nuevo client_secret para la aplicación y lo devuelve una sola vez.

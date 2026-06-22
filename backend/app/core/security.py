@@ -60,11 +60,16 @@ def create_access_token_rs256(
     permissions: list[str] | None = None,
     jti: str | None = None,
     expires_minutes: int | None = None,
+    scope: str = "",
+    email_verified: bool = False,
 ) -> str:
     """Access token firmado con RS256. Incluye `jti` para revocación (blacklist).
 
     `jti` puede inyectarse para vincular el token a un refresh token; si se omite,
     se genera uno. `expires_minutes` permite un TTL distinto al de la sesión interna.
+    `scope` queda registrado en el token (el canje OIDC lo usa; los tokens de sesión
+    interna del panel no lo pasan y quedan con `scope=""`) para que `/userinfo`
+    pueda filtrar los claims de identidad por scope sin volver a consultar la BD.
     """
     now = datetime.now(timezone.utc)
     minutes = expires_minutes if expires_minutes is not None else settings.effective_token_expire_minutes
@@ -72,10 +77,12 @@ def create_access_token_rs256(
         "sub": str(user_id),
         "email": email,
         "name": name,
+        "email_verified": email_verified,
         "iss": settings.effective_jwt_issuer,
         "aud": application_slug or "minerva",
         "roles": roles or [],
         "permissions": permissions or [],
+        "scope": scope,
         "jti": jti or uuid.uuid4().hex,
         "iat": int(now.timestamp()),
         "exp": int(now.timestamp()) + (minutes * 60),
@@ -85,11 +92,10 @@ def create_access_token_rs256(
 
 def create_id_token(
     user_id: str,
-    email: str,
-    name: str,
     client_id: str,
     kid: str,
     private_key_pem: str,
+    claims: dict | None = None,
     nonce: str | None = None,
     auth_time: int | None = None,
     expires_minutes: int | None = None,
@@ -97,7 +103,8 @@ def create_id_token(
     """ID Token OIDC (identidad). `aud` = `client_id` (distinto del access token).
 
     Lleva claims de identidad puros, sin permisos: el ID Token es para el cliente,
-    el access token es para los recursos.
+    el access token es para los recursos. `claims` se filtra por scope antes de
+    llegar aquí (ver `claims_for_scopes` en `app/modules/oidc/service.py`).
     """
     now = datetime.now(timezone.utc)
     minutes = expires_minutes if expires_minutes is not None else settings.effective_token_expire_minutes
@@ -105,11 +112,10 @@ def create_id_token(
         "sub": str(user_id),
         "iss": settings.effective_jwt_issuer,
         "aud": client_id,
-        "email": email,
-        "name": name,
         "iat": int(now.timestamp()),
         "exp": int(now.timestamp()) + (minutes * 60),
     }
+    payload.update(claims or {})
     if nonce is not None:
         payload["nonce"] = nonce
     if auth_time is not None:

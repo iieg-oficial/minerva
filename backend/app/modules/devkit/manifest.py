@@ -111,15 +111,17 @@ class ManifestLoader:
         # --- Aplicación (upsert) ------------------------------------------
         app = self.app_repo.get_by_slug(code)
         created_application = False
+        raw_secret: str | None = None
         if not app:
             created_application = True
+            raw_secret = str(uuid.uuid4())
             app = Application(
                 name=application.get("name", code),
                 slug=code,
                 description=application.get("description"),
                 homepage_url=application.get("base_url"),
                 client_id=str(uuid.uuid4()),
-                client_secret_hash=hash_secret(str(uuid.uuid4())),
+                client_secret_hash=hash_secret(raw_secret),
                 status="active",
             )
             self.session.add(app)
@@ -219,4 +221,6 @@ class ManifestLoader:
             roles_upserted=roles_upserted,
             role_permissions_linked=role_permissions_linked,
             import_id=record.id,
+            client_id=app.client_id if created_application else None,
+            client_secret=raw_secret,
         )

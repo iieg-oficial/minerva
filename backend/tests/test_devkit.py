@@ -55,13 +55,17 @@ def test_manifest_import(client):
     assert data["created_application"] is True
     assert data["permissions_upserted"] == 2
     assert data["roles_upserted"] == 2
+    # Al crear la app, el client_secret se devuelve una sola vez.
+    assert data["client_id"]
+    assert data["client_secret"]
 
-    # Idempotente: segunda importación no duplica
+    # Idempotente: segunda importación no duplica ni reexpone credenciales
     resp2 = client.post("/api/v1/manifests/import", content=MANIFEST, headers=auth(token))
     data2 = resp2.json()
     assert data2["created_application"] is False
     assert data2["permissions_upserted"] == 0
     assert data2["roles_upserted"] == 0
+    assert data2["client_secret"] is None
 
     perms = client.get("/api/v1/permissions?application_code=godin", headers=auth(token))
     assert len(perms.json()["items"]) == 2

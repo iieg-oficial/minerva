@@ -51,6 +51,87 @@ def test_add_redirect_uri(client, admin_token):
     assert response.json()["uri"] == "https://uri-app.example.com/callback"
 
 
+_MANIFEST = """
+application:
+  code: borrar
+  name: App a borrar
+permissions:
+  - key: borrar.cosa.view
+    name: Ver cosa
+roles:
+  - name: Lector
+    permissions:
+      - borrar.cosa.view
+"""
+
+
+def _import_manifest(client, admin_token, content, app_id=None):
+    url = f"/applications/{app_id}/import-manifest" if app_id else "/applications/import-manifest"
+    return client.post(
+        url,
+        files={"file": ("manifest.minerva.yml", content, "application/x-yaml")},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+
+def test_delete_application_cascades(client, admin_token):
+    auth = {"Authorization": f"Bearer {admin_token}"}
+    imp = _import_manifest(client, admin_token, _MANIFEST)
+    assert imp.status_code == 200, imp.text
+    app_id = imp.json()["application_id"]
+
+    # La importación dejó permisos y roles asociados a la app.
+    assert client.get(f"/permissions?application_id={app_id}", headers=auth).json()["items"]
+    assert client.get(f"/roles?application_id={app_id}", headers=auth).json()["items"]
+
+    resp = client.delete(f"/applications/{app_id}", headers=auth)
+    assert resp.status_code == 204
+
+    # La app y todo lo derivado de ella desaparecen.
+    assert client.get(f"/applications/{app_id}", headers=auth).status_code == 404
+    assert client.get(f"/permissions?application_id={app_id}", headers=auth).json()["items"] == []
+    assert client.get(f"/roles?application_id={app_id}", headers=auth).json()["items"] == []
+
+
+def test_delete_application_not_found(client, admin_token):
+    resp = client.delete("/applications/no-existe", headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 404
+
+
+def test_update_manifest_per_app(client, admin_token):
+    auth = {"Authorization": f"Bearer {admin_token}"}
+    imp = _import_manifest(client, admin_token, _MANIFEST)
+    app_id = imp.json()["application_id"]
+
+    extended = """
+application:
+  code: borrar
+  name: App a borrar
+permissions:
+  - key: borrar.cosa.view
+    name: Ver cosa
+  - key: borrar.cosa.create
+    name: Crear cosa
+roles:
+  - name: Lector
+    permissions:
+      - borrar.cosa.view
+"""
+    resp = _import_manifest(client, admin_token, extended, app_id=app_id)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["permissions_upserted"] == 1
+    assert len(client.get(f"/permissions?application_id={app_id}", headers=auth).json()["items"]) == 2
+
+
+def test_update_manifest_rejects_code_mismatch(client, admin_token):
+    imp = _import_manifest(client, admin_token, _MANIFEST)
+    app_id = imp.json()["application_id"]
+
+    other = _MANIFEST.replace("code: borrar", "code: otra").replace("borrar.cosa", "otra.cosa")
+    resp = _import_manifest(client, admin_token, other, app_id=app_id)
+    assert resp.status_code == 400
+
+
 def test_duplicate_slug(client, admin_token):
     client.post(
         "/applications",
