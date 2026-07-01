@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -92,12 +93,24 @@ class OIDCService:
             keys.append(jwk_dict)
         return {"keys": keys}
 
-    def rotate_key(self) -> SigningKey:
-        """Retira la clave activa actual y genera una nueva activa."""
+    def rotate_key(self, purge_overlap_window: bool = True) -> SigningKey:
+        """Retira la clave activa actual y genera una nueva activa.
+
+        Por defecto también purga claves ya retiradas más viejas que la ventana de
+        solapamiento (`MINERVA_ACCESS_TOKEN_TTL_MINUTES`, la vida máxima de un
+        access/id token ya emitido): pasada esa ventana ningún token vigente puede
+        seguir firmado con ellas, así que mantenerlas publicadas en el JWKS solo
+        agrega ruido."""
+        from app.core.config import settings
+
         current = self.repo.get_active()
         if current is not None:
             self.repo.mark_retired(current)
-        return self.generate_signing_key()
+        new_key = self.generate_signing_key()
+        if purge_overlap_window:
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES)
+            self.repo.purge_retired_before(cutoff)
+        return new_key
 
     # --- Emisión de tokens de sesión interna -------------------------------
     # Tokens del panel/login y del Dev Kit. Se firman con la clave activa (RS256),

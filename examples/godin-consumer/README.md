@@ -3,8 +3,8 @@
 Sistema consumidor mínimo que se integra con Minerva como **cliente público**
 (sin `client_secret`): Authorization Code + PKCE, `minerva_sdk` para validar el
 access token (RS256/JWKS) y `require_permission` para proteger un endpoint. Ver
-`docs/oidc-integracion.md` para el contrato completo y `docs/minerva-dev-kit.md`
-para la guía general de integración.
+`docs/integracion.md` para el contrato completo y `docs/arquitectura.md`
+para la visión general del sistema.
 
 ## 1. Levantar Minerva
 
@@ -72,6 +72,6 @@ uvicorn app.main:app --port 8100 --reload
 
 - Este ejemplo no implementa sesión/cookie (los tokens se devuelven crudos en
   `/callback` solo para la demo). Un consumidor real los guarda en la sesión del
-  usuario, igual que describe `docs/oidc-integracion.md` sección 3.
+  usuario, igual que describe `docs/integracion.md` sección 3.
 - `_pkce_store` es un dict en memoria de un solo proceso — válido para la demo,
   no para producción (usar la sesión del usuario, como cualquier estado de OAuth).

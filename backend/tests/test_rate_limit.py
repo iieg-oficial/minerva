@@ -1,8 +1,11 @@
 """Tests del rate limiting con Redis (ventana deslizante)."""
 
 import fakeredis.aioredis
+from sqlmodel import Session, select
 
 from app.core.rate_limit import check_rate_limit
+from app.modules.audit.models import AuditLog
+from tests.conftest import test_engine
 
 
 async def test_check_rate_limit_allows_until_max_then_blocks():
@@ -41,3 +44,8 @@ def test_login_returns_429_after_exceeding_limit(client):
     blocked = client.post("/auth/login", json=payload)
     assert blocked.status_code == 429
     assert "retry-after" in {k.lower() for k in blocked.headers}
+
+    with Session(test_engine) as session:
+        logs = session.exec(select(AuditLog).where(AuditLog.action == "rate_limit_exceeded")).all()
+    assert len(logs) == 1
+    assert logs[0].event_metadata == {"endpoint": "login"}
