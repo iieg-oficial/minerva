@@ -15,7 +15,7 @@ services:
       # el resto de la config Dev Kit (MINERVA_MODE, MINERVA_DB_URL, MINERVA_JWT_*, etc.)
       # viene íntegramente de .env, que es la única fuente de verdad.
       MINERVA_MANIFESTS_PATH: /app/manifests
-      FRONTEND_URL: ${FRONTEND_URL}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
     volumes:
       - ./backend:/app
       - ./manifests:/app/manifests
