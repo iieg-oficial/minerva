@@ -1,8 +1,7 @@
 """Helpers de integración con FastAPI para validar identidad y permisos
 emitidos por Minerva.
 
-El flujo recomendado (ver `docs/minerva-dev-kit-context.md`, secciones 4 y 13)
-es validar **permisos**, no roles. La firma de los access tokens se verifica con
+El flujo recomendado (ver `docs/integracion.md`) es validar **permisos**, no roles. La firma de los access tokens se verifica con
 RS256 contra el JWKS público de Minerva (sin secreto compartido). Los permisos
 finos se consultan en tiempo real a `GET /api/v1/me/permissions`, con caché en
 memoria; ese endpoint también aplica la revocación del lado de Minerva, así que

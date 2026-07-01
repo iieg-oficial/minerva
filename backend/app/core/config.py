@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     # --- Minerva Dev Kit ---------------------------------------------------
-    # Estas variables siguen el contrato del documento `minerva-dev-kit-context.md`.
+    # Estas variables siguen el contrato Minerva Dev Kit (ver `docs/integracion.md`).
     # Cuando están definidas tienen prioridad sobre las variables heredadas
     # (DATABASE_URL, JWT_SECRET_KEY, etc.) para facilitar la futura migración a
     # una Minerva Central cambiando únicamente configuración.
@@ -97,6 +97,30 @@ class Settings(BaseSettings):
     @property
     def is_dev_mode(self) -> bool:
         return self.MINERVA_MODE.lower() == "dev"
+
+    def validate_production_config(self) -> None:
+        """Falla rápido al arrancar si MINERVA_MODE no es dev y quedó algún valor
+        de desarrollo sin cambiar. Sin esto, Minerva arranca "production-looking"
+        con login de dev habilitado o password default, sin avisar a nadie."""
+        if self.is_dev_mode:
+            return
+        problems = []
+        if self.MINERVA_ENABLE_DEV_LOGIN:
+            problems.append("MINERVA_ENABLE_DEV_LOGIN=true (debe ser false en producción)")
+        if self.ADMIN_PASSWORD == "changeme123":
+            problems.append("ADMIN_PASSWORD sigue en su valor default (changeme123)")
+        if "change-me-in-production" in self.SECRET_KEY:
+            problems.append("SECRET_KEY sigue en su valor default")
+        if "change-me-in-production" in self.JWT_SECRET_KEY:
+            problems.append("JWT_SECRET_KEY sigue en su valor default")
+        if not self.MINERVA_KEY_ENCRYPTION_KEY:
+            problems.append("MINERVA_KEY_ENCRYPTION_KEY vacía (obligatoria fuera de modo dev)")
+        if problems:
+            detail = "\n  - ".join(problems)
+            raise RuntimeError(
+                f"Configuración insegura para MINERVA_MODE={self.MINERVA_MODE!r}. "
+                f"Corrige antes de arrancar:\n  - {detail}"
+            )
 
 
 settings = Settings()

@@ -1,5 +1,7 @@
 """Tests de la infraestructura RS256 / JWKS (Fase 1)."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlmodel import Session
 
@@ -80,3 +82,34 @@ def test_rotate_key_retires_previous_and_publishes_both(service):
 
     published_kids = {entry["kid"] for entry in service.build_jwks()["keys"]}
     assert {first.kid, second.kid} <= published_kids
+
+
+def test_purge_retired_before_only_purges_older_than_cutoff(service):
+    old_key = service.generate_signing_key()
+    service.repo.mark_retired(old_key)
+    old_key.rotated_at = datetime.now(timezone.utc) - timedelta(days=1)
+    service.session.add(old_key)
+    service.session.commit()
+
+    recent_key = service.generate_signing_key()
+    service.repo.mark_retired(recent_key)
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    purged = service.repo.purge_retired_before(cutoff)
+
+    assert purged == 1
+    assert service.repo.get_by_kid(old_key.kid) is None
+    assert service.repo.get_by_kid(recent_key.kid) is not None
+
+
+def test_rotate_key_purges_retired_keys_past_overlap_window(service):
+    stale = service.generate_signing_key()
+    service.repo.mark_retired(stale)
+    stale.rotated_at = datetime.now(timezone.utc) - timedelta(days=1)
+    service.session.add(stale)
+    service.session.commit()
+
+    new_active = service.rotate_key()
+
+    assert service.repo.get_by_kid(stale.kid) is None
+    assert service.get_active_signing_key().kid == new_active.kid

@@ -149,6 +149,7 @@ def _seed_signing_key() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_production_config()
     _seed_data()
     _seed_signing_key()
     _auto_import_manifests()
