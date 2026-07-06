@@ -6,6 +6,7 @@ from app.core.dependencies.auth import get_current_user
 from app.core.dependencies.db import get_db
 from app.core.exceptions import BadRequestError
 from app.modules.applications.schemas import (
+    ApplicationBranding,
     ApplicationCreate,
     ApplicationRead,
     ApplicationUpdate,
@@ -20,9 +21,22 @@ from app.shared.pagination import PaginatedResponse
 
 router = APIRouter(prefix="/applications", tags=["Applications"], dependencies=[Depends(require_minerva_admin)])
 
+# Router público (sin autenticación): la pantalla de login necesita el branding de
+# la app solicitante antes de que el usuario tenga sesión. Solo expone datos no sensibles.
+public_router = APIRouter(prefix="/public", tags=["Public"])
+
 
 def get_application_service(session: Session = Depends(get_db)) -> ApplicationService:
     return ApplicationService(session)
+
+
+@public_router.get("/apps/{client_id}/branding", response_model=ApplicationBranding)
+def get_app_branding(
+    client_id: str,
+    service: ApplicationService = Depends(get_application_service),
+):
+    """Branding público de una aplicación por client_id, para personalizar el login."""
+    return service.get_branding(client_id)
 
 
 @router.get("", response_model=PaginatedResponse[ApplicationRead])

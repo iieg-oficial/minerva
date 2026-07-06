@@ -15,6 +15,11 @@ class Application(SQLModel, table=True):
     client_secret_hash: str | None = Field(default=None)
     status: str = Field(default="active", max_length=20)
     homepage_url: str | None = Field(default=None, max_length=2048)
+    # Branding opcional para la pantalla de login (issue #12). Datos no sensibles
+    # que se exponen en un endpoint público para personalizar el "Iniciar sesión en …".
+    display_name: str | None = Field(default=None, max_length=255)
+    logo_url: str | None = Field(default=None, max_length=2048)
+    brand_color: str | None = Field(default=None, max_length=32)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

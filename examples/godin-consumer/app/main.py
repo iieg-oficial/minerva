@@ -10,7 +10,7 @@ import secrets
 
 import httpx
 from fastapi import Depends, FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from minerva_sdk.fastapi import get_current_user, require_permission
 
 from app.config import settings
@@ -48,10 +48,21 @@ def login():
 
 
 @app.get("/callback")
-async def callback(code: str, state: str):
+async def callback(state: str, code: str | None = None, error: str | None = None):
     """Canjea el código por tokens. Sin `client_secret`: el cliente es público,
     PKCE es lo único que liga el código al `/login` que lo originó."""
     verifier = _pkce_store.pop(state, None)
+    # Minerva solo emite `code` si el usuario tiene al menos un rol en esta app. Si no,
+    # regresa error=access_denied (OAuth2) sin `code`. `code` es opcional para poder
+    # distinguir ese caso en vez de fallar con 422 por parámetro faltante.
+    if error or not code:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": error or "invalid_request",
+                "mensaje": "No tienes acceso a esta aplicación. Solicítalo a un administrador de Minerva.",
+            },
+        )
     async with httpx.AsyncClient() as http_client:
         resp = await http_client.post(
             f"{settings.issuer_url}/auth/token",
