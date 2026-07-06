@@ -19,6 +19,14 @@ TEST_DATABASE_URL = "sqlite:///./test.db"
 test_engine = create_engine(TEST_DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
 
 
+def grant_role(session: Session, application_id: str, user_id: str, slug: str = "member") -> None:
+    """Asigna un rol al usuario en la aplicación indicada. Helper de fixtures:
+    desde el issue #11 /authorize exige al menos un rol en la app del client_id."""
+    role = Role(application_id=application_id, name="Member", slug=slug)
+    session.add(role)
+    session.add(UserRole(user_id=user_id, role_id=role.id))
+
+
 def override_get_db():
     with Session(test_engine) as session:
         yield session
