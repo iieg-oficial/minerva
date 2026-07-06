@@ -3,13 +3,13 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.core.security import hash_secret
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.oidc.service import OIDCService
 from app.modules.users.models import User
-from tests.conftest import test_engine
+from tests.conftest import grant_role, test_engine
 
 CLIENT_SECRET = "prompt-secret"
 REDIRECT_URI = "https://prompt.example.com/callback"
@@ -35,11 +35,12 @@ def app_ctx():
             last_login_at=datetime.now(timezone.utc),
         )
         session.add(user)
+        grant_role(session, app_row.id, user.id)
         session.commit()
         session.refresh(app_row)
         session.refresh(user)
         OIDCService(session).ensure_active_signing_key()
-        return {"client_id": app_row.client_id, "user_id": user.id}
+        return {"client_id": app_row.client_id, "app_id": app_row.id, "user_id": user.id}
 
 
 def _login_and_get_token(client, email: str, password: str = "testpass123") -> str:
@@ -48,7 +49,12 @@ def _login_and_get_token(client, email: str, password: str = "testpass123") -> s
 
 
 def test_prompt_login_forces_redirect_to_login(client, app_ctx):
-    token = _login_and_get_token(client, "prompt-login@iieg.gob.mx")
+    email = "prompt-login@iieg.gob.mx"
+    token = _login_and_get_token(client, email)
+    with Session(test_engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        grant_role(session, app_ctx["app_id"], user.id)
+        session.commit()
     resp = client.get(
         "/auth/authorize",
         params={
