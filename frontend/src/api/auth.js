@@ -55,7 +55,15 @@ export async function register(full_name, email, password) {
 
 // Flujo OAuth2: pide a Minerva la URL de redirección (con el `code`) hacia el
 // sistema consumidor. Requiere sesión activa (el interceptor añade el Bearer).
-export async function authorizeUrl({ clientId, redirectUri, state, scope, responseType = 'code' }) {
+export async function authorizeUrl({
+    clientId,
+    redirectUri,
+    state,
+    scope,
+    responseType = 'code',
+    codeChallenge,
+    codeChallengeMethod,
+}) {
     const response = await client.get('/auth/authorize/url', {
         params: {
             client_id: clientId,
@@ -63,6 +71,9 @@ export async function authorizeUrl({ clientId, redirectUri, state, scope, respon
             state,
             scope,
             response_type: responseType,
+            // PKCE: solo se envían si el consumidor los mandó (clientes públicos).
+            ...(codeChallenge ? { code_challenge: codeChallenge } : {}),
+            ...(codeChallengeMethod ? { code_challenge_method: codeChallengeMethod } : {}),
         },
     });
     return response.data.redirect_url;
