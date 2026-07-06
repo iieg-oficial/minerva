@@ -203,6 +203,8 @@ async def authorize(
         prompt=prompt,
         max_age=max_age,
     )
+    if reauth_reason == "access_denied":
+        return RedirectResponse(f"{redirect_uri}?error=access_denied&state={state}")
     if reauth_reason is not None:
         if prompt == "none":
             return RedirectResponse(f"{redirect_uri}?error=login_required&state={state}")
@@ -257,6 +259,8 @@ async def authorize_url(
         prompt=prompt,
         max_age=max_age,
     )
+    if reauth_reason == "access_denied":
+        return {"redirect_url": f"{redirect_uri}?error=access_denied&state={state}"}
     if reauth_reason is not None:
         if prompt == "none":
             return {"redirect_url": f"{redirect_uri}?error=login_required&state={state}"}
