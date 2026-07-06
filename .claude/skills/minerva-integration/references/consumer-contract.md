@@ -156,6 +156,54 @@ async with httpx.AsyncClient(timeout=10) as client:
 
 Small PKCE helpers are acceptable when no OAuth client library exists, but do not create custom JWT validation or permission functions.
 
+## Popup / web_message Login
+
+Optional alternative to the full-page redirect: the consumer opens Minerva's login in a
+popup so the user never leaves the app. It is **opt-in per request** — add
+`response_mode=web_message` to the `/authorize` URL. In this mode Minerva does not navigate
+the window to `redirect_uri`; it returns the result to the opener via `window.postMessage`
+and closes the popup. **No SDK change and no per-app Minerva config are required**; full-page
+redirect stays the default.
+
+Key points:
+- Open Minerva's **web panel** URL (where the login/authorize screen lives), which in dev may
+  differ from the issuer/API origin (e.g. `:3100` vs `:9000`). Token exchange still happens
+  server-to-server against the issuer.
+- The message payload is `{ source: "minerva", code, state, error }`. The denied case
+  (no role in the app) arrives as `{ error: "access_denied" }` on the same channel.
+- Minerva sends the `postMessage` with `targetOrigin = origin of redirect_uri` (never `"*"`).
+  Because Minerva validates `redirect_uri` against its allowlist before issuing the `code`,
+  the `code` can only reach an origin already registered as yours — that is the trust
+  boundary. Still, always validate `event.origin` in the listener before trusting the data.
+
+```js
+const MINERVA_ORIGIN = new URL(minervaWebUrl).origin;
+
+window.addEventListener("message", async (e) => {
+  if (e.origin !== MINERVA_ORIGIN || e.data?.source !== "minerva") return;
+  if (e.data.error) { /* access_denied / login_required → show "no access" */ return; }
+  // Exchange e.data.code server-to-server (with the code_verifier), never in the browser.
+  await fetch("/popup/exchange", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: e.data.code, state: e.data.state }),
+  });
+});
+
+// Opening the popup:
+window.open(
+  `${MINERVA_ORIGIN}/authorize?client_id=${clientId}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code` +
+    `&scope=openid%20profile%20email&state=${state}` +
+    `&code_challenge=${challenge}&code_challenge_method=S256&response_mode=web_message`,
+  "minerva-login", "width=480,height=680",
+);
+```
+
+Generate `state`/`code_verifier` the same way as the full-page flow and keep the verifier
+server-side (look it up by `state` when the opener posts the code back). See
+`examples/godin-consumer` (`/popup`, `/popup/exchange`) for a working reference.
+
 ## Public vs Confidential Clients
 
 - Public client: no `client_secret`; PKCE is required in `/auth/authorize` and `/auth/token`.

@@ -230,6 +230,59 @@ aplicación (panel admin o al crear el usuario). El rol global `minerva.admin` s
 puede entrar. Otros valores de `error` posibles: `login_required` (con `prompt=none` sin
 sesión) — trátalos igual, leyendo `error` en el callback.
 
+### 3.6 Login en popup (opt-in, sin salir de tu pantalla)
+
+Por defecto el login es un redirect full-page (§3.1): sacas al usuario a Minerva y
+regresa a tu `redirect_uri`. Si prefieres **no sacarlo de tu UI**, puedes abrir el login
+de Minerva en un popup. Es **opt-in por request**: agregas `response_mode=web_message` a
+la URL de `/authorize`. En ese modo Minerva **no navega** la ventana al `redirect_uri`;
+en su lugar devuelve el resultado al opener vía `window.postMessage` y cierra el popup.
+
+- **No requiere cambios en el SDK ni configuración por app en Minerva.** El redirect
+  full-page sigue siendo el comportamiento por defecto.
+- El `postMessage` se envía con `targetOrigin = origen de tu redirect_uri` (nunca `"*"`).
+  Como Minerva valida el `redirect_uri` contra su allowlist antes de emitir el `code`, el
+  `code` solo puede llegar a un origen ya registrado como tuyo — esa es la frontera de
+  confianza. Aun así, **valida `event.origin`** en tu listener.
+- La URL a abrir es la del **panel web** de Minerva (donde vive la pantalla de login), que
+  en desarrollo puede diferir del `issuer`/API (p. ej. `:3100` vs `:9000`). El canje del
+  `code` sigue siendo server-to-server contra el `issuer` (§3.2).
+
+```html
+<script>
+  // Solo aceptamos mensajes del origen del panel web de Minerva.
+  const MINERVA_ORIGIN = new URL("https://minerva.example.gob.mx").origin;
+
+  window.addEventListener("message", async (e) => {
+    if (e.origin !== MINERVA_ORIGIN || e.data?.source !== "minerva") return;
+    if (e.data.error) {
+      // access_denied (sin rol) o login_required — muestra tu pantalla de "sin acceso".
+      return;
+    }
+    // Recibiste el `code`; canjéalo en TU backend (server-to-server, con el code_verifier).
+    await fetch("/popup/exchange", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: e.data.code, state: e.data.state }),
+    });
+  });
+
+  document.getElementById("login").onclick = () => {
+    const authUrl =
+      `${MINERVA_ORIGIN}/authorize?client_id=${CLIENT_ID}` +
+      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+      `&response_type=code&scope=openid%20profile%20email&state=${STATE}` +
+      `&code_challenge=${CHALLENGE}&code_challenge_method=S256` +
+      `&response_mode=web_message`; // <-- opt-in al modo popup
+    window.open(authUrl, "minerva-login", "width=480,height=680");
+  };
+</script>
+```
+
+El mensaje que recibe el opener es `{ source: "minerva", code, state, error }`. El caso
+denegado (§3.5) llega como `{ error: "access_denied" }` por el mismo canal. Ver
+`examples/godin-consumer` (`/popup` y `/popup/exchange`) para un ejemplo completo.
+
 ## 4. Validar tokens y permisos con el SDK (`minerva_sdk`)
 
 ```bash
@@ -273,9 +326,10 @@ pregunta a Minerva, Minerva decide.
 ## 5. Ejemplo de referencia completo
 
 `examples/godin-consumer/` es un consumidor mínimo funcional: cliente público + PKCE,
-`/login`, `/callback`, `/whoami` y `/protegido` (con `require_permission`). Su
-`README.md` trae el flujo de prueba manual paso a paso, incluyendo los `curl` exactos
-para registrar la aplicación y probar el endpoint protegido.
+`/login`, `/callback`, `/whoami` y `/protegido` (con `require_permission`), más `/popup`
+y `/popup/exchange` que demuestran el login en popup de §3.6. Su `README.md` trae el flujo
+de prueba manual paso a paso, incluyendo los `curl` exactos para registrar la aplicación y
+probar el endpoint protegido.
 
 ## 6. Diferencias entre Dev y Producción al integrar
 
