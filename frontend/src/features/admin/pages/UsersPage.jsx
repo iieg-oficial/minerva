@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Typography, Space, App } from 'antd';
-import { PlusOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, Typography, Space, App, Divider } from 'antd';
+import { PlusOutlined, EditOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import * as usersAPI from '@/api/users';
+import * as applicationsAPI from '@/api/applications';
+import * as rolesAPI from '@/api/roles';
+import { assignRoleToUser } from '@/api/groups';
 
 const { Title } = Typography;
 
@@ -18,9 +21,12 @@ export default function UsersPage() {
     const [modalOpen, setModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [pagination, setPagination] = useState({ offset: 0, limit: 10 });
+    const [applications, setApplications] = useState([]);
+    const [roles, setRoles] = useState([]);
     const [form] = Form.useForm();
     const [editForm] = Form.useForm();
     const { message } = App.useApp();
+    const roleAssignments = Form.useWatch('roleAssignments', form) || [];
 
     const fetchUsers = useCallback(async () => {
         setLoading(true);
@@ -39,9 +45,28 @@ export default function UsersPage() {
         fetchUsers();
     }, [fetchUsers]);
 
+    useEffect(() => {
+        // Se precargan para el selector de "Aplicaciones y roles" al crear un usuario.
+        Promise.all([applicationsAPI.listApplications({ limit: 100 }), rolesAPI.listRoles({ limit: 500 })])
+            .then(([appsData, rolesData]) => {
+                setApplications(appsData.items || []);
+                setRoles(rolesData.items || []);
+            })
+            .catch(() => message.error('Error al cargar aplicaciones y roles'));
+    }, [message]);
+
     const handleCreate = async (values) => {
+        const { roleAssignments, ...userData } = values;
         try {
-            await usersAPI.createUser(values);
+            const user = await usersAPI.createUser(userData);
+            const roleIds = (roleAssignments || []).map((a) => a?.role_id).filter(Boolean);
+            for (const roleId of roleIds) {
+                try {
+                    await assignRoleToUser(user.id, roleId);
+                } catch {
+                    message.warning('El usuario se creó, pero un rol no pudo asignarse');
+                }
+            }
             message.success('Usuario creado');
             setModalOpen(false);
             form.resetFields();
@@ -177,6 +202,54 @@ export default function UsersPage() {
                             <Form.Item name="auth_provider" label="Proveedor" initialValue="local">
                                 <Select options={[{ label: 'Local', value: 'local' }, { label: 'Google', value: 'google' }]} />
                             </Form.Item>
+
+                            <Divider style={{ margin: '8px 0 16px' }}>Aplicaciones y roles (opcional)</Divider>
+                            <Form.List name="roleAssignments">
+                                {(fields, { add, remove }) => (
+                                    <>
+                                        {fields.map(({ key, name, ...restField }) => {
+                                            const applicationId = roleAssignments[name]?.application_id;
+                                            const roleOptions = roles
+                                                .filter((r) => r.application_id === applicationId)
+                                                .map((r) => ({ label: r.name, value: r.id }));
+                                            return (
+                                                <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+                                                    <Form.Item
+                                                        {...restField}
+                                                        name={[name, 'application_id']}
+                                                        rules={[{ required: true, message: 'Selecciona una aplicación' }]}
+                                                    >
+                                                        <Select
+                                                            placeholder="Aplicación"
+                                                            style={{ width: 160 }}
+                                                            options={applications.map((a) => ({ label: a.name, value: a.id }))}
+                                                            onChange={() => form.setFieldValue(['roleAssignments', name, 'role_id'], undefined)}
+                                                        />
+                                                    </Form.Item>
+                                                    <Form.Item
+                                                        {...restField}
+                                                        name={[name, 'role_id']}
+                                                        rules={[{ required: true, message: 'Selecciona un rol' }]}
+                                                    >
+                                                        <Select
+                                                            placeholder="Rol"
+                                                            style={{ width: 160 }}
+                                                            disabled={!applicationId}
+                                                            options={roleOptions}
+                                                        />
+                                                    </Form.Item>
+                                                    <Button type="text" icon={<DeleteOutlined />} onClick={() => remove(name)} />
+                                                </Space>
+                                            );
+                                        })}
+                                        <Form.Item>
+                                            <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                                                Agregar aplicación
+                                            </Button>
+                                        </Form.Item>
+                                    </>
+                                )}
+                            </Form.List>
                         </>
                     )}
                     {isEditMode && (

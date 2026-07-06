@@ -13,6 +13,11 @@ término no es familiar, revisa primero [`glosario.md`](glosario.md).
    SDK (`minerva_sdk`), que verifica la firma RS256 contra el JWKS de Minerva y consulta
    permisos en tiempo real — **nunca validas roles localmente**.
 
+> **Requisito de acceso (importante):** el usuario debe tener **al menos un rol asignado
+> en tu aplicación** para que Minerva emita el código de autorización. Si no lo tiene,
+> Minerva **no** manda `code`: redirige a `redirect_uri?error=access_denied&state=...`.
+> Tu `/callback` debe manejar ese caso (ver [§3.5](#35-acceso-denegado-usuario-sin-rol-en-tu-aplicación)).
+
 ## 1. Registrar tu aplicación
 
 ### Opción A: vía API (sesión de administrador)
@@ -192,6 +197,92 @@ curl -X POST {MINERVA_ISSUER}/auth/revoke \
   -d "token={refresh_token a revocar}"
 ```
 
+### 3.5 Acceso denegado: usuario sin rol en tu aplicación
+
+Minerva solo emite el código si el usuario tiene **al menos un rol** en tu aplicación
+(directo o por grupo). Si no lo tiene, en lugar de `code` responde con un error OAuth2
+estándar (RFC 6749 §4.1.2.1) sobre tu `redirect_uri`:
+
+```
+{tu redirect_uri}?error=access_denied&state={el mismo state}
+```
+
+Esto **no requiere cambios en el SDK** (el SDK valida tokens ya emitidos; aquí todavía no
+hay token). Se atiende en tu `/callback`: haz `code` opcional y maneja `error`.
+
+```python
+from fastapi.responses import RedirectResponse
+
+@app.get("/callback")
+async def callback(state: str, code: str | None = None, error: str | None = None):
+    # Verifica siempre que `state` coincida con el que generaste en /login.
+    if error:
+        # error=access_denied → el usuario se autenticó pero no tiene rol en esta app.
+        # Muéstrale una pantalla propia de "sin acceso", no intentes canjear el token.
+        return RedirectResponse("/sin-acceso")
+    if not code:
+        return RedirectResponse("/sin-acceso")
+    # ... flujo normal: canjear `code` en /auth/token (ver §3.2)
+```
+
+Para conceder acceso, un administrador de Minerva asigna al usuario un rol de tu
+aplicación (panel admin o al crear el usuario). El rol global `minerva.admin` siempre
+puede entrar. Otros valores de `error` posibles: `login_required` (con `prompt=none` sin
+sesión) — trátalos igual, leyendo `error` en el callback.
+
+### 3.6 Login en popup (opt-in, sin salir de tu pantalla)
+
+Por defecto el login es un redirect full-page (§3.1): sacas al usuario a Minerva y
+regresa a tu `redirect_uri`. Si prefieres **no sacarlo de tu UI**, puedes abrir el login
+de Minerva en un popup. Es **opt-in por request**: agregas `response_mode=web_message` a
+la URL de `/authorize`. En ese modo Minerva **no navega** la ventana al `redirect_uri`;
+en su lugar devuelve el resultado al opener vía `window.postMessage` y cierra el popup.
+
+- **No requiere cambios en el SDK ni configuración por app en Minerva.** El redirect
+  full-page sigue siendo el comportamiento por defecto.
+- El `postMessage` se envía con `targetOrigin = origen de tu redirect_uri` (nunca `"*"`).
+  Como Minerva valida el `redirect_uri` contra su allowlist antes de emitir el `code`, el
+  `code` solo puede llegar a un origen ya registrado como tuyo — esa es la frontera de
+  confianza. Aun así, **valida `event.origin`** en tu listener.
+- La URL a abrir es la del **panel web** de Minerva (donde vive la pantalla de login), que
+  en desarrollo puede diferir del `issuer`/API (p. ej. `:3100` vs `:9000`). El canje del
+  `code` sigue siendo server-to-server contra el `issuer` (§3.2).
+
+```html
+<script>
+  // Solo aceptamos mensajes del origen del panel web de Minerva.
+  const MINERVA_ORIGIN = new URL("https://minerva.example.gob.mx").origin;
+
+  window.addEventListener("message", async (e) => {
+    if (e.origin !== MINERVA_ORIGIN || e.data?.source !== "minerva") return;
+    if (e.data.error) {
+      // access_denied (sin rol) o login_required — muestra tu pantalla de "sin acceso".
+      return;
+    }
+    // Recibiste el `code`; canjéalo en TU backend (server-to-server, con el code_verifier).
+    await fetch("/popup/exchange", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: e.data.code, state: e.data.state }),
+    });
+  });
+
+  document.getElementById("login").onclick = () => {
+    const authUrl =
+      `${MINERVA_ORIGIN}/authorize?client_id=${CLIENT_ID}` +
+      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+      `&response_type=code&scope=openid%20profile%20email&state=${STATE}` +
+      `&code_challenge=${CHALLENGE}&code_challenge_method=S256` +
+      `&response_mode=web_message`; // <-- opt-in al modo popup
+    window.open(authUrl, "minerva-login", "width=480,height=680");
+  };
+</script>
+```
+
+El mensaje que recibe el opener es `{ source: "minerva", code, state, error }`. El caso
+denegado (§3.5) llega como `{ error: "access_denied" }` por el mismo canal. Ver
+`examples/godin-consumer` (`/popup` y `/popup/exchange`) para un ejemplo completo.
+
 ## 4. Validar tokens y permisos con el SDK (`minerva_sdk`)
 
 ```bash
@@ -235,9 +326,10 @@ pregunta a Minerva, Minerva decide.
 ## 5. Ejemplo de referencia completo
 
 `examples/godin-consumer/` es un consumidor mínimo funcional: cliente público + PKCE,
-`/login`, `/callback`, `/whoami` y `/protegido` (con `require_permission`). Su
-`README.md` trae el flujo de prueba manual paso a paso, incluyendo los `curl` exactos
-para registrar la aplicación y probar el endpoint protegido.
+`/login`, `/callback`, `/whoami` y `/protegido` (con `require_permission`), más `/popup`
+y `/popup/exchange` que demuestran el login en popup de §3.6. Su `README.md` trae el flujo
+de prueba manual paso a paso, incluyendo los `curl` exactos para registrar la aplicación y
+probar el endpoint protegido.
 
 ## 6. Diferencias entre Dev y Producción al integrar
 
@@ -250,3 +342,32 @@ para registrar la aplicación y probar el endpoint protegido.
 | Secrets (`client_secret`) | puede vivir en `.env` local | secret manager — nunca en el repo ni en logs |
 
 Ver [`despliegue.md`](despliegue.md) para cómo se endurece Minerva mismo en producción.
+
+## 7. Branding de tu aplicación en el login (opcional)
+
+Cuando un usuario entra a Minerva desde tu sistema, la pantalla de login puede mostrar el
+nombre, logo y color de tu aplicación (estilo "Iniciar sesión en …") en lugar del branding
+genérico de Minerva. **No requiere ningún cambio en tu sistema ni en el SDK**: es solo
+configuración del lado de Minerva.
+
+Campos (todos opcionales) en la aplicación:
+
+| Campo | Uso en la pantalla de login |
+|---|---|
+| `display_name` | Nombre a mostrar. Si se omite, se usa `name`. |
+| `logo_url` | URL del logo (imagen accesible públicamente). Si falla, cae al logo del IIEG. |
+| `brand_color` | Color hex (p. ej. `#5C2472`). Colorea el botón de acceso. |
+
+Se configuran desde el **panel admin** (editar aplicación → "Branding en el login"), o vía API:
+
+```bash
+curl -X PATCH {MINERVA_ISSUER}/applications/{application_id} \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"display_name": "Godín Oficios", "logo_url": "https://.../logo.png", "brand_color": "#5C2472"}'
+```
+
+La pantalla de login descubre el branding por `client_id` a través de un endpoint público
+de solo lectura (`GET /public/apps/{client_id}/branding`) que expone **únicamente** esos
+datos no sensibles — nunca `client_secret` ni las redirect URIs. Si tu app no define
+branding, el login usa la identidad genérica de Minerva.

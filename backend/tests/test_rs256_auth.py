@@ -8,7 +8,7 @@ from app.modules.applications.models import Application, RedirectURI
 from app.modules.auth.service import AuthService
 from app.modules.oidc.service import OIDCService
 from app.modules.users.models import User
-from tests.conftest import test_engine
+from tests.conftest import grant_role, test_engine
 
 CLIENT_SECRET = "secret-rs256-auth"
 REDIRECT_URI = "https://cli.example.com/cb"
@@ -28,6 +28,7 @@ def ctx():
         session.add(RedirectURI(application_id=app_row.id, uri=REDIRECT_URI, environment="production"))
         user = User(email="rs256@iieg.gob.mx", full_name="RS256 User", auth_provider="local", status="active")
         session.add(user)
+        grant_role(session, app_row.id, user.id)
         session.commit()
         session.refresh(app_row)
         session.refresh(user)
