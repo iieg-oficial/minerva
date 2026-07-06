@@ -8,6 +8,9 @@ class ApplicationBase(BaseModel):
     slug: str
     description: str | None = None
     homepage_url: str | None = None
+    display_name: str | None = None
+    logo_url: str | None = None
+    brand_color: str | None = None
 
 
 class ApplicationCreate(ApplicationBase):
@@ -21,6 +24,9 @@ class ApplicationUpdate(BaseModel):
     description: str | None = None
     homepage_url: str | None = None
     status: str | None = None
+    display_name: str | None = None
+    logo_url: str | None = None
+    brand_color: str | None = None
 
 
 class ApplicationRead(BaseModel):
@@ -33,8 +39,21 @@ class ApplicationRead(BaseModel):
     client_id: str
     status: str
     homepage_url: str | None = None
+    display_name: str | None = None
+    logo_url: str | None = None
+    brand_color: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ApplicationBranding(BaseModel):
+    """Datos públicos no sensibles para personalizar la pantalla de login.
+    Nunca incluye client_secret, redirect_uris ni estado interno."""
+
+    name: str
+    display_name: str | None = None
+    logo_url: str | None = None
+    brand_color: str | None = None
 
 
 class ApplicationWithSecrets(ApplicationRead):
