@@ -18,6 +18,7 @@ from app.modules.applications.repository import ApplicationRepository
 from app.modules.applications.service import ApplicationService
 from app.modules.auth.repository import AuthCodeRepository, RefreshTokenRepository
 from app.modules.auth.schemas import AuthRegister
+from app.modules.authorization.service import AuthorizationService
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
 from app.modules.oidc.service import OIDCService, claims_for_scopes
 from app.modules.permissions.repository import RolePermissionRepository
@@ -37,6 +38,7 @@ class AuthService:
         self.app_service = ApplicationService(session)
         self.app_repo = ApplicationRepository(session)
         self.oidc_service = OIDCService(session)
+        self.authz_service = AuthorizationService(session)
         self.user_role_repo = UserRoleRepository(session)
         self.group_user_repo = GroupUserRepository(session)
         self.group_role_repo = GroupRoleRepository(session)
@@ -138,6 +140,14 @@ class AuthService:
             return (datetime.now(timezone.utc) - last).total_seconds() > max_age
         return False
 
+    def _has_app_access(self, user_id: str, app_slug: str) -> bool:
+        """True si el usuario tiene al menos un rol asignado en la app (directo o
+        por grupo), o si es administrador global de Minerva."""
+        if self.authz_service.is_minerva_admin(user_id):
+            return True
+        _, role_slugs = self._get_user_permissions(user_id, app_slug)
+        return bool(role_slugs)
+
     def authorize(
         self,
         client_id: str,
@@ -152,9 +162,10 @@ class AuthService:
         max_age: int | None = None,
     ) -> tuple[str | None, str | None]:
         """Devuelve `(redirect_url, reauth_reason)`. Si `reauth_reason` no es
-        `None` (`"login"` o `"max_age"`), el caller (router) decide la respuesta
-        HTTP — no se modela como excepción porque no es un caso de error, es una
-        señal de control de flujo esperada por `prompt`/`max_age` (OIDC Core 3.1.2.1)."""
+        `None` (`"login"`, `"max_age"` o `"access_denied"`), el caller (router)
+        decide la respuesta HTTP — no se modela como excepción porque no es un
+        caso de error, es una señal de control de flujo esperada por
+        `prompt`/`max_age` (OIDC Core 3.1.2.1) o de acceso denegado por rol."""
         app = self.app_service.get_application_by_client_id(client_id)
         self.validate_client_and_redirect(client_id, redirect_uri)
 
@@ -179,6 +190,9 @@ class AuthService:
             raise NotFoundError(detail="Usuario no encontrado")
         if user.status != "active":
             raise ForbiddenError(detail="Usuario inactivo")
+
+        if not self._has_app_access(user_id, app.slug):
+            return None, "access_denied"
 
         if self._requires_reauth(user, prompt, max_age):
             return None, ("login" if prompt == "login" else "max_age")
