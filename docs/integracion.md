@@ -13,6 +13,11 @@ término no es familiar, revisa primero [`glosario.md`](glosario.md).
    SDK (`minerva_sdk`), que verifica la firma RS256 contra el JWKS de Minerva y consulta
    permisos en tiempo real — **nunca validas roles localmente**.
 
+> **Requisito de acceso (importante):** el usuario debe tener **al menos un rol asignado
+> en tu aplicación** para que Minerva emita el código de autorización. Si no lo tiene,
+> Minerva **no** manda `code`: redirige a `redirect_uri?error=access_denied&state=...`.
+> Tu `/callback` debe manejar ese caso (ver [§3.5](#35-acceso-denegado-usuario-sin-rol-en-tu-aplicación)).
+
 ## 1. Registrar tu aplicación
 
 ### Opción A: vía API (sesión de administrador)
@@ -192,6 +197,39 @@ curl -X POST {MINERVA_ISSUER}/auth/revoke \
   -d "token={refresh_token a revocar}"
 ```
 
+### 3.5 Acceso denegado: usuario sin rol en tu aplicación
+
+Minerva solo emite el código si el usuario tiene **al menos un rol** en tu aplicación
+(directo o por grupo). Si no lo tiene, en lugar de `code` responde con un error OAuth2
+estándar (RFC 6749 §4.1.2.1) sobre tu `redirect_uri`:
+
+```
+{tu redirect_uri}?error=access_denied&state={el mismo state}
+```
+
+Esto **no requiere cambios en el SDK** (el SDK valida tokens ya emitidos; aquí todavía no
+hay token). Se atiende en tu `/callback`: haz `code` opcional y maneja `error`.
+
+```python
+from fastapi.responses import RedirectResponse
+
+@app.get("/callback")
+async def callback(state: str, code: str | None = None, error: str | None = None):
+    # Verifica siempre que `state` coincida con el que generaste en /login.
+    if error:
+        # error=access_denied → el usuario se autenticó pero no tiene rol en esta app.
+        # Muéstrale una pantalla propia de "sin acceso", no intentes canjear el token.
+        return RedirectResponse("/sin-acceso")
+    if not code:
+        return RedirectResponse("/sin-acceso")
+    # ... flujo normal: canjear `code` en /auth/token (ver §3.2)
+```
+
+Para conceder acceso, un administrador de Minerva asigna al usuario un rol de tu
+aplicación (panel admin o al crear el usuario). El rol global `minerva.admin` siempre
+puede entrar. Otros valores de `error` posibles: `login_required` (con `prompt=none` sin
+sesión) — trátalos igual, leyendo `error` en el callback.
+
 ## 4. Validar tokens y permisos con el SDK (`minerva_sdk`)
 
 ```bash
@@ -250,3 +288,32 @@ para registrar la aplicación y probar el endpoint protegido.
 | Secrets (`client_secret`) | puede vivir en `.env` local | secret manager — nunca en el repo ni en logs |
 
 Ver [`despliegue.md`](despliegue.md) para cómo se endurece Minerva mismo en producción.
+
+## 7. Branding de tu aplicación en el login (opcional)
+
+Cuando un usuario entra a Minerva desde tu sistema, la pantalla de login puede mostrar el
+nombre, logo y color de tu aplicación (estilo "Iniciar sesión en …") en lugar del branding
+genérico de Minerva. **No requiere ningún cambio en tu sistema ni en el SDK**: es solo
+configuración del lado de Minerva.
+
+Campos (todos opcionales) en la aplicación:
+
+| Campo | Uso en la pantalla de login |
+|---|---|
+| `display_name` | Nombre a mostrar. Si se omite, se usa `name`. |
+| `logo_url` | URL del logo (imagen accesible públicamente). Si falla, cae al logo del IIEG. |
+| `brand_color` | Color hex (p. ej. `#5C2472`). Colorea el botón de acceso. |
+
+Se configuran desde el **panel admin** (editar aplicación → "Branding en el login"), o vía API:
+
+```bash
+curl -X PATCH {MINERVA_ISSUER}/applications/{application_id} \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"display_name": "Godín Oficios", "logo_url": "https://.../logo.png", "brand_color": "#5C2472"}'
+```
+
+La pantalla de login descubre el branding por `client_id` a través de un endpoint público
+de solo lectura (`GET /public/apps/{client_id}/branding`) que expone **únicamente** esos
+datos no sensibles — nunca `client_secret` ni las redirect URIs. Si tu app no define
+branding, el login usa la identidad genérica de Minerva.

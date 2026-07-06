@@ -7,6 +7,7 @@ from app.core.security import hash_secret
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.applications.repository import ApplicationRepository, RedirectURIRepository
 from app.modules.applications.schemas import (
+    ApplicationBranding,
     ApplicationCreate,
     ApplicationRead,
     ApplicationUpdate,
@@ -95,9 +96,23 @@ class ApplicationService:
             app.homepage_url = data.homepage_url
         if data.status is not None:
             app.status = data.status
+        if data.display_name is not None:
+            app.display_name = data.display_name
+        if data.logo_url is not None:
+            app.logo_url = data.logo_url
+        if data.brand_color is not None:
+            app.brand_color = data.brand_color
 
         app = self.repo.update(app)
         return ApplicationRead.model_validate(app)
+
+    def get_branding(self, client_id: str) -> ApplicationBranding:
+        """Branding público de una app por client_id, para la pantalla de login.
+        Solo devuelve datos no sensibles."""
+        app = self.repo.get_by_client_id(client_id)
+        if not app:
+            raise NotFoundError(detail="Aplicación no encontrada")
+        return ApplicationBranding.model_validate(app, from_attributes=True)
 
     def add_redirect_uri(self, app_id: str, data: RedirectURICreate) -> RedirectURIRead:
         app = self.repo.get_by_id(app_id)

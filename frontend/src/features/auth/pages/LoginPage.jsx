@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Form, Input, Button, Typography, Flex, Row, Col, theme } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router';
 import * as authAPI from '@/api/auth';
+import { getAppBranding } from '@/api/public';
 
 const { Title, Text, Link: TypoLink } = Typography;
 const { useToken } = theme;
@@ -12,6 +13,15 @@ function safeNext(next) {
         return next;
     }
     return '/admin';
+}
+
+// Extrae el client_id del destino post-login cuando viene de un flujo /authorize
+// (p. ej. next="/authorize?client_id=...&redirect_uri=..."), para pedir el branding
+// de la app solicitante. Devuelve null si no aplica.
+function clientIdFromNext(next) {
+    if (!next || !next.startsWith('/authorize')) return null;
+    const query = next.slice(next.indexOf('?') + 1);
+    return new URLSearchParams(query).get('client_id');
 }
 
 const BRAND = {
@@ -27,12 +37,14 @@ const PASSWORD_ICONS = {
 
 export default function LoginPage() {
     const [loading, setLoading] = useState(false);
+    const [branding, setBranding] = useState(null);
     const [form] = Form.useForm();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const { token } = useToken();
 
     const next = safeNext(searchParams.get('next'));
+    const clientId = clientIdFromNext(searchParams.get('next'));
 
     useEffect(() => {
         const stored = localStorage.getItem('access_token');
@@ -40,6 +52,18 @@ export default function LoginPage() {
             navigate(next, { replace: true });
         }
     }, [navigate, next]);
+
+    useEffect(() => {
+        // Personaliza la pantalla con el branding de la app solicitante. Si la app
+        // no existe o no tiene branding, se conserva la identidad genérica de Minerva.
+        if (!clientId) return;
+        getAppBranding(clientId)
+            .then(setBranding)
+            .catch(() => setBranding(null));
+    }, [clientId]);
+
+    const appName = branding?.display_name || branding?.name;
+    const brandColor = branding?.brand_color || BRAND.purple;
 
     const onFinish = async (values) => {
         setLoading(true);
@@ -162,8 +186,8 @@ export default function LoginPage() {
                                             loading={loading}
                                             block
                                             style={{
-                                                background: BRAND.purple,
-                                                borderColor: BRAND.purple,
+                                                background: brandColor,
+                                                borderColor: brandColor,
                                                 height: 40,
                                                 borderRadius: 20,
                                                 fontWeight: 700,
@@ -193,25 +217,26 @@ export default function LoginPage() {
                         >
                             <Flex align="center" justify="center" gap={18} wrap>
                                 <img
-                                    src={`${import.meta.env.BASE_URL}iieg-favicon-192.png`}
+                                    src={branding?.logo_url || `${import.meta.env.BASE_URL}iieg-favicon-192.png`}
                                     alt=""
                                     aria-hidden="true"
-                                    style={{ height: 86, width: 'auto' }}
+                                    style={{ height: 86, width: 'auto', maxWidth: 200, objectFit: 'contain' }}
+                                    onError={(e) => { e.currentTarget.src = `${import.meta.env.BASE_URL}iieg-favicon-192.png`; }}
                                 />
                                 <div style={{ width: 2, height: 54, background: BRAND.orange }} aria-hidden />
                                 <Title
                                     level={1}
                                     style={{
                                         margin: 0,
-                                        color: '#5B6770',
+                                        color: appName ? brandColor : '#5B6770',
                                         fontWeight: 800,
                                         letterSpacing: 0,
-                                        fontSize: 58,
+                                        fontSize: appName && appName.length > 8 ? 40 : 58,
                                         lineHeight: 1,
                                         fontFamily: '"Garet", sans-serif',
                                     }}
                                 >
-                                    Minerva
+                                    {appName || 'Minerva'}
                                 </Title>
                             </Flex>
                             <Text
@@ -225,7 +250,9 @@ export default function LoginPage() {
                                     fontFamily: '"Garet", sans-serif',
                                 }}
                             >
-                                Sistema institucional de autenticación y gestión de accesos
+                                {appName
+                                    ? `Inicia sesión con tu cuenta del IIEG para continuar a ${appName}`
+                                    : 'Sistema institucional de autenticación y gestión de accesos'}
                             </Text>
                         </Flex>
                     </Col>

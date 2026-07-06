@@ -11,6 +11,7 @@ from app.core.models import import_models
 from app.core.redis import close_redis, init_redis
 from app.core.security import hash_password, hash_secret
 from app.modules.applications.models import Application, RedirectURI
+from app.modules.applications.router import public_router
 from app.modules.applications.router import router as applications_router
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
@@ -177,6 +178,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(applications_router)
+app.include_router(public_router)
 app.include_router(roles_router)
 app.include_router(permissions_router)
 app.include_router(groups_router)

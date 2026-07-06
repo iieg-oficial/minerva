@@ -127,7 +127,15 @@ export default function ApplicationsPage() {
 
     const handleEdit = (app) => {
         setEditingApp(app);
-        editForm.setFieldsValue({ name: app.name, description: app.description, homepage_url: app.homepage_url, status: app.status });
+        editForm.setFieldsValue({
+            name: app.name,
+            description: app.description,
+            homepage_url: app.homepage_url,
+            status: app.status,
+            display_name: app.display_name,
+            logo_url: app.logo_url,
+            brand_color: app.brand_color,
+        });
         setModalOpen(true);
     };
 
@@ -270,6 +278,16 @@ export default function ApplicationsPage() {
                             </Form.Item>
                             <Form.Item name="status" label="Estado">
                                 <Select options={[{ label: 'Activo', value: 'active' }, { label: 'Inactivo', value: 'inactive' }]} />
+                            </Form.Item>
+                            <Divider style={{ margin: '8px 0 16px' }}>Branding en el login (opcional)</Divider>
+                            <Form.Item name="display_name" label="Nombre a mostrar" extra="Se muestra en la pantalla de login. Si se deja vacío, se usa el nombre.">
+                                <Input placeholder="Ej. Godín Oficios" />
+                            </Form.Item>
+                            <Form.Item name="logo_url" label="URL del logo">
+                                <Input placeholder="https://.../logo.png" />
+                            </Form.Item>
+                            <Form.Item name="brand_color" label="Color de marca" extra="Hex, p. ej. #5C2472. Colorea el botón de acceso.">
+                                <Input placeholder="#5C2472" />
                             </Form.Item>
                         </>
                     )}
