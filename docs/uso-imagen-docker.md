@@ -142,6 +142,10 @@ desde el panel o la API.
 
 ## 6. Checklist de producción
 
+Para un despliegue de producción, parte de **`.env.production.example`** (en la raíz del repo):
+ya viene con `APP_ENV=production`, `restart: unless-stopped` en los servicios y placeholders
+`<...>` para todos los secretos. Cópialo a `.env` y reemplaza los valores.
+
 - [ ] `APP_ENV=production` y `APP_DEBUG=false`.
 - [ ] `MINERVA_MODE=central` y `MINERVA_ENABLE_DEV_LOGIN=false`.
 - [ ] `SECRET_KEY`, `JWT_SECRET_KEY`, `MINERVA_JWT_SECRET` con valores aleatorios largos.
