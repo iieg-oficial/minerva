@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Layout, Menu, Button, Typography, Flex, theme } from 'antd';
+import { Layout, Menu, Button, Typography, Flex, Dropdown, Avatar, theme } from 'antd';
 import {
     HomeOutlined,
     TeamOutlined,
@@ -10,11 +10,18 @@ import {
     CheckCircleOutlined,
     FileTextOutlined,
     LogoutOutlined,
+    PlusOutlined,
+    DownOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router';
 import * as authAPI from '@/api/auth';
+import { getActive, getSessions, isExpired, setActive } from '@/api/session';
+
+function initial(session) {
+    return (session?.name || session?.email || '?').trim().slice(0, 1).toUpperCase();
+}
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -39,18 +46,50 @@ export default function AdminLayout() {
 
     const selectedKey = MENU_ITEMS.find((item) => location.pathname.startsWith(item.key))?.key || '/admin';
 
-    const handleLogout = useCallback(async () => {
-        await authAPI.logout();
-        navigate('/login', { replace: true });
-    }, [navigate]);
+    const sessions = getSessions();
+    const active = getActive();
+    const userName = active?.name || '';
 
-    let userName = '';
-    try {
-        const stored = localStorage.getItem('user');
-        if (stored) {
-            userName = JSON.parse(stored).full_name || '';
-        }
-    } catch {}
+    // Menú de cuenta: cambiar entre sesiones del navegador, agregar otra, o cerrar.
+    const accountItems = sessions
+        .filter((s) => s.sub !== active?.sub)
+        .map((s) => ({
+            key: `${isExpired(s) ? 'reauth' : 'switch'}:${s.sub}`,
+            icon: <Avatar size="small" style={{ backgroundColor: '#5C2472' }}>{initial(s)}</Avatar>,
+            label: isExpired(s) ? `${s.email} (expirada)` : s.name || s.email,
+        }));
+
+    const menuItems = [
+        ...(accountItems.length ? [...accountItems, { type: 'divider' }] : []),
+        { key: 'add', icon: <PlusOutlined />, label: 'Agregar otra cuenta' },
+        { key: 'logout', icon: <LogoutOutlined />, label: 'Cerrar sesión', danger: true },
+        ...(sessions.length > 1 ? [{ key: 'logoutAll', label: 'Cerrar todas las sesiones', danger: true }] : []),
+    ];
+
+    const onAccountMenu = useCallback(
+        async ({ key }) => {
+            if (key === 'add') return navigate('/login?add=1');
+            if (key === 'logout') {
+                await authAPI.logout();
+                // Si quedó otra cuenta activa, recargamos como ella; si no, a login.
+                if (getActive()) return window.location.assign('/admin');
+                return navigate('/login', { replace: true });
+            }
+            if (key === 'logoutAll') {
+                await authAPI.logoutAll();
+                return navigate('/login', { replace: true });
+            }
+            const [action, sub] = key.split(':');
+            if (action === 'switch') {
+                setActive(sub);
+                window.location.assign('/admin'); // recarga para re-leer la cuenta activa
+            } else if (action === 'reauth') {
+                const s = sessions.find((x) => x.sub === sub);
+                navigate(`/login?add=1&email=${encodeURIComponent(s?.email || '')}`);
+            }
+        },
+        [navigate, sessions],
+    );
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
@@ -119,17 +158,15 @@ export default function AdminLayout() {
                         icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
                         onClick={() => setCollapsed(!collapsed)}
                     />
-                    <Flex align="center" gap={12}>
-                        <Text style={{ fontFamily: '"Garet", sans-serif' }}>{userName}</Text>
-                        <Button
-                            type="text"
-                            icon={<LogoutOutlined />}
-                            onClick={handleLogout}
-                            danger
-                        >
-                            Salir
+                    <Dropdown menu={{ items: menuItems, onClick: onAccountMenu }} trigger={['click']}>
+                        <Button type="text" style={{ height: 'auto', padding: '4px 8px' }}>
+                            <Flex align="center" gap={8}>
+                                <Avatar size="small" style={{ backgroundColor: '#5C2472' }}>{initial(active)}</Avatar>
+                                <Text style={{ fontFamily: '"Garet", sans-serif' }}>{userName}</Text>
+                                <DownOutlined style={{ fontSize: 10 }} />
+                            </Flex>
                         </Button>
-                    </Flex>
+                    </Dropdown>
                 </Header>
                 <Content
                     style={{
