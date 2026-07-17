@@ -1,0 +1,85 @@
+# Compose para consumir Minerva SIN clonar el repo.
+# El equipo solo necesita este archivo + un .env. Requiere haber hecho antes:
+#   echo $GHCR_PAT | docker login ghcr.io -u <usuario-github> --password-stdin
+# donde GHCR_PAT es un token con scope read:packages.
+#
+# Ajusta MINERVA_ORG y MINERVA_VERSION (o expórtalos en el entorno).
+services:
+  backend:
+    image: ghcr.io/${MINERVA_ORG:-iieg-oficial}/minerva-backend:${MINERVA_VERSION:-latest}
+    container_name: minerva_backend
+    command: /app/scripts/backend-entrypoint.sh
+    ports:
+      - "${BACKEND_PORT:-9000}:9000"
+    env_file:
+      - .env
+    environment:
+      MINERVA_MANIFESTS_PATH: /app/manifests
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+    volumes:
+      # Los manifests NO van dentro de la imagen (viven fuera del build context).
+      # Pon aquí una carpeta ./manifests con tus *.minerva.yml para que se
+      # auto-importen al arrancar. Si no existe, Minerva bootea sin apps y las
+      # importas después vía API/panel. Es la única carpeta del repo que necesitas.
+      - ./manifests:/app/manifests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minerva_redis:
+        condition: service_healthy
+    networks:
+      minerva_network:
+        aliases:
+          - minerva
+
+  frontend:
+    image: ghcr.io/${MINERVA_ORG:-iieg-oficial}/minerva-frontend:${MINERVA_VERSION:-latest}
+    container_name: minerva_frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    networks:
+      - minerva_network
+
+  minerva_redis:
+    image: redis:7-alpine
+    container_name: minerva_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      minerva_network:
+        aliases:
+          - minerva-redis
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: minerva_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: minerva
+      POSTGRES_USER: minerva
+      POSTGRES_PASSWORD: minerva
+    volumes:
+      - minerva_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      minerva_network:
+        aliases:
+          - minerva-db
+
+volumes:
+  minerva_postgres_data:
+
+networks:
+  minerva_network:
+    driver: bridge
