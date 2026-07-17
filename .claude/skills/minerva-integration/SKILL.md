@@ -54,6 +54,9 @@ Never replace this with local role checks, copied JWT decoding code, or a local 
      `postMessage` (validate `event.origin`) instead of a full-page redirect. Opt-in per
      request, no SDK/backend change. See `references/consumer-contract.md`.
    - Use the `access_token` for API calls; use `id_token` only for identity claims.
+   - To let users switch Minerva accounts (e.g. after your app logs them out), add
+     `prompt=select_account` to the `/authorize` URL; Minerva shows an account picker instead of
+     silent SSO. `prompt=login` forces fresh credentials. See `references/consumer-contract.md`.
    - Read `references/consumer-contract.md` before implementing `/login`, `/callback`, refresh, revoke, or protected routes.
 
 5. Protect backend endpoints with SDK dependencies:

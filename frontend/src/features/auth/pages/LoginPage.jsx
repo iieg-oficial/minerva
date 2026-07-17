@@ -45,13 +45,18 @@ export default function LoginPage() {
 
     const next = safeNext(searchParams.get('next'));
     const clientId = clientIdFromNext(searchParams.get('next'));
+    // Modo "agregar cuenta": el selector manda aquí con ?add=1 para forzar el
+    // formulario aunque ya haya una sesión activa (si no, el auto-skip entraría
+    // con la cuenta anterior). `email` prellena la cuenta a reingresar.
+    const addMode = !!searchParams.get('add');
+    const prefillEmail = searchParams.get('email');
 
     useEffect(() => {
         const stored = localStorage.getItem('access_token');
-        if (stored) {
+        if (stored && !addMode) {
             navigate(next, { replace: true });
         }
-    }, [navigate, next]);
+    }, [navigate, next, addMode]);
 
     useEffect(() => {
         // Personaliza la pantalla con el branding de la app solicitante. Si la app
@@ -139,7 +144,7 @@ export default function LoginPage() {
                                     onFinish={onFinish}
                                     autoComplete="off"
                                     layout="vertical"
-                                    initialValues={import.meta.env.DEV ? { email: 'admin@iieg.gob.mx' } : {}}
+                                    initialValues={prefillEmail ? { email: prefillEmail } : import.meta.env.DEV ? { email: 'admin@iieg.gob.mx' } : {}}
                                     className="login-form-minerva"
                                     requiredMark={(label, info) => (
                                         <>

@@ -123,6 +123,19 @@ Implement this in the consumer only if users log in through that system.
   &code_challenge_method=S256
 ```
 
+   Optional `prompt` / `max_age` parameters (OIDC Core 3.1.2.1):
+   - `prompt=login` — force re-authentication (ask for credentials) even if a Minerva session exists.
+   - `prompt=select_account` — show Minerva's **account picker**: the user chooses among the accounts
+     already signed in on that browser, re-enters an expired one, or **adds another account**. Use it
+     when your platform logs the user out and you want them able to sign in with a *different* account.
+     Without it, Minerva does silent SSO with the last active account.
+   - `prompt=none` — return `error=login_required` instead of showing login (silent renew in iframes).
+   - `max_age={seconds}` — force re-auth if the Minerva session is older than that.
+
+   Minerva-side logout: `POST /auth/logout` with the user's `access_token` revokes it server-side
+   (blacklist by `jti`); a later `/authorize` will not silently reuse that session. This is separate
+   from your own app's logout.
+
 2. `GET /auth/callback` in the consumer:
    - Verify returned `state`.
    - Handle the OAuth2 `error` param first. Minerva only issues a `code` when the user has

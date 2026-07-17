@@ -45,8 +45,12 @@ Reglas:
   **nunca** importa `axios` ni arma URLs directamente: importa funciones de `src/api/`.
 - **Una página/feature por dominio.** Componentes reutilizables en `features/<area>/components/`.
 - Manejo de errores con `message`/`notification` de AntD (`App.useApp()`), no `alert`.
-- El token se guarda en `localStorage` (`access_token`, `user`); los interceptores de
-  `api/client.js` lo añaden y hacen logout automático en 401. No reimplementes esto por feature.
+- **Sesión y multi-cuenta:** la fuente de verdad es `src/api/session.js` (store multi-sesión en
+  `localStorage`: `minerva_sessions` + `minerva_active_sub`). Mantiene un **espejo legacy** de la
+  cuenta activa en `access_token`/`user`/`is_admin`, que es lo que leen `api/client.js` (interceptor
+  Bearer + logout en 401) y `ProtectedRoute`. No leas/escribas esas claves directo desde una feature:
+  usa `session.js` (`addSession`/`setActive`/`removeSession`/`getSessions`/`getActive`/`isExpired`) o
+  las funciones de `api/auth.js`. El selector de cuentas vive en `features/auth/components/AccountSelector.jsx`.
 - **Al crear una página nueva, registra su ruta** en `App.jsx` (dentro de `ProtectedRoute` si aplica).
 
 ## Convenciones
