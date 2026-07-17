@@ -8,6 +8,7 @@ services:
   backend:
     image: ghcr.io/${MINERVA_ORG:-iieg-oficial}/minerva-backend:${MINERVA_VERSION:-latest}
     container_name: minerva_backend
+    restart: unless-stopped
     command: /app/scripts/backend-entrypoint.sh
     ports:
       - "${BACKEND_PORT:-9000}:9000"
@@ -35,6 +36,7 @@ services:
   frontend:
     image: ghcr.io/${MINERVA_ORG:-iieg-oficial}/minerva-frontend:${MINERVA_VERSION:-latest}
     container_name: minerva_frontend
+    restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
@@ -62,9 +64,11 @@ services:
     container_name: minerva_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: minerva
-      POSTGRES_USER: minerva
-      POSTGRES_PASSWORD: minerva
+      # En producción define POSTGRES_PASSWORD en el .env con un valor fuerte,
+      # y asegúrate de que MINERVA_DB_URL use esa misma contraseña.
+      POSTGRES_DB: ${POSTGRES_DB:-minerva}
+      POSTGRES_USER: ${POSTGRES_USER:-minerva}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-minerva}
     volumes:
       - minerva_postgres_data:/var/lib/postgresql/data
     healthcheck:
