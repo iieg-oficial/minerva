@@ -65,3 +65,17 @@ def test_get_me(client, admin_token):
 def test_get_me_unauthorized(client):
     response = client.get("/auth/me")
     assert response.status_code == 401
+
+
+def test_logout_invalidates_token(client):
+    """Logout server-side: tras cerrar sesión, el mismo token queda revocado
+    (blacklist por jti) y deja de servir en endpoints protegidos."""
+    token = client.post(
+        "/auth/register",
+        json={"email": "logout_test@iieg.gob.mx", "full_name": "Logout Test", "password": "testpass123"},
+    ).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.get("/auth/me", headers=headers).status_code == 200
+    assert client.post("/auth/logout", headers=headers).status_code == 200
+    assert client.get("/auth/me", headers=headers).status_code == 401

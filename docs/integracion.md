@@ -148,8 +148,16 @@ GET {MINERVA_ISSUER}/auth/authorize
 Parámetros adicionales soportados (OIDC Core 3.1.2.1):
 - `prompt=none` → si no hay sesión, Minerva responde `error=login_required` en lugar de
   mostrar login (útil para *silent renew* en iframes).
-- `prompt=login` → fuerza re-autenticación aunque haya sesión.
+- `prompt=login` → fuerza re-autenticación aunque haya sesión (pide credenciales de nuevo).
+- `prompt=select_account` → muestra un **selector de cuentas** con las sesiones ya iniciadas en
+  ese navegador, permite elegir otra o **agregar una cuenta nueva**. Úsalo cuando tu plataforma
+  cierre sesión y quieras que el usuario pueda entrar con una cuenta distinta (sin él, Minerva
+  hace SSO silencioso con la última cuenta activa).
 - `max_age={segundos}` → fuerza re-autenticación si la sesión es más vieja que ese valor.
+
+> **Logout de Minerva.** `POST /auth/logout` (con el `access_token` en el header) revoca el token
+> del lado del servidor: a partir de ese momento Minerva ya no lo acepta, así que un `/authorize`
+> posterior no re-autentica en silencio con esa sesión. Es independiente del logout de tu propia app.
 
 ### 3.2 Canjear el código (tu backend → Minerva, servidor-a-servidor)
 
