@@ -137,3 +137,29 @@ def test_max_age_within_window_issues_code(client, app_ctx):
     assert resp.status_code in (302, 307)
     assert resp.headers["location"].startswith(REDIRECT_URI)
     assert "code=" in resp.headers["location"]
+
+
+def test_prompt_select_account_issues_code(client, app_ctx):
+    """El selector de cuentas lo resuelve la SPA; el backend NO re-autentica por
+    `prompt=select_account`: si hay sesión válida, emite el `code` normal."""
+    from app.modules.users.repository import UserRepository
+
+    with Session(test_engine) as session:
+        user = UserRepository(session).get_by_id(app_ctx["user_id"])
+        token = OIDCService(session).issue_session_token(user.id, user.email, user.full_name)
+
+    resp = client.get(
+        "/auth/authorize",
+        params={
+            "client_id": app_ctx["client_id"],
+            "redirect_uri": REDIRECT_URI,
+            "state": "s",
+            "scope": "openid",
+            "prompt": "select_account",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+        follow_redirects=False,
+    )
+    assert resp.status_code in (302, 307)
+    assert resp.headers["location"].startswith(REDIRECT_URI)
+    assert "code=" in resp.headers["location"]
