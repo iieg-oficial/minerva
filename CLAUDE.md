@@ -81,6 +81,43 @@ El backend se sirve en **9000** (docker-compose y Dockerfile), pero `frontend/vi
 y partes del `.env` apuntan a **8000**. Si tocas la configuración de red/proxy, verifica que el
 puerto sea consistente extremo a extremo antes de asumir un bug. No "corrijas" uno sin revisar el otro.
 
+## Sesiones, autenticación y selector de cuentas
+
+Minerva firma **todo con RS256/JWKS** (no HS256). Autenticación por **Bearer en header**,
+stateless: **no hay tabla `sessions` ni cookies de sesión**.
+
+- **Emisión/validación de tokens:** `backend/app/core/security.py` (create/decode RS256, `jti`,
+  `hash_token`) y `backend/app/core/dependencies/auth.py` (`get_current_user`/`get_optional_user`:
+  valida contra JWKS y rechaza `jti` revocado).
+- **Sesión del panel admin:** token RS256 (TTL 8h) emitido en login/register vía
+  `OIDCService.issue_session_token`. En el frontend vive en `localStorage`.
+- **OIDC para consumidores:** módulo `backend/app/modules/auth/` (`/authorize`, `/token`,
+  `/revoke`, PKCE, refresh con rotación) + `backend/app/modules/oidc/` (discovery, JWKS,
+  `/userinfo`, claves de firma). Guía consumidor: `docs/integracion.md` y skill
+  `.claude/skills/minerva-integration/`.
+- **Logout server-side:** `POST /auth/logout` blacklistea el `jti` en Redis
+  (`backend/app/core/token_blacklist.py`). Cerrar sesión invalida el token de verdad; sin esto,
+  un `/authorize` posterior re-autenticaba en silencio.
+
+### Selector de cuentas / multi-sesión (v0.3.0)
+
+Patrón "cambiar de cuenta" de Google/GitHub. El estado multi-sesión vive en el **cliente** (no
+hay tabla de sesiones): la SPA guarda varias cuentas iniciadas y muestra un selector.
+
+- **Store (fuente de verdad):** `frontend/src/api/session.js` — arreglo `minerva_sessions` +
+  `minerva_active_sub` en localStorage; mantiene el **espejo legacy** `access_token`/`user`/
+  `is_admin` de la cuenta activa (por eso `client.js` y `ProtectedRoute` **no cambiaron**).
+  Self-check ejecutable: `frontend/src/api/session.selfcheck.mjs` (`node`).
+- **UI:** `frontend/src/features/auth/components/AccountSelector.jsx`; integrado en
+  `AuthorizePage.jsx` (lo dispara `prompt=select_account`); dropdown de cuentas en
+  `frontend/src/features/admin/layout/AdminLayout.jsx`. `LoginPage.jsx` respeta `?add=1` (no
+  auto-salta con la sesión previa) y `?email=` (prellena al reingresar).
+- **Disparo (estándar OIDC estricto):** el selector solo aparece con `prompt=select_account`
+  (o `prompt=login` para credenciales frescas). Sin `prompt`, SSO silencioso como antes.
+- **Backend:** `select_account` cae al camino normal de `/authorize` (la selección la resuelve la
+  SPA); ver `backend/app/modules/auth/service.py` (`authorize`, `_requires_reauth`). Tests:
+  `backend/tests/test_prompt_max_age.py`, `backend/tests/test_auth.py` (revocación de logout).
+
 ## Agentes y skills disponibles (`.claude/`)
 
 - **Agente `revisor-arquitectura`** — revisa el diff actual contra las reglas de capas, modularidad
