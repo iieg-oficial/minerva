@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -103,11 +104,11 @@ async def login(
 
 
 @router.post("/logout")
-def logout(
+async def logout(
     request: Request,
-    service: AuthService = Depends(get_auth_service),
     audit: AuditService = Depends(get_audit_service),
     current_user: dict = Depends(get_current_user),
+    redis: Redis = Depends(get_redis),
 ):
     audit.log(
         "logout",
@@ -115,6 +116,13 @@ def logout(
         ip_address=request.client.host,
         user_agent=request.headers.get("user-agent"),
     )
+    # Invalida el token del lado del servidor: sin esto, cerrar sesión solo borraba
+    # el token en el cliente y el mismo JWT seguía válido hasta su `exp`, permitiendo
+    # re-login silencioso en /authorize. Se blacklista su `jti` hasta que habría
+    # expirado (TTL restante); get_current_user lo rechaza desde ese momento.
+    exp = current_user.get("exp")
+    ttl = int(exp - datetime.now(timezone.utc).timestamp()) if exp else 1
+    await revoke_jti(redis, current_user.get("jti"), ttl)
     return {"message": "Sesión cerrada"}
 
 

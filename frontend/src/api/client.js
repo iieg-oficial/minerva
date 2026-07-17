@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { expireActive } from './session';
 
 const client = axios.create({
     baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -18,8 +19,9 @@ client.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('user');
+            // Degrada la cuenta activa a expirada y limpia el espejo (access_token/
+            // user/is_admin). El selector la seguirá mostrando para reingresar.
+            expireActive();
             if (window.location.pathname !== '/login') {
                 window.location.href = '/login';
             }
