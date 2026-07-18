@@ -73,6 +73,11 @@ Do not add `MINERVA_JWT_SECRET` to a consumer. The access token is RS256-signed 
 - `refresh_token`: rotate on each refresh. Store the newest value and treat the previous value as single-use.
 - `jti`: token id used by Minerva for revocation.
 - `scope`: OIDC identity scopes such as `openid profile email`; unrelated to fine-grained permissions like `godin.oficios.create`.
+- Revocation latency differs by dependency: `get_current_user` verifies the JWT locally against
+  JWKS and never calls Minerva, so it does not notice a server-side revocation until the token's
+  own `exp` (≤15 min). `require_permission` calls Minerva's `/api/v1/me/permissions` in real time
+  (subject to its own short cache, `MINERVA_PERMISSIONS_CACHE_TTL`, default 300s) and returns
+  `401` sooner. Prefer `require_permission` on routes where fast revocation matters.
 
 ## FastAPI Protection Pattern
 
@@ -237,6 +242,10 @@ client_secret=<only for confidential client>
 
 Always replace the stored refresh token with the new one. Reuse of a rotated token revokes the whole token family.
 
+Minerva also revokes a user's refresh tokens server-side when an admin changes their password or
+email, or deactivates them. A refresh attempt after that gets the same `400` as reusing a rotated
+token — treat it identically: drop the session and send the user back through `/login`.
+
 Logout/revoke:
 
 ```text
@@ -250,6 +259,10 @@ client_secret=<only for confidential client>
 
 - `401 Token no proporcionado`: missing Bearer header.
 - `401 Token invalido`: malformed, expired, wrong algorithm, wrong `aud`, or wrong `iss`.
+- `400` on refresh, `"refresh token ya utilizado; la sesión fue revocada por seguridad"`: the
+  refresh token was reused after rotation, **or** the user's password/email changed or they were
+  deactivated (both cases return the same message). Re-run the login flow.
+- `403 Usuario inválido o inactivo` on refresh/authorize: the user's account is not `active`.
 - `403 Requiere permiso`: token is valid but Minerva does not grant the permission.
 - `500 MINERVA_APPLICATION_CODE no configurado`: set `MINERVA_APPLICATION_CODE`.
 - `502 No se pudo obtener el JWKS`: consumer cannot reach `MINERVA_ISSUER_URL`.
