@@ -24,7 +24,9 @@ al usuario, valida sus permisos y devuelve un **JWT**.
 
 Fuentes de verdad del producto: `docs/arquitectura.md` (visión/arquitectura, con
 diagramas), `docs/glosario.md` (terminología OIDC/OAuth), `docs/despliegue.md` (Dev/Prod
-+ mantenimiento) y `docs/integracion.md` (integración de sistemas consumidores).
++ mantenimiento), `docs/integracion.md` (integración de sistemas consumidores) y
+`docs/uso-imagen-docker.md` (despliegue por imágenes de ghcr, sin clonar el repo). Al tocar
+topología de red/puertos/issuer, actualiza los cuatro — es fácil dejar uno desactualizado.
 Los markdown de pasos futuros/roadmap son internos y **no** se trackean en el repo.
 
 ## Mapa del monorepo
