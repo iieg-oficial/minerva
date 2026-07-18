@@ -78,12 +78,32 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 Reporta **todos** los problemas encontrados de una vez (no se detiene en el primero),
 para no tener que iterar arranque por arranque.
 
-### 2.2 Variables a revisar/ajustar
+### 2.2 Topología: nginx como único punto público (consolidado)
 
-- `MINERVA_ISSUER` / `MINERVA_JWT_ISSUER`: debe ser la URL pública real de Minerva
-  (HTTPS), no `localhost`. Aparece como `iss` en cada token y en el discovery.
-- `FRONTEND_URL`: origen exacto del panel admin (entra en la whitelist de CORS de la
-  app principal).
+El deploy (`docker-compose.deploy.yml`) expone **un solo servicio público: nginx** (servicio
+`frontend`). nginx sirve la SPA y proxea al backend por la red interna:
+
+| Ruta pública | Destino | Uso |
+|---|---|---|
+| `/` (y rutas SPA `/login`, `/admin`, `/authorize`) | estático | Panel/login |
+| `/.well-known/`, `/auth/`, `/userinfo` | backend (raíz) | Discovery/JWKS, authorize/token/revoke, userinfo (consumidores OIDC) |
+| `/api/v1/` | backend (preserva path) | SDK / Minerva Dev Kit |
+| `/api/` | backend (elimina el prefijo `/api`) | Llamadas del panel admin |
+
+Implicaciones:
+
+- El **backend NO publica puerto** en el deploy (solo nginx lo alcanza). El issuer queda en
+  `http://<host>` **sin `:9000`**.
+- El backend recibe `FORWARDED_ALLOW_IPS=*` (seguro: nadie más que nginx lo alcanza), así honra
+  `X-Forwarded-For` y el **rate limit de login se cuenta por IP real del cliente**, no por la de nginx.
+- SSL futuro = terminar TLS en este nginx (un solo lugar); `nginx.conf` ya envía `X-Forwarded-Proto`.
+
+### 2.3 Variables a revisar/ajustar
+
+- `MINERVA_ISSUER` / `MINERVA_JWT_ISSUER`: URL pública real de Minerva = **el host de nginx, sin
+  `:9000`** (p. ej. `http://minerva.jalisco.gob.mx`; `https://…` al tener certificado). Aparece como
+  `iss` en cada token y en el discovery; debe coincidir con lo que ven los consumidores.
+- `FRONTEND_URL`: mismo host público del panel (entra en la whitelist de CORS).
 - `MINERVA_ACCESS_TOKEN_TTL_MINUTES` / `MINERVA_REFRESH_TOKEN_TTL_DAYS`: ciclo de vida
   de los tokens OIDC emitidos a consumidores.
 - `RATE_LIMIT_LOGIN_MAX` / `RATE_LIMIT_LOGIN_WINDOW` / `RATE_LIMIT_AUTHORIZE_MAX` /
@@ -91,7 +111,7 @@ para no tener que iterar arranque por arranque.
 - `DATABASE_URL`: apuntar a la instancia real de PostgreSQL (con TLS si la red no es de
   confianza).
 
-### 2.3 Cómo correr el contenedor en modo producción
+### 2.4 Cómo correr el contenedor en modo producción
 
 El entrypoint (`backend/scripts/backend-entrypoint.sh`) decide el servidor según
 `MINERVA_MODE`:
@@ -103,13 +123,13 @@ El entrypoint (`backend/scripts/backend-entrypoint.sh`) decide el servidor segú
 No hay que cambiar el comando del contenedor: basta con fijar `MINERVA_MODE` (y el
 resto de variables de la sección 2.1) en el `.env` de producción.
 
-### 2.4 Infraestructura fuera del alcance del código
+### 2.5 Infraestructura fuera del alcance del código
 
 Lo siguiente es **decisión de infraestructura del IIEG al desplegar a un servidor
 real**, no algo que el backend resuelva por sí mismo:
 
-- **TLS/HTTPS**: terminar TLS en un reverse proxy (nginx, Caddy, balanceador del
-  proveedor) delante del backend y del frontend.
+- **TLS/HTTPS**: al tener certificado, terminar TLS en el nginx del servicio `frontend` (el único
+  punto público; ver 2.2) y cambiar `MINERVA_ISSUER`/`FRONTEND_URL` a `https://`. Por ahora HTTP.
 - **Secret manager**: `MINERVA_KEY_ENCRYPTION_KEY`, `ADMIN_PASSWORD`, credenciales de
   PostgreSQL/Redis deben vivir en un gestor de secretos real, no en un `.env` plano en
   el servidor.

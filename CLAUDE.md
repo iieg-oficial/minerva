@@ -88,7 +88,8 @@ stateless: **no hay tabla `sessions` ni cookies de sesión**.
 
 - **Emisión/validación de tokens:** `backend/app/core/security.py` (create/decode RS256, `jti`,
   `hash_token`) y `backend/app/core/dependencies/auth.py` (`get_current_user`/`get_optional_user`:
-  valida contra JWKS y rechaza `jti` revocado).
+  valida contra JWKS, rechaza `jti` revocado y rechaza tokens con `iat` anterior al corte de
+  invalidación del usuario).
 - **Sesión del panel admin:** token RS256 (TTL 8h) emitido en login/register vía
   `OIDCService.issue_session_token`. En el frontend vive en `localStorage`.
 - **OIDC para consumidores:** módulo `backend/app/modules/auth/` (`/authorize`, `/token`,
@@ -98,6 +99,15 @@ stateless: **no hay tabla `sessions` ni cookies de sesión**.
 - **Logout server-side:** `POST /auth/logout` blacklistea el `jti` en Redis
   (`backend/app/core/token_blacklist.py`). Cerrar sesión invalida el token de verdad; sin esto,
   un `/authorize` posterior re-autenticaba en silencio.
+- **Invalidación por usuario (cambio de credenciales/status):** cambiar contraseña, correo o poner
+  status ≠ `active` mata las sesiones vigentes. `invalidate_user_tokens` marca un corte por `iat` en
+  Redis (`minerva:uinval:{sub}`, chequeado en `get_current_user`) y `UserService.revoke_refresh_tokens`
+  revoca los refresh tokens OIDC (blacklisteando sus access `jti`). Disparado en el router de usuarios
+  (`update_user`/`update_user_status`). Login/authorize/refresh ya rechazan usuarios no-`active`.
+- **Red en producción (nginx consolidado):** un solo punto público (nginx del servicio `frontend`)
+  sirve la SPA y proxea al backend `/.well-known`, `/auth`, `/userinfo`, `/api` (strip) y `/api/v1`
+  (preserva). El backend **no publica puerto** en el deploy; el issuer va sin `:9000`. `FORWARDED_ALLOW_IPS`
+  hace que el rate limit cuente por IP real. Detalle: `frontend/nginx.conf` y `docs/despliegue.md` §2.2.
 
 ### Selector de cuentas / multi-sesión (v0.3.0)
 

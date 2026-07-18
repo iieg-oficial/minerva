@@ -7,6 +7,28 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+
+- **nginx consolidado para producción (un solo punto público).** nginx (servicio `frontend`) ahora
+  sirve la SPA y proxea al backend `/.well-known`, `/auth`, `/userinfo`, `/api` (panel) y `/api/v1`
+  (SDK/Dev Kit). El issuer OIDC pasa a `http://<host>` **sin `:9000`**; en el deploy el backend ya
+  **no publica puerto** (solo nginx lo alcanza por la red interna). Deja listo el paso a HTTPS
+  (terminación TLS en un solo lugar). Por ahora HTTP; al tener certificado, cambiar a `https://`.
+
+### Changed
+
+- **Rate limit de login por cliente real.** Con `FORWARDED_ALLOW_IPS` en el backend y
+  `X-Forwarded-For` de nginx, `request.client.host` es la IP real del cliente y no la de nginx, así
+  el límite `5/15min` deja de ser global (un cliente ruidoso ya no bloquea a todos).
+
+### Security
+
+- **Invalidación de sesiones al cambiar credenciales o desactivar un usuario.** Cambiar contraseña,
+  correo o poner el status en no-`active` invalida de inmediato los tokens vigentes: marca un corte
+  por `iat` en Redis (rechazado en `get_current_user` para la sesión del panel) y revoca los refresh
+  tokens OIDC del usuario (blacklisteando sus access `jti`). Los access tokens de consumidor son
+  cortos (15 min) y no se renuevan tras la revocación.
+
 ### Fixed
 
 - **Loop infinito `/admin`↔`/login`** cuando el `localStorage` tenía una sesión con un token
