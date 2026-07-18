@@ -112,6 +112,14 @@ export function clearAll() {
     syncMirror(null);
 }
 
+// Logout suave (estilo Google): sale de la cuenta activa SIN invalidar su token
+// ni marcarla vencida. Limpia el espejo (la app queda "sin sesión activa" → vuelve
+// a /login) pero deja la cuenta en el store con su `exp` real, así el selector la
+// muestra activa y volver a entrar no pide credenciales mientras el token dure.
+export function deactivate() {
+    syncMirror(null);
+}
+
 // Degrada la cuenta activa a expirada (exp=0) y limpia el espejo, sin borrarla:
 // tras un 401 la app queda "sin sesión activa" pero el selector la sigue
 // mostrando (atenuada, con opción de reingresar).

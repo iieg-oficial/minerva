@@ -5,6 +5,7 @@ import { authorizeUrl } from '@/api/auth';
 import { getActive, setActive } from '@/api/session';
 import { getAppBranding } from '@/api/public';
 import AccountSelector from '../components/AccountSelector';
+import AuthShell from '../components/AuthShell';
 
 const { Text } = Typography;
 
@@ -147,7 +148,11 @@ export default function AuthorizePage() {
 
     if (selecting) {
         return (
-            <Flex align="center" justify="center" style={{ minHeight: '100dvh', padding: 16 }}>
+            <AuthShell
+                appName={branding?.display_name || branding?.name}
+                brandColor={branding?.brand_color}
+                logoUrl={branding?.logo_url}
+            >
                 <AccountSelector
                     appName={branding?.display_name || branding?.name}
                     brandColor={branding?.brand_color}
@@ -155,7 +160,7 @@ export default function AuthorizePage() {
                     onReauth={onReauth}
                     onAddAccount={onAddAccount}
                 />
-            </Flex>
+            </AuthShell>
         );
     }
 
