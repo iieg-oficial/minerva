@@ -18,14 +18,14 @@ export default function LogoutPage() {
         ran.current = true;
 
         const redirect = params.get('redirect_uri');
-        authAPI.logout().finally(() => {
-            // Solo URLs absolutas http(s) como destino externo; si no, al login local.
-            if (redirect && /^https?:\/\//i.test(redirect)) {
-                window.location.href = redirect;
-            } else {
-                navigate('/login', { replace: true });
-            }
-        });
+        // logout() es síncrono (logout suave, solo localStorage) — sin promesa que esperar.
+        authAPI.logout();
+        // Solo URLs absolutas http(s) como destino externo; si no, al login local.
+        if (redirect && /^https?:\/\//i.test(redirect)) {
+            window.location.href = redirect;
+        } else {
+            navigate('/login', { replace: true });
+        }
     }, [params, navigate]);
 
     return (
