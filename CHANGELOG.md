@@ -7,6 +7,20 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`/logout` colgado para consumidores.** `logout()` pasó a ser síncrono con el logout suave
+  (v0.3.0), pero `LogoutPage` seguía llamando `.finally()` sobre su resultado (`undefined`) —
+  `TypeError` que dejaba la página en "Cerrando sesión…" sin redirigir. Afectaba a todo consumidor
+  que hiciera single logout contra el panel.
+- **Doble clic con `prompt=select_account`.** Con una sola cuenta activa recién autenticada,
+  `AuthorizePage` mostraba igual el selector de cuentas pidiendo "Continuar" — un clic redundante
+  justo después de teclear credenciales. Ahora procede directo si la única cuenta guardada es la
+  activa y no está vencida; el selector sigue apareciendo con ≥2 cuentas o una activa vencida.
+- **Loop con `prompt=login`.** La re-autenticación forzada no limpiaba `prompt=login` del
+  querystring de retorno, así que tras el login `AuthorizePage` volvía a forzar el formulario
+  indefinidamente. Se quita `prompt` del resume antes de navegar a `/login`.
+
 ## [0.3.2] - 2026-07-17
 
 ### Docs
