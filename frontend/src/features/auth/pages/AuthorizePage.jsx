@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { App as AntApp, Button, Flex, Result, Spin, Typography } from 'antd';
 import { authorizeUrl } from '@/api/auth';
-import { getActive, setActive } from '@/api/session';
+import { getActive, getSessions, isExpired, setActive } from '@/api/session';
 import { getAppBranding } from '@/api/public';
 import AccountSelector from '../components/AccountSelector';
 import AuthShell from '../components/AuthShell';
@@ -102,12 +102,27 @@ export default function AuthorizePage() {
         }
 
         if (prompt === 'login') {
-            // Re-autenticación forzada: formulario aunque exista sesión (add=1).
-            navigate(loginNext('&add=1'), { replace: true });
+            // Re-autenticación forzada: formulario aunque exista sesión (add=1). Quitamos
+            // `prompt` del resume para que, tras el login fresco, esta rama no se
+            // vuelva a disparar (evita el loop formulario→authorize→formulario).
+            const resumeParams = new URLSearchParams(params);
+            resumeParams.delete('prompt');
+            navigate(`/login?next=${encodeURIComponent(`/authorize?${resumeParams.toString()}`)}&add=1`, {
+                replace: true,
+            });
             return;
         }
 
         if (prompt === 'select_account') {
+            // Si la única cuenta guardada es la activa y sigue vigente (login recién hecho),
+            // no tiene sentido pedir un "Continuar" extra: procede directo.
+            const sessions = getSessions();
+            const active = getActive();
+            const onlyFreshAccount = sessions.length === 1 && active?.sub === sessions[0].sub && !isExpired(active);
+            if (onlyFreshAccount) {
+                proceed();
+                return;
+            }
             if (clientId) getAppBranding(clientId).then(setBranding).catch(() => {});
             setSelecting(true);
             return;
