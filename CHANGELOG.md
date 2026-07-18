@@ -7,6 +7,8 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-18
+
 ### Fixed
 
 - **`/logout` colgado para consumidores.** `logout()` pasó a ser síncrono con el logout suave
@@ -20,6 +22,13 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - **Loop con `prompt=login`.** La re-autenticación forzada no limpiaba `prompt=login` del
   querystring de retorno, así que tras el login `AuthorizePage` volvía a forzar el formulario
   indefinidamente. Se quita `prompt` del resume antes de navegar a `/login`.
+
+### Docs
+
+- Documentado el single logout redirigido (`GET {panel}/logout?redirect_uri=...`) en
+  `docs/integracion.md` y el skill `minerva-integration`: no estaba en el contrato para
+  consumidores pese a ser el flujo que ya usaban, y no queda claro que es un logout suave (no
+  revoca el token) a diferencia de `POST /auth/logout`.
 
 ## [0.3.2] - 2026-07-17
 
