@@ -102,3 +102,18 @@ class RefreshTokenRepository:
                 jtis.append(member.access_jti)
         self.session.commit()
         return jtis
+
+    def revoke_all_for_user(self, user_id: str) -> list[str]:
+        """Revoca todos los refresh tokens vigentes del usuario (cambio de
+        credenciales/status): así ningún consumidor puede seguir emitiendo access
+        tokens. Devuelve los access_jti afectados para ponerlos en la blacklist."""
+        members = list(self.session.exec(select(RefreshToken).where(RefreshToken.user_id == user_id)).all())
+        jtis: list[str] = []
+        for member in members:
+            if member.status != "revoked":
+                member.status = "revoked"
+                self.session.add(member)
+                if member.access_jti:
+                    jtis.append(member.access_jti)
+        self.session.commit()
+        return jtis

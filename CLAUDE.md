@@ -88,16 +88,29 @@ stateless: **no hay tabla `sessions` ni cookies de sesión**.
 
 - **Emisión/validación de tokens:** `backend/app/core/security.py` (create/decode RS256, `jti`,
   `hash_token`) y `backend/app/core/dependencies/auth.py` (`get_current_user`/`get_optional_user`:
-  valida contra JWKS y rechaza `jti` revocado).
+  valida contra JWKS, rechaza `jti` revocado y rechaza tokens con `iat` anterior al corte de
+  invalidación del usuario).
 - **Sesión del panel admin:** token RS256 (TTL 8h) emitido en login/register vía
   `OIDCService.issue_session_token`. En el frontend vive en `localStorage`.
 - **OIDC para consumidores:** módulo `backend/app/modules/auth/` (`/authorize`, `/token`,
   `/revoke`, PKCE, refresh con rotación) + `backend/app/modules/oidc/` (discovery, JWKS,
   `/userinfo`, claves de firma). Guía consumidor: `docs/integracion.md` y skill
   `.claude/skills/minerva-integration/`.
-- **Logout server-side:** `POST /auth/logout` blacklistea el `jti` en Redis
-  (`backend/app/core/token_blacklist.py`). Cerrar sesión invalida el token de verdad; sin esto,
-  un `/authorize` posterior re-autenticaba en silencio.
+- **Logout:** `POST /auth/logout` blacklistea el `jti` en Redis
+  (`backend/app/core/token_blacklist.py`) — invalida el token de verdad. **Pero el panel lo usa
+  solo en "Cerrar todas las sesiones"** (`logoutAll`). El "Cerrar sesión" normal es un **logout
+  suave client-side** (`session.deactivate()`): sale de la cuenta sin invalidar el token, que sigue
+  válido en el store para volver a entrar sin re-teclear (estilo Google). Ver la subsección del
+  selector.
+- **Invalidación por usuario (cambio de credenciales/status):** cambiar contraseña, correo o poner
+  status ≠ `active` mata las sesiones vigentes. `invalidate_user_tokens` marca un corte por `iat` en
+  Redis (`minerva:uinval:{sub}`, chequeado en `get_current_user`) y `UserService.revoke_refresh_tokens`
+  revoca los refresh tokens OIDC (blacklisteando sus access `jti`). Disparado en el router de usuarios
+  (`update_user`/`update_user_status`). Login/authorize/refresh ya rechazan usuarios no-`active`.
+- **Red en producción (nginx consolidado):** un solo punto público (nginx del servicio `frontend`)
+  sirve la SPA y proxea al backend `/.well-known`, `/auth`, `/userinfo`, `/api` (strip) y `/api/v1`
+  (preserva). El backend **no publica puerto** en el deploy; el issuer va sin `:9000`. `FORWARDED_ALLOW_IPS`
+  hace que el rate limit cuente por IP real. Detalle: `frontend/nginx.conf` y `docs/despliegue.md` §2.2.
 
 ### Selector de cuentas / multi-sesión (v0.3.0)
 
@@ -107,13 +120,23 @@ hay tabla de sesiones): la SPA guarda varias cuentas iniciadas y muestra un sele
 - **Store (fuente de verdad):** `frontend/src/api/session.js` — arreglo `minerva_sessions` +
   `minerva_active_sub` en localStorage; mantiene el **espejo legacy** `access_token`/`user`/
   `is_admin` de la cuenta activa (por eso `client.js` y `ProtectedRoute` **no cambiaron**).
-  Self-check ejecutable: `frontend/src/api/session.selfcheck.mjs` (`node`).
-- **UI:** `frontend/src/features/auth/components/AccountSelector.jsx`; integrado en
-  `AuthorizePage.jsx` (lo dispara `prompt=select_account`); dropdown de cuentas en
-  `frontend/src/features/admin/layout/AdminLayout.jsx`. `LoginPage.jsx` respeta `?add=1` (no
-  auto-salta con la sesión previa) y `?email=` (prellena al reingresar).
-- **Disparo (estándar OIDC estricto):** el selector solo aparece con `prompt=select_account`
-  (o `prompt=login` para credenciales frescas). Sin `prompt`, SSO silencioso como antes.
+  Estados de una cuenta: `isExpired` (por `exp`) → activa/vencida; `deactivate()` = logout suave
+  (limpia el espejo, conserva `exp`); `expireActive()` = degradar a vencida tras un 401. Self-check
+  ejecutable: `frontend/src/api/session.selfcheck.mjs` (`node`).
+- **Shell visual compartido:** `frontend/src/features/auth/components/AuthShell.jsx` — fondo
+  morado + card de dos columnas (contenido izquierdo vía `children`, branding a la derecha) +
+  footer Jalisco. Lo usan tanto `LoginPage.jsx` (formulario) como el selector, para que se vean
+  idénticos. Referencias de diseño en `login-ui/` (no trackeadas).
+- **UI del selector:** `frontend/src/features/auth/components/AccountSelector.jsx` — 4 estados en
+  una columna (sin card propia): cuenta activa + Continuar (login_again), dropdown para cambiar de
+  cuenta (login_select_account, con scroll/alto máximo) y gestor para quitar cuentas del dispositivo
+  (login_account_manager). Integrado en `LoginPage.jsx` y en `AuthorizePage.jsx`
+  (`prompt=select_account`). Dropdown de cuentas también en `AdminLayout.jsx`.
+- **`/login` ya no auto-salta al panel:** con cuentas guardadas muestra el selector (login_again);
+  sin cuentas, el formulario (login_first). `?add=1` fuerza el formulario (agregar/reingresar) y
+  `?email=` prellena.
+- **Disparo consumidor (estándar OIDC estricto):** en `/authorize` el selector solo aparece con
+  `prompt=select_account` (o `prompt=login` para credenciales frescas). Sin `prompt`, SSO silencioso.
 - **Backend:** `select_account` cae al camino normal de `/authorize` (la selección la resuelve la
   SPA); ver `backend/app/modules/auth/service.py` (`authorize`, `_requires_reauth`). Tests:
   `backend/tests/test_prompt_max_age.py`, `backend/tests/test_auth.py` (revocación de logout).

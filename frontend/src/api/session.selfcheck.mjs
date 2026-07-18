@@ -10,7 +10,8 @@ globalThis.localStorage = {
     removeItem: (k) => store.delete(k),
 };
 
-const { addSession, setActive, removeSession, clearAll, getSessions, getActive, isExpired } = await import('./session.js');
+const { addSession, setActive, removeSession, clearAll, getSessions, getActive, isExpired, expireActive, deactivate } =
+    await import('./session.js');
 
 const tokenFor = (sub, exp) => {
     const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -54,5 +55,23 @@ assert.equal(getActive().sub, 'ana');
 clearAll();
 assert.equal(getSessions().length, 0);
 assert.equal(localStorage.getItem('access_token'), null);
+
+// Regresión (loop /admin↔/login): un espejo legacy con access_token pero SIN
+// minerva_active_sub debe quedar limpio tras expireActive (antes no lo limpiaba).
+clearAll();
+localStorage.setItem('access_token', tokenFor('viejo', past));
+localStorage.setItem('is_admin', 'true');
+expireActive();
+assert.equal(localStorage.getItem('access_token'), null);
+assert.equal(localStorage.getItem('is_admin'), null);
+
+// Logout suave (deactivate): sale de la cuenta pero NO la vence — sigue en el
+// store con su exp real y el espejo (access_token) queda limpio para volver rápido.
+clearAll();
+addSession({ token: tokenFor('sol', future), user: { id: 'sol', email: 'sol@iieg.gob.mx', full_name: 'Sol' }, isAdmin: false });
+deactivate();
+assert.equal(localStorage.getItem('access_token'), null); // salió: sin sesión activa
+assert.equal(getSessions().length, 1); // pero la cuenta sigue guardada
+assert.equal(isExpired(getSessions()[0]), false); // y NO quedó vencida
 
 console.log('session.selfcheck OK');

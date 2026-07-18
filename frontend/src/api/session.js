@@ -112,12 +112,26 @@ export function clearAll() {
     syncMirror(null);
 }
 
+// Logout suave (estilo Google): sale de la cuenta activa SIN invalidar su token
+// ni marcarla vencida. Limpia el espejo (la app queda "sin sesión activa" → vuelve
+// a /login) pero deja la cuenta en el store con su `exp` real, así el selector la
+// muestra activa y volver a entrar no pide credenciales mientras el token dure.
+export function deactivate() {
+    syncMirror(null);
+}
+
 // Degrada la cuenta activa a expirada (exp=0) y limpia el espejo, sin borrarla:
 // tras un 401 la app queda "sin sesión activa" pero el selector la sigue
 // mostrando (atenuada, con opción de reingresar).
 export function expireActive() {
     const activeSub = localStorage.getItem(ACTIVE_KEY);
-    if (!activeSub) return;
-    writeSessions(readSessions().map((s) => (s.sub === activeSub ? { ...s, exp: 0 } : s)));
+    // Si hay cuenta activa, la degrada a expirada (el selector la muestra para
+    // reingresar). Pase lo que pase, SIEMPRE limpia el espejo legacy: sin esto,
+    // una sesión con `access_token` pero sin `minerva_active_sub` (de una versión
+    // previa, o BD reseteada con llaves rotadas) dejaba el token intacto tras el
+    // 401 y el panel entraba en loop /admin↔/login.
+    if (activeSub) {
+        writeSessions(readSessions().map((s) => (s.sub === activeSub ? { ...s, exp: 0 } : s)));
+    }
     syncMirror(null);
 }

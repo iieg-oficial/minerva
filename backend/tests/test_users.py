@@ -22,3 +22,51 @@ def test_update_user_status(client, admin_token, admin_user):
     )
     assert response.status_code == 200
     assert response.json()["status"] == "inactive"
+
+
+def _make_user_with_token(client, admin_token, email):
+    """Crea un usuario y devuelve (user_id, su_token_de_sesión)."""
+    admin_h = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/users",
+        json={"email": email, "full_name": "Victima", "password": "pass123456"},
+        headers=admin_h,
+    )
+    assert created.status_code == 201
+    user_id = created.json()["id"]
+    login = client.post("/auth/login", json={"email": email, "password": "pass123456"})
+    assert login.status_code == 200
+    return user_id, login.json()["access_token"]
+
+
+def test_password_change_invalidates_existing_tokens(client, admin_token):
+    import time
+
+    admin_h = {"Authorization": f"Bearer {admin_token}"}
+    user_id, token = _make_user_with_token(client, admin_token, "victim-pass@iieg.gob.mx")
+    user_h = {"Authorization": f"Bearer {token}"}
+    assert client.get("/auth/me", headers=user_h).status_code == 200
+
+    # `iat` es entero de segundos: aseguramos que el corte quede DESPUÉS del token.
+    time.sleep(1)
+    changed = client.patch(f"/users/{user_id}", json={"password": "otra123456"}, headers=admin_h)
+    assert changed.status_code == 200
+
+    # El token viejo deja de valer; el del admin (sin cambios) sigue.
+    assert client.get("/auth/me", headers=user_h).status_code == 401
+    assert client.get("/auth/me", headers=admin_h).status_code == 200
+
+
+def test_deactivating_user_invalidates_existing_tokens(client, admin_token):
+    import time
+
+    admin_h = {"Authorization": f"Bearer {admin_token}"}
+    user_id, token = _make_user_with_token(client, admin_token, "victim-status@iieg.gob.mx")
+    user_h = {"Authorization": f"Bearer {token}"}
+    assert client.get("/auth/me", headers=user_h).status_code == 200
+
+    time.sleep(1)
+    changed = client.patch(f"/users/{user_id}/status", json={"status": "inactive"}, headers=admin_h)
+    assert changed.status_code == 200
+
+    assert client.get("/auth/me", headers=user_h).status_code == 401

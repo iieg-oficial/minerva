@@ -1,9 +1,13 @@
 from fastapi import APIRouter, Depends, Query, Request
+from redis.asyncio import Redis
 from sqlmodel import Session
 
+from app.core.config import settings
 from app.core.dependencies.admin import require_minerva_admin
 from app.core.dependencies.auth import get_current_user
 from app.core.dependencies.db import get_db
+from app.core.redis import get_redis
+from app.core.token_blacklist import invalidate_user_tokens, revoke_jti
 from app.modules.users.schemas import UserCreate, UserRead, UserStatusUpdate, UserUpdate
 from app.modules.users.service import UserService
 from app.shared.pagination import PaginatedResponse
@@ -13,6 +17,17 @@ router = APIRouter(prefix="/users", tags=["Users"], dependencies=[Depends(requir
 
 def get_user_service(session: Session = Depends(get_db)) -> UserService:
     return UserService(session)
+
+
+async def _invalidate_user_sessions(redis: Redis, service: UserService, user_id: str) -> None:
+    """Mata las sesiones/tokens vigentes del usuario tras cambiar sus credenciales o
+    status: (1) revoca sus refresh tokens OIDC y blacklistea sus access_jti, y
+    (2) marca el corte por `iat` para los bearer/sesión del panel que valida el backend."""
+    jtis = service.revoke_refresh_tokens(user_id)
+    access_ttl = settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60
+    for jti in jtis:
+        await revoke_jti(redis, jti, access_ttl)
+    await invalidate_user_tokens(redis, user_id, settings.effective_token_expire_minutes * 60)
 
 
 @router.get("", response_model=PaginatedResponse[UserRead])
@@ -46,20 +61,29 @@ def create_user(
 
 
 @router.patch("/{user_id}", response_model=UserRead)
-def update_user(
+async def update_user(
     user_id: str,
     data: UserUpdate,
     service: UserService = Depends(get_user_service),
+    redis: Redis = Depends(get_redis),
     _current_user: dict = Depends(get_current_user),
 ):
-    return service.update_user(user_id, data)
+    result = service.update_user(user_id, data)
+    # Cambiar contraseña, correo o desactivar invalida las sesiones vigentes.
+    if data.password is not None or data.email is not None or (data.status is not None and data.status != "active"):
+        await _invalidate_user_sessions(redis, service, user_id)
+    return result
 
 
 @router.patch("/{user_id}/status", response_model=UserRead)
-def update_user_status(
+async def update_user_status(
     user_id: str,
     data: UserStatusUpdate,
     service: UserService = Depends(get_user_service),
+    redis: Redis = Depends(get_redis),
     _current_user: dict = Depends(get_current_user),
 ):
-    return service.update_status(user_id, data)
+    result = service.update_status(user_id, data)
+    if data.status != "active":
+        await _invalidate_user_sessions(redis, service, user_id)
+    return result
