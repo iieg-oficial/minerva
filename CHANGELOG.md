@@ -5,6 +5,16 @@ Todos los cambios notables de Minerva se documentan aquí.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/)
 y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Loop infinito `/admin`↔`/login`** cuando el `localStorage` tenía una sesión con un token
+  rechazado por el backend (401), típicamente tras rotar las llaves RS256 (BD reseteada) o con
+  una sesión previa a v0.3.0. `expireActive()` ahora limpia **siempre** el espejo legacy
+  (`access_token`/`user`/`is_admin`), aunque no exista `minerva_active_sub`, y el interceptor de
+  401 dispara un solo redirect a `/login` en vez de uno por cada request concurrente.
+
 ## [0.3.0] - 2026-07-17
 
 ### Added
