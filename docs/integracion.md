@@ -197,6 +197,20 @@ El refresh token devuelto en la respuesta **reemplaza** al anterior (rotación):
 siempre el más reciente. Si reutilizas uno ya rotado, Minerva revoca toda la familia de
 tokens — trátalo como de un solo uso.
 
+> **Revocación server-side al cambiar credenciales.** Si el administrador cambia la
+> contraseña o el correo del usuario, o lo desactiva, Minerva revoca de inmediato sus
+> refresh tokens vigentes. El siguiente intento de refresh recibe **`400`** con
+> `"refresh token ya utilizado; la sesión fue revocada por seguridad"` (mismo mensaje que
+> la reutilización de un token ya rotado — la causa real es indistinguible desde el
+> cliente); si además el usuario quedó inactivo, puede recibir **`403`**
+> `"Usuario inválido o inactivo"`. En ambos casos, trátalo igual que un refresh expirado:
+> manda al usuario de vuelta a `/login`. El `access_token` ya emitido **no** se invalida
+> por firma (sigue siendo válido hasta su `exp`, ≤15 min) — la revocación solo se nota
+> cuando tu backend vuelve a tocar a Minerva. `get_current_user` del SDK valida el JWT
+> localmente (JWKS) y **no** se entera hasta que expira; `require_permission` sí consulta
+> `GET /api/v1/me/permissions` en tiempo real (sujeto a su caché corta,
+> `MINERVA_PERMISSIONS_CACHE_TTL`, default 300s) y por tanto responde `401` antes.
+
 ### 3.4 Cerrar sesión / revocar (RFC 7009)
 
 ```bash
