@@ -343,7 +343,7 @@ probar el endpoint protegido.
 
 | Aspecto | Dev | Producción |
 |---|---|---|
-| `MINERVA_ISSUER_URL` (en tu sistema) | `http://localhost:9000` | URL pública HTTPS de Minerva |
+| `MINERVA_ISSUER_URL` (en tu sistema) | `http://localhost:9000` | URL pública de Minerva = el host de nginx **sin `:9000`** (todo va consolidado tras nginx); HTTPS al tener certificado |
 | Verificación de `aud`/`iss` | puede dejarse relajada para probar rápido | `MINERVA_VERIFY_AUD=true` y `MINERVA_EXPECTED_ISSUER` fijado |
 | Registro de `redirect_uri` | localhost, puertos de desarrollo | dominio real de tu sistema, HTTPS |
 | Manifiesto | auto-importado al arrancar Minerva en local | importar explícitamente vía API/CI en el despliegue, no depender de auto-import |
