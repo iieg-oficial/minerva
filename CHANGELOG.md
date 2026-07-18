@@ -7,6 +7,13 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Login sin feedback al topar el rate limit.** `LoginPage` solo manejaba explícitamente `401`/
+  `400`; un `429` (u otro error inesperado) fallaba en silencio — el botón "se apagaba" sin ningún
+  mensaje, dando la impresión de que había dejado de responder. Ahora muestra un mensaje de error
+  para `429` y para cualquier otro status no manejado.
+
 ## [0.3.3] - 2026-07-18
 
 ### Fixed

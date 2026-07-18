@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Form, Input, Button, Typography, Flex, theme } from 'antd';
+import { App as AntApp, Form, Input, Button, Typography, Flex, theme } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router';
 import * as authAPI from '@/api/auth';
 import { getSessions, setActive } from '@/api/session';
@@ -39,6 +39,7 @@ export default function LoginPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const { token } = useToken();
+    const { message } = AntApp.useApp();
 
     const next = safeNext(searchParams.get('next'));
     const clientId = clientIdFromNext(searchParams.get('next'));
@@ -77,6 +78,11 @@ export default function LoginPage() {
                 form.setFields([
                     { name: 'password', errors: [detail || 'Usuario o contraseña incorrectos'] },
                 ]);
+            } else if (status === 429) {
+                message.error(detail || 'Demasiados intentos. Espera unos minutos e intenta de nuevo.');
+            } else {
+                // Cualquier otro error (500, red caída, etc.): antes fallaba en silencio.
+                message.error(detail || 'No se pudo iniciar sesión. Intenta de nuevo.');
             }
         } finally {
             setLoading(false);
