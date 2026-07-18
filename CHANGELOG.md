@@ -7,6 +7,8 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-17
+
 ### Docs
 
 - **Guías de integración/despliegue al día tras el nginx consolidado.** `docs/uso-imagen-docker.md`
