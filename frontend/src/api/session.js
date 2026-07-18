@@ -117,7 +117,13 @@ export function clearAll() {
 // mostrando (atenuada, con opción de reingresar).
 export function expireActive() {
     const activeSub = localStorage.getItem(ACTIVE_KEY);
-    if (!activeSub) return;
-    writeSessions(readSessions().map((s) => (s.sub === activeSub ? { ...s, exp: 0 } : s)));
+    // Si hay cuenta activa, la degrada a expirada (el selector la muestra para
+    // reingresar). Pase lo que pase, SIEMPRE limpia el espejo legacy: sin esto,
+    // una sesión con `access_token` pero sin `minerva_active_sub` (de una versión
+    // previa, o BD reseteada con llaves rotadas) dejaba el token intacto tras el
+    // 401 y el panel entraba en loop /admin↔/login.
+    if (activeSub) {
+        writeSessions(readSessions().map((s) => (s.sub === activeSub ? { ...s, exp: 0 } : s)));
+    }
     syncMirror(null);
 }

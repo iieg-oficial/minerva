@@ -15,6 +15,10 @@ client.interceptors.request.use((config) => {
     return config;
 });
 
+// Evita que una ráfaga de 401 concurrentes (el panel dispara ~6 queries al montar)
+// dispare múltiples redirects a la vez; basta uno.
+let redirectingToLogin = false;
+
 client.interceptors.response.use(
     (response) => response,
     (error) => {
@@ -22,7 +26,8 @@ client.interceptors.response.use(
             // Degrada la cuenta activa a expirada y limpia el espejo (access_token/
             // user/is_admin). El selector la seguirá mostrando para reingresar.
             expireActive();
-            if (window.location.pathname !== '/login') {
+            if (!redirectingToLogin && window.location.pathname !== '/login') {
+                redirectingToLogin = true;
                 window.location.href = '/login';
             }
         }

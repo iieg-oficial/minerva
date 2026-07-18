@@ -10,7 +10,8 @@ globalThis.localStorage = {
     removeItem: (k) => store.delete(k),
 };
 
-const { addSession, setActive, removeSession, clearAll, getSessions, getActive, isExpired } = await import('./session.js');
+const { addSession, setActive, removeSession, clearAll, getSessions, getActive, isExpired, expireActive } =
+    await import('./session.js');
 
 const tokenFor = (sub, exp) => {
     const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -54,5 +55,14 @@ assert.equal(getActive().sub, 'ana');
 clearAll();
 assert.equal(getSessions().length, 0);
 assert.equal(localStorage.getItem('access_token'), null);
+
+// Regresión (loop /admin↔/login): un espejo legacy con access_token pero SIN
+// minerva_active_sub debe quedar limpio tras expireActive (antes no lo limpiaba).
+clearAll();
+localStorage.setItem('access_token', tokenFor('viejo', past));
+localStorage.setItem('is_admin', 'true');
+expireActive();
+assert.equal(localStorage.getItem('access_token'), null);
+assert.equal(localStorage.getItem('is_admin'), null);
 
 console.log('session.selfcheck OK');
