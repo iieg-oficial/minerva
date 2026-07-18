@@ -7,6 +7,18 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-17
+
+### Docs
+
+- **Guías de integración/despliegue al día tras el nginx consolidado.** `docs/uso-imagen-docker.md`
+  ya no dice que el backend publica `BACKEND_PORT`/`:9000` en el deploy de ghcr (ese compose no
+  publica el backend desde v0.3.1); documenta `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD` y
+  el issuer sin puerto en producción. `docs/integracion.md` y el skill `minerva-integration`
+  documentan la revocación server-side de refresh tokens al cambiar contraseña/correo o desactivar
+  un usuario (código de error, y la diferencia de latencia entre `get_current_user` y
+  `require_permission`).
+
 ## [0.3.1] - 2026-07-17
 
 ### Added
