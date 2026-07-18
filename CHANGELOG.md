@@ -7,6 +7,8 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-17
+
 ### Added
 
 - **nginx consolidado para producción (un solo punto público).** nginx (servicio `frontend`) ahora
