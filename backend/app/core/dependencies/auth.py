@@ -10,7 +10,7 @@ from app.core.dependencies.db import get_db
 from app.core.exceptions import UnauthorizedError
 from app.core.redis import get_redis
 from app.core.security import decode_token_rs256
-from app.core.token_blacklist import is_revoked
+from app.core.token_blacklist import is_revoked, user_tokens_invalid_before
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -40,6 +40,11 @@ async def _resolve_token(token: str, session: Session, redis: Redis) -> dict:
     payload = decode_token_rs256(token, jwks)
     if await is_revoked(redis, payload.get("jti")):
         raise ValueError("Token revocado")
+    # Invalidación por usuario: si cambió su contraseña/correo/status, los tokens
+    # emitidos antes del corte dejan de valer aunque su firma siga siendo válida.
+    cutoff = await user_tokens_invalid_before(redis, payload.get("sub"))
+    if cutoff is not None and payload.get("iat", 0) < cutoff:
+        raise ValueError("Sesión invalidada; vuelve a iniciar sesión")
     return payload
 
 
