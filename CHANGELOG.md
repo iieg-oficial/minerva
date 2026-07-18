@@ -7,6 +7,21 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-07-18
+
+### Fixed
+
+- **Login sin feedback al topar el rate limit.** `LoginPage` solo manejaba explícitamente `401`/
+  `400`; un `429` (u otro error inesperado) fallaba en silencio — el botón "se apagaba" sin ningún
+  mensaje, dando la impresión de que había dejado de responder. Ahora muestra un mensaje de error
+  para `429` y para cualquier otro status no manejado.
+
+### Docs
+
+- **README rediseñado como portada del proyecto.** Banner institucional, enfoque en propósito y
+  visión de Minerva en vez de manual técnico; el detalle de arquitectura/integración/despliegue
+  se enlaza a `docs/` en vez de duplicarse.
+
 ## [0.3.3] - 2026-07-18
 
 ### Fixed
