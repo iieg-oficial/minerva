@@ -49,8 +49,11 @@ Reglas:
   `localStorage`: `minerva_sessions` + `minerva_active_sub`). Mantiene un **espejo legacy** de la
   cuenta activa en `access_token`/`user`/`is_admin`, que es lo que leen `api/client.js` (interceptor
   Bearer + logout en 401) y `ProtectedRoute`. No leas/escribas esas claves directo desde una feature:
-  usa `session.js` (`addSession`/`setActive`/`removeSession`/`getSessions`/`getActive`/`isExpired`) o
-  las funciones de `api/auth.js`. El selector de cuentas vive en `features/auth/components/AccountSelector.jsx`.
+  usa `session.js` (`addSession`/`setActive`/`removeSession`/`getSessions`/`getActive`/`isExpired`/
+  `deactivate`) o las funciones de `api/auth.js`. `logout()` es **suave** (`deactivate()`: sale sin
+  invalidar el token, para volver rápido); solo `logoutAll()` revoca en el backend. El selector de
+  cuentas (`features/auth/components/AccountSelector.jsx`) y el formulario de login comparten el shell
+  visual `features/auth/components/AuthShell.jsx`.
 - **Al crear una página nueva, registra su ruta** en `App.jsx` (dentro de `ProtectedRoute` si aplica).
 
 ## Convenciones
