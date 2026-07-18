@@ -10,13 +10,17 @@ services:
     container_name: minerva_backend
     restart: unless-stopped
     command: /app/scripts/backend-entrypoint.sh
-    ports:
-      - "${BACKEND_PORT:-9000}:9000"
+    # El backend NO publica puerto: el único punto público es nginx (servicio
+    # frontend), que proxea /auth, /userinfo, /.well-known, /api y /api/v1 al
+    # backend por la red interna. Así el issuer queda en http://<host> (sin :9000)
+    # y confiar en X-Forwarded-For es seguro (solo nginx alcanza al backend).
     env_file:
       - .env
     environment:
       MINERVA_MANIFESTS_PATH: /app/manifests
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+      # IP real del cliente para el rate limit (nginx manda X-Forwarded-For).
+      FORWARDED_ALLOW_IPS: "*"
     volumes:
       # Los manifests NO van dentro de la imagen (viven fuera del build context).
       # Pon aquí una carpeta ./manifests con tus *.minerva.yml para que se
