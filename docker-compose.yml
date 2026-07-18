@@ -16,6 +16,9 @@ services:
       # viene íntegramente de .env, que es la única fuente de verdad.
       MINERVA_MANIFESTS_PATH: /app/manifests
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+      # uvicorn/gunicorn honran X-Forwarded-For → request.client.host es la IP real
+      # (rate limit por cliente, no por la IP de nginx).
+      FORWARDED_ALLOW_IPS: "*"
     volumes:
       - ./backend:/app
       - ./manifests:/app/manifests

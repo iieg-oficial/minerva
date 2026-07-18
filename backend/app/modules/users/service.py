@@ -79,6 +79,15 @@ class UserService:
         user = self.repo.update(user)
         return UserRead.model_validate(user)
 
+    def revoke_refresh_tokens(self, user_id: str) -> list[str]:
+        """Revoca los refresh tokens OIDC vigentes del usuario (parte de invalidar
+        sus sesiones al cambiar credenciales/status). Devuelve los access_jti a
+        blacklistear. La invalidación de los bearer/sesión (por `iat`) la resuelve
+        el marcador en Redis desde el router."""
+        from app.modules.auth.repository import RefreshTokenRepository
+
+        return RefreshTokenRepository(self.session).revoke_all_for_user(user_id)
+
     def authenticate(self, email: str, password: str) -> str:
         user = self.repo.get_by_email(email)
         if not user or not user.hashed_password:
