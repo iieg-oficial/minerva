@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Form, Input, Button, Typography, Flex, Row, Col, theme } from 'antd';
+import { Form, Input, Button, Typography, Flex, theme } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router';
 import * as authAPI from '@/api/auth';
+import { getSessions, setActive } from '@/api/session';
 import { getAppBranding } from '@/api/public';
+import AuthShell, { BRAND } from '../components/AuthShell';
+import AccountSelector from '../components/AccountSelector';
 
-const { Title, Text, Link: TypoLink } = Typography;
+const { Title, Text } = Typography;
 const { useToken } = theme;
 
 // Solo permite rutas internas como destino post-login (evita open redirect).
@@ -24,20 +27,14 @@ function clientIdFromNext(next) {
     return new URLSearchParams(query).get('client_id');
 }
 
-const BRAND = {
-    numeralia: '#2e4372',
-    purple: '#5C2472',
-    orange: '#FF8300',
-};
-
-const PASSWORD_ICONS = {
-    show: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%238E8E8E" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'),
-    hide: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%238E8E8E" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'),
-};
-
 export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [branding, setBranding] = useState(null);
+    // Fuerza el formulario aunque haya cuentas guardadas (agregar/reingresar).
+    const [forcedForm, setForcedForm] = useState(false);
+    // Fuerza volver al selector aunque la URL traiga ?add=1.
+    const [forceSelector, setForceSelector] = useState(false);
+    const [reauthEmail, setReauthEmail] = useState(null);
     const [form] = Form.useForm();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -46,17 +43,15 @@ export default function LoginPage() {
     const next = safeNext(searchParams.get('next'));
     const clientId = clientIdFromNext(searchParams.get('next'));
     // Modo "agregar cuenta": el selector manda aquí con ?add=1 para forzar el
-    // formulario aunque ya haya una sesión activa (si no, el auto-skip entraría
-    // con la cuenta anterior). `email` prellena la cuenta a reingresar.
+    // formulario aunque ya haya una sesión activa. `email` prellena la cuenta.
     const addMode = !!searchParams.get('add');
-    const prefillEmail = searchParams.get('email');
+    const prefillEmail = reauthEmail || searchParams.get('email');
 
-    useEffect(() => {
-        const stored = localStorage.getItem('access_token');
-        if (stored && !addMode) {
-            navigate(next, { replace: true });
-        }
-    }, [navigate, next, addMode]);
+    // Sin cuentas guardadas → login_first siempre; con cuentas → selector
+    // (login_again) salvo que se pida el formulario (agregar/reingresar/?add=1).
+    // Ya no auto-saltamos al panel. `forceSelector` gana sobre ?add=1 de la URL.
+    const hasSessions = getSessions().length > 0;
+    const showForm = !hasSessions || (!forceSelector && (addMode || forcedForm));
 
     useEffect(() => {
         // Personaliza la pantalla con el branding de la app solicitante. Si la app
@@ -88,203 +83,126 @@ export default function LoginPage() {
         }
     };
 
-    return (
-        <Flex
-            vertical
-            align="center"
-            justify="center"
-            style={{
-                minHeight: '100dvh',
-                width: '100%',
-                boxSizing: 'border-box',
-                paddingInline: 'max(20px, env(safe-area-inset-left), env(safe-area-inset-right))',
-                paddingBlock: 'max(24px, env(safe-area-inset-top))',
-                paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
-                background: `url(${import.meta.env.BASE_URL}login-background.svg) center / cover no-repeat`,
-                overscrollBehavior: 'none',
-                overflowX: 'hidden',
-            }}
-        >
-            <div
-                style={{
-                    width: '100%',
-                    maxWidth: 1088,
-                    marginInline: 'auto',
-                    background: token.colorBgContainer,
-                    borderRadius: 16,
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
-                    padding: 'clamp(32px, 5vw, 72px) clamp(20px, 4vw, 56px)',
-                    boxSizing: 'border-box',
-                    overflow: 'hidden',
-                }}
-            >
-                <Row
-                    gutter={[
-                        { xs: 0, sm: 0, md: 32, lg: 48 },
-                        { xs: 24, sm: 24, md: 0 },
-                    ]}
-                    align="middle"
-                    style={{ margin: 0 }}
-                >
-                    <Col xs={24} md={12}>
-                        <Flex vertical align="center" justify="center">
-                            <div style={{ width: '100%', maxWidth: 260 }}>
-                                <Flex vertical gap={4} style={{ marginBottom: token.marginXL }}>
-                                    <Title style={{ margin: 0, color: BRAND.purple, fontSize: 22, fontWeight: 700, lineHeight: 1.2, fontFamily: '"Garet", sans-serif' }}>
-                                        Hola
-                                    </Title>
-                                    <Text style={{ fontSize: 12, color: '#1f2937', fontWeight: 400, fontFamily: '"Garet", sans-serif' }}>
-                                        Ingresa tus datos para iniciar sesión.
-                                    </Text>
-                                </Flex>
-
-                                <Form
-                                    form={form}
-                                    name="login"
-                                    onFinish={onFinish}
-                                    autoComplete="off"
-                                    layout="vertical"
-                                    initialValues={prefillEmail ? { email: prefillEmail } : import.meta.env.DEV ? { email: 'admin@iieg.gob.mx' } : {}}
-                                    className="login-form-minerva"
-                                    requiredMark={(label, info) => (
-                                        <>
-                                            {label}
-                                            {info.required && (
-                                                <span style={{ color: BRAND.orange, marginLeft: 4, fontWeight: 700 }}>*</span>
-                                            )}
-                                        </>
-                                    )}
-                                >
-                                    <Form.Item
-                                        label="Correo electrónico"
-                                        name="email"
-                                        normalize={(value) => (value ? value.replace(/\s/g, '').toLowerCase() : value)}
-                                        rules={[
-                                            { required: true, message: 'Ingrese su correo' },
-                                            { type: 'email', message: 'Ingrese un correo válido' },
-                                        ]}
-                                    >
-                                        <Input placeholder="correo@iieg.gob.mx" />
-                                    </Form.Item>
-
-                                    <Form.Item
-                                        label="Contraseña"
-                                        name="password"
-                                        rules={[{ required: true, message: 'Ingrese su contraseña' }]}
-                                    >
-                                        <Input.Password
-                                            placeholder="Contraseña"
-                                            iconRender={(visible) => (
-                                                <img
-                                                    src={`${import.meta.env.BASE_URL}${visible ? 'ico-show.svg' : 'ico-hidden.svg'}`}
-                                                    alt={visible ? 'Mostrar' : 'Ocultar'}
-                                                    style={{ width: 22, height: 22 }}
-                                                />
-                                            )}
-                                        />
-                                    </Form.Item>
-
-                                    <Form.Item style={{ marginTop: token.marginXL, marginBottom: 0 }}>
-                                        <Button
-                                            type="primary"
-                                            htmlType="submit"
-                                            loading={loading}
-                                            block
-                                            style={{
-                                                background: brandColor,
-                                                borderColor: brandColor,
-                                                height: 40,
-                                                borderRadius: 20,
-                                                fontWeight: 700,
-                                                fontSize: 14,
-                                                fontFamily: '"Garet", sans-serif',
-                                            }}
-                                        >
-                                            Iniciar sesión
-                                        </Button>
-                                    </Form.Item>
-                                </Form>
-                            </div>
-                        </Flex>
-                    </Col>
-
-                    <Col xs={0} md={12}>
-                        <Flex
-                            vertical
-                            align="center"
-                            justify="center"
-                            gap={28}
-                            style={{
-                                minHeight: 300,
-                                width: '100%',
-                                padding: '24px 16px',
-                            }}
-                        >
-                            <Flex align="center" justify="center" gap={18} wrap>
-                                <img
-                                    src={branding?.logo_url || `${import.meta.env.BASE_URL}iieg-favicon-192.png`}
-                                    alt=""
-                                    aria-hidden="true"
-                                    style={{ height: 86, width: 'auto', maxWidth: 200, objectFit: 'contain' }}
-                                    onError={(e) => { e.currentTarget.src = `${import.meta.env.BASE_URL}iieg-favicon-192.png`; }}
-                                />
-                                <div style={{ width: 2, height: 54, background: BRAND.orange }} aria-hidden />
-                                <Title
-                                    level={1}
-                                    style={{
-                                        margin: 0,
-                                        color: appName ? brandColor : '#5B6770',
-                                        fontWeight: 800,
-                                        letterSpacing: 0,
-                                        fontSize: appName && appName.length > 8 ? 40 : 58,
-                                        lineHeight: 1,
-                                        fontFamily: '"Garet", sans-serif',
-                                    }}
-                                >
-                                    {appName || 'Minerva'}
-                                </Title>
-                            </Flex>
-                            <Text
-                                style={{
-                                    maxWidth: 360,
-                                    textAlign: 'center',
-                                    color: '#5B6770',
-                                    fontSize: 16,
-                                    fontWeight: 600,
-                                    lineHeight: 1.35,
-                                    fontFamily: '"Garet", sans-serif',
-                                }}
-                            >
-                                {appName
-                                    ? `Inicia sesión con tu cuenta del IIEG para continuar a ${appName}`
-                                    : 'Sistema institucional de autenticación y gestión de accesos'}
-                            </Text>
-                        </Flex>
-                    </Col>
-                </Row>
-            </div>
-
-            <Flex vertical align="center" gap={20} style={{ marginTop: 40 }}>
-                <img
-                    src={`${import.meta.env.BASE_URL}jalisco-logo.svg`}
-                    alt="Gobierno de Jalisco"
-                    style={{ height: 52, width: 'auto' }}
+    if (!showForm) {
+        return (
+            <AuthShell appName={appName} brandColor={brandColor} logoUrl={branding?.logo_url}>
+                <AccountSelector
+                    appName={appName}
+                    brandColor={brandColor}
+                    onSelect={(s) => {
+                        setActive(s.sub);
+                        navigate(next, { replace: true });
+                    }}
+                    onReauth={(s) => {
+                        setReauthEmail(s.email);
+                        setForceSelector(false);
+                        setForcedForm(true);
+                    }}
+                    onAddAccount={() => {
+                        setReauthEmail(null);
+                        setForceSelector(false);
+                        setForcedForm(true);
+                    }}
                 />
-                <TypoLink
-                    href="https://iieg.gob.mx/ns/wp-content/uploads/2025/06/Aviso_de_Privacidad_Integral_IIEG_06_2025.pdf"
-                    target="_blank"
-                    rel="noopener noreferrer"
+            </AuthShell>
+        );
+    }
+
+    return (
+        <AuthShell appName={appName} brandColor={brandColor} logoUrl={branding?.logo_url}>
+            <Flex vertical gap={4} style={{ marginBottom: token.marginXL }}>
+                <Title
                     style={{
-                        fontSize: 10,
-                        color: '#fff',
-                        textDecoration: 'underline',
+                        margin: 0,
+                        color: BRAND.purple,
+                        fontSize: 22,
                         fontWeight: 700,
+                        lineHeight: 1.2,
                         fontFamily: '"Garet", sans-serif',
                     }}
                 >
-                    Aviso de privacidad
-                </TypoLink>
+                    Hola
+                </Title>
+                <Text style={{ fontSize: 12, color: '#1f2937', fontWeight: 400, fontFamily: '"Garet", sans-serif' }}>
+                    Ingresa tus datos para iniciar sesión.
+                </Text>
             </Flex>
-        </Flex>
+
+            <Form
+                form={form}
+                name="login"
+                onFinish={onFinish}
+                autoComplete="off"
+                layout="vertical"
+                initialValues={prefillEmail ? { email: prefillEmail } : import.meta.env.DEV ? { email: 'admin@iieg.gob.mx' } : {}}
+                className="login-form-minerva"
+                requiredMark={(label, info) => (
+                    <>
+                        {label}
+                        {info.required && <span style={{ color: BRAND.orange, marginLeft: 4, fontWeight: 700 }}>*</span>}
+                    </>
+                )}
+            >
+                <Form.Item
+                    label="Correo electrónico"
+                    name="email"
+                    normalize={(value) => (value ? value.replace(/\s/g, '').toLowerCase() : value)}
+                    rules={[
+                        { required: true, message: 'Ingrese su correo' },
+                        { type: 'email', message: 'Ingrese un correo válido' },
+                    ]}
+                >
+                    <Input placeholder="correo@iieg.gob.mx" />
+                </Form.Item>
+
+                <Form.Item label="Contraseña" name="password" rules={[{ required: true, message: 'Ingrese su contraseña' }]}>
+                    <Input.Password
+                        placeholder="Contraseña"
+                        iconRender={(visible) => (
+                            <img
+                                src={`${import.meta.env.BASE_URL}${visible ? 'ico-show.svg' : 'ico-hidden.svg'}`}
+                                alt={visible ? 'Mostrar' : 'Ocultar'}
+                                style={{ width: 22, height: 22 }}
+                            />
+                        )}
+                    />
+                </Form.Item>
+
+                <Form.Item style={{ marginTop: token.marginXL, marginBottom: 0 }}>
+                    <Button
+                        type="primary"
+                        htmlType="submit"
+                        loading={loading}
+                        block
+                        style={{
+                            background: brandColor,
+                            borderColor: brandColor,
+                            height: 40,
+                            borderRadius: 20,
+                            fontWeight: 700,
+                            fontSize: 14,
+                            fontFamily: '"Garet", sans-serif',
+                        }}
+                    >
+                        Iniciar sesión
+                    </Button>
+                </Form.Item>
+
+                {hasSessions && (
+                    <Button
+                        type="link"
+                        block
+                        onClick={() => {
+                            setForcedForm(false);
+                            setReauthEmail(null);
+                            setForceSelector(true);
+                        }}
+                        style={{ marginTop: 8, color: brandColor, fontFamily: '"Garet", sans-serif' }}
+                    >
+                        Volver a mis cuentas
+                    </Button>
+                )}
+            </Form>
+        </AuthShell>
     );
 }

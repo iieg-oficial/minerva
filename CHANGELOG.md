@@ -7,6 +7,23 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+
+- **Selector de cuentas con el mismo frontend del login.** El selector multi-sesión ahora usa
+  el shell visual del formulario de login (fondo, card de dos columnas con branding y footer),
+  con cuatro estados: formulario (sin cuentas guardadas), "Iniciar sesión con:" (cuenta activa +
+  Continuar), dropdown para cambiar entre cuentas y gestor de cuentas para quitarlas del
+  dispositivo. `/login` ya no salta directo al panel: si hay cuentas guardadas muestra el selector.
+  Nuevo componente `AuthShell` (shell compartido) y reescritura de `AccountSelector`.
+
+### Changed
+
+- **Logout suave estilo Google.** "Cerrar sesión" en el panel ya no invalida el token ni marca
+  la cuenta como vencida: solo sale localmente y la cuenta queda listada como activa mientras su
+  token dure, para volver a entrar sin re-teclear credenciales. Para invalidar de verdad el token
+  está "Cerrar todas las sesiones" (blacklist server-side); para olvidar la cuenta del dispositivo,
+  "Gestionar cuentas" → quitar.
+
 ### Fixed
 
 - **Loop infinito `/admin`↔`/login`** cuando el `localStorage` tenía una sesión con un token
