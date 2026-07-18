@@ -1,5 +1,5 @@
 import client from './client';
-import { addSession, clearAll, getActive, getSessions, removeSession, setActive } from './session';
+import { addSession, clearAll, deactivate, getSessions, setActive } from './session';
 
 export async function login(email, password) {
     const response = await client.post('/auth/login', { email, password });
@@ -37,17 +37,13 @@ export async function getMyProfile() {
     return response.data;
 }
 
-// Cierra SOLO la cuenta activa. Primero revoca su token en el backend (el
-// interceptor usa el Bearer activo), luego la quita del store; si quedan otras
-// cuentas, removeSession activa la siguiente no expirada.
-export async function logout() {
-    const active = getActive();
-    try {
-        await client.post('/auth/logout');
-    } finally {
-        if (active) removeSession(active.sub);
-        else clearAll();
-    }
+// Logout suave de la cuenta activa (estilo Google): NO invalida el token en el
+// backend ni la marca vencida; solo sale localmente. La cuenta sigue listada como
+// activa mientras su token dure, para volver a entrar sin re-teclear credenciales.
+// Para invalidar de verdad está "Cerrar todas las sesiones" (logoutAll); para
+// olvidarla del dispositivo, "Gestionar cuentas" → quitar (removeSession).
+export function logout() {
+    deactivate();
 }
 
 // Cierra TODAS las cuentas del navegador. Revoca cada token con su propio Bearer
