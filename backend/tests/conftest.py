@@ -3,6 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from app.core.config import settings
 from app.core.database import get_session
 from app.core.dependencies.db import get_db
 from app.core.models import import_models
@@ -61,6 +62,17 @@ def fresh_redis():
     yield fake
     app.dependency_overrides.pop(get_redis, None)
     userinfo_app.dependency_overrides.pop(get_redis, None)
+
+
+@pytest.fixture(autouse=True)
+def enable_public_register():
+    """El registro público está cerrado por defecto (R4). Los tests crean usuarios
+    vía /auth/register, así que lo habilitan aquí; la prueba del cierre lo apaga
+    explícitamente con monkeypatch."""
+    original = settings.MINERVA_ENABLE_PUBLIC_REGISTER
+    settings.MINERVA_ENABLE_PUBLIC_REGISTER = True
+    yield
+    settings.MINERVA_ENABLE_PUBLIC_REGISTER = original
 
 
 @pytest.fixture

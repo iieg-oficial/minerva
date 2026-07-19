@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     MINERVA_MODE: str = "dev"
     MINERVA_DB_URL: str = ""
     MINERVA_ENABLE_DEV_LOGIN: bool = True
+    # Registro público self-service en /auth/register. Cerrado por defecto: Minerva
+    # es un IdP institucional, las cuentas las provisiona un admin (o la federación).
+    # Habilítalo solo si de verdad quieres alta libre de cuentas.
+    MINERVA_ENABLE_PUBLIC_REGISTER: bool = False
     MINERVA_AUTO_IMPORT_MANIFESTS: bool = True
     MINERVA_MANIFESTS_PATH: str = "/app/manifests"
     MINERVA_JWT_ISSUER: str = ""

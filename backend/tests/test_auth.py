@@ -1,3 +1,32 @@
+def test_register_disabled_returns_403(client, monkeypatch):
+    """R4: el registro público está cerrado por defecto (el autouse lo habilita
+    para el resto de tests; aquí lo apagamos para verificar el cierre)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MINERVA_ENABLE_PUBLIC_REGISTER", False)
+    resp = client.post(
+        "/auth/register",
+        json={"email": "nuevo@iieg.gob.mx", "full_name": "Nuevo", "password": "testpass123"},
+    )
+    assert resp.status_code == 403
+
+
+def test_register_rejects_bad_email(client):
+    resp = client.post(
+        "/auth/register",
+        json={"email": "no-es-un-correo", "full_name": "X", "password": "testpass123"},
+    )
+    assert resp.status_code == 422
+
+
+def test_register_rejects_short_password(client):
+    resp = client.post(
+        "/auth/register",
+        json={"email": "corto@iieg.gob.mx", "full_name": "X", "password": "1234"},
+    )
+    assert resp.status_code == 422
+
+
 def test_register_manual(client):
     response = client.post(
         "/auth/register",

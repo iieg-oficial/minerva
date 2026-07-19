@@ -9,7 +9,7 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.dependencies.auth import get_current_user, get_optional_user
 from app.core.dependencies.db import get_db
-from app.core.exceptions import BadRequestError, TooManyRequestsError
+from app.core.exceptions import BadRequestError, ForbiddenError, TooManyRequestsError
 from app.core.rate_limit import enforce_rate_limit
 from app.core.redis import get_redis
 from app.core.token_blacklist import revoke_jti
@@ -67,6 +67,8 @@ def register(
     service: AuthService = Depends(get_auth_service),
     audit: AuditService = Depends(get_audit_service),
 ):
+    if not settings.MINERVA_ENABLE_PUBLIC_REGISTER:
+        raise ForbiddenError(detail="El registro público está deshabilitado; contacta a un administrador")
     result = service.register(data)
     audit.log("manual_register_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
     return result

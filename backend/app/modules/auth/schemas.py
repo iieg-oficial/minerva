@@ -1,10 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 
 class AuthRegister(BaseModel):
-    email: str
-    full_name: str
-    password: str
+    email: EmailStr
+    full_name: str = Field(min_length=1)
+    password: str = Field(min_length=8)
 
 
 class AuthLogin(BaseModel):
