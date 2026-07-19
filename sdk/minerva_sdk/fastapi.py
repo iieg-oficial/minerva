@@ -55,12 +55,14 @@ async def _decode(token: str) -> dict:
             status.HTTP_401_UNAUTHORIZED, f"Algoritmo de token no soportado: {alg}"
         )
 
-    # El audience esperado es el código de esta aplicación (= aud del access token).
-    audience = (
-        settings.application_code
-        if (settings.verify_aud and settings.application_code)
-        else None
-    )
+    # La audiencia es obligatoria (= código de esta app): sin ella no se puede
+    # verificar que el token fue emitido para este consumidor. No hay switch para
+    # desactivarla; si falta la configuración, es un error de despliegue.
+    if not settings.application_code:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "MINERVA_APPLICATION_CODE no configurado",
+        )
 
     try:
         jwks = await _get_jwks()
@@ -68,8 +70,8 @@ async def _decode(token: str) -> dict:
             token,
             jwks,
             algorithms=["RS256"],
-            audience=audience,
-            options={"verify_aud": audience is not None},
+            audience=settings.application_code,
+            options={"verify_aud": True},
         )
     except JWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Token inválido: {exc}")
@@ -78,7 +80,10 @@ async def _decode(token: str) -> dict:
             status.HTTP_502_BAD_GATEWAY, f"No se pudo obtener el JWKS de Minerva: {exc}"
         )
 
-    if settings.expected_issuer and payload.get("iss") != settings.expected_issuer:
+    # El `iss` se valida SIEMPRE: contra MINERVA_EXPECTED_ISSUER o, por defecto, el
+    # issuer_url del que se descubre el JWKS. No se puede desactivar.
+    expected_iss = (settings.expected_issuer or settings.issuer_url).rstrip("/")
+    if str(payload.get("iss", "")).rstrip("/") != expected_iss:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Issuer inválido")
 
     # Un consumidor solo acepta access tokens (typ=access). Una sesión de panel, un

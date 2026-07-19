@@ -55,7 +55,6 @@ def setup():
     _jwks_cache["jwks"] = _jwks_for(public_pem)  # inyecta el JWKS: sin red
     _jwks_cache["exp"] = time.time() + 3600
     config.settings.application_code = "godin"
-    config.settings.verify_aud = True
     config.settings.expected_issuer = ""
     yield private_pem
     _jwks_cache["jwks"] = None
@@ -96,6 +95,23 @@ def test_access_token_type_accepted(setup):
     token = _sign(setup, aud="godin", typ="access")
     payload = asyncio.run(_decode(token))
     assert payload["typ"] == "access"
+
+
+def test_wrong_issuer_rejected(setup):
+    # El iss se valida siempre (contra issuer_url por defecto); no hay switch.
+    token = _sign(setup, aud="godin", typ="access", iss="https://evil.example")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_decode(token))
+    assert exc.value.status_code == 401
+
+
+def test_missing_application_code_is_config_error(setup):
+    # La audiencia es obligatoria: sin application_code no se acepta ningún token.
+    config.settings.application_code = ""
+    token = _sign(setup, aud="godin", typ="access")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_decode(token))
+    assert exc.value.status_code == 500
 
 
 def test_hs256_rejected(setup):
