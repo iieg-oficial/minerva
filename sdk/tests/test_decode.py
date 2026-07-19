@@ -24,7 +24,9 @@ def _make_keypair() -> tuple[str, str]:
     ).decode()
     public_pem = (
         priv.public_key()
-        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+        .public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
         .decode()
     )
     return private_pem, public_pem
@@ -38,7 +40,12 @@ def _jwks_for(public_pem: str) -> dict:
 
 
 def _sign(private_pem: str, **claims) -> str:
-    payload = {"sub": "u1", "iss": "http://localhost:9000", "exp": int(time.time()) + 300, **claims}
+    payload = {
+        "sub": "u1",
+        "iss": "http://localhost:9000",
+        "exp": int(time.time()) + 300,
+        **claims,
+    }
     return jwt.encode(payload, private_pem, algorithm="RS256", headers={"kid": KID})
 
 
@@ -56,10 +63,18 @@ def setup():
 
 
 def test_valid_rs256_token(setup):
-    token = _sign(setup, aud="godin", email="u@iieg.gob.mx")
+    token = _sign(setup, aud="godin", email="u@iieg.gob.mx", typ="access")
     payload = asyncio.run(_decode(token))
     assert payload["sub"] == "u1"
     assert payload["aud"] == "godin"
+
+
+def test_missing_token_type_rejected(setup):
+    # typ=access es obligatorio: un token sin typ no pasa (no compat legacy).
+    token = _sign(setup, aud="godin")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_decode(token))
+    assert exc.value.status_code == 401
 
 
 def test_wrong_audience_rejected(setup):
@@ -85,7 +100,9 @@ def test_access_token_type_accepted(setup):
 
 def test_hs256_rejected(setup):
     # Solo RS256: un token HS256 se rechaza (anti-confusión de algoritmo).
-    token = jwt.encode({"sub": "u1", "aud": "godin"}, "secreto-cualquiera", algorithm="HS256")
+    token = jwt.encode(
+        {"sub": "u1", "aud": "godin"}, "secreto-cualquiera", algorithm="HS256"
+    )
     with pytest.raises(HTTPException) as exc:
         asyncio.run(_decode(token))
     assert exc.value.status_code == 401
