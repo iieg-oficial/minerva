@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from app.core.dependencies.admin import require_minerva_admin
-from app.core.dependencies.auth import get_current_user
+from app.core.dependencies.auth import get_current_session_user
 from app.core.dependencies.db import get_db
 from app.modules.permissions.schemas import PermissionCreate, PermissionRead, PermissionUpdate
 from app.modules.permissions.service import PermissionService
@@ -21,7 +21,7 @@ def list_permissions(
     limit: int = Query(100, ge=1, le=500),
     application_id: str | None = Query(None),
     service: PermissionService = Depends(get_permission_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     if application_id:
         perms = service.list_permissions_by_application(application_id)
@@ -35,7 +35,7 @@ def create_permission(
     data: PermissionCreate,
     application_id: str = Query(..., description="ID de la aplicación"),
     service: PermissionService = Depends(get_permission_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.create_permission(application_id, data)
 
@@ -44,7 +44,7 @@ def create_permission(
 def get_permission(
     permission_id: str,
     service: PermissionService = Depends(get_permission_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.get_permission(permission_id)
 
@@ -54,6 +54,6 @@ def update_permission(
     permission_id: str,
     data: PermissionUpdate,
     service: PermissionService = Depends(get_permission_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.update_permission(permission_id, data)

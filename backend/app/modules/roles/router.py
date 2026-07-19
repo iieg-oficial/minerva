@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from app.core.dependencies.admin import require_minerva_admin
-from app.core.dependencies.auth import get_current_user
+from app.core.dependencies.auth import get_current_session_user
 from app.core.dependencies.db import get_db
 from app.modules.permissions.schemas import PermissionRead
 from app.modules.permissions.service import PermissionService
@@ -28,7 +28,7 @@ def list_roles(
     limit: int = Query(100, ge=1, le=500),
     application_id: str | None = Query(None),
     service: RoleService = Depends(get_role_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     if application_id:
         roles = service.list_roles_by_application(application_id)
@@ -42,7 +42,7 @@ def create_role(
     data: RoleCreate,
     application_id: str = Query(..., description="ID de la aplicación"),
     service: RoleService = Depends(get_role_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.create_role(application_id, data)
 
@@ -51,7 +51,7 @@ def create_role(
 def get_role(
     role_id: str,
     service: RoleService = Depends(get_role_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.get_role(role_id)
 
@@ -60,7 +60,7 @@ def get_role(
 def list_role_permissions(
     role_id: str,
     service: PermissionService = Depends(get_permission_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.list_permissions_by_role(role_id)
 
@@ -69,7 +69,7 @@ def list_role_permissions(
 def list_role_users(
     role_id: str,
     service: RoleService = Depends(get_role_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.list_users_for_role(role_id)
 
@@ -79,7 +79,7 @@ def update_role(
     role_id: str,
     data: RoleUpdate,
     service: RoleService = Depends(get_role_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.update_role(role_id, data)
 
@@ -88,7 +88,7 @@ def update_role(
 def delete_role(
     role_id: str,
     service: RoleService = Depends(get_role_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     service.delete_role(role_id)
 
@@ -98,7 +98,7 @@ def add_permission_to_role(
     role_id: str,
     permission_id: str,
     service: PermissionService = Depends(get_permission_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     service.add_permission_to_role(role_id, permission_id)
     return {"message": "Permiso asignado al rol"}
@@ -109,6 +109,6 @@ def remove_permission_from_role(
     role_id: str,
     permission_id: str,
     service: PermissionService = Depends(get_permission_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     service.remove_permission_from_role(role_id, permission_id)

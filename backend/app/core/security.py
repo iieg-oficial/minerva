@@ -161,11 +161,12 @@ def create_dev_token_rs256(
     return jwt.encode(payload, private_key_pem, algorithm="RS256", headers={"kid": kid})
 
 
-def decode_token_rs256(token: str, jwks: dict, audience: str | None = None) -> dict:
+def decode_token_rs256(token: str, jwks: dict, audience: str | None = None, issuer: str | None = None) -> dict:
     """Valida un JWT RS256 contra un JWKS, seleccionando la clave por `kid`.
 
-    `verify_aud` se mantiene desactivado por defecto durante la transición; se
-    activará pasando `audience` cuando el `aud` sea consistente (Fase 4).
+    `verify_aud`/`verify_iss` se activan al pasar `audience`/`issuer`. El backend
+    verifica siempre el `iss` (ver `dependencies/auth._resolve_token`); el `aud` se
+    verifica en los endpoints que conocen su audiencia esperada.
     """
     try:
         return jwt.decode(
@@ -173,7 +174,8 @@ def decode_token_rs256(token: str, jwks: dict, audience: str | None = None) -> d
             jwks,
             algorithms=["RS256"],
             audience=audience,
-            options={"verify_aud": audience is not None},
+            issuer=issuer,
+            options={"verify_aud": audience is not None, "verify_iss": issuer is not None},
         )
     except JWTError:
         raise ValueError("Token inválido o expirado")
