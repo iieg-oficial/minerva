@@ -69,6 +69,20 @@ def test_wrong_audience_rejected(setup):
     assert exc.value.status_code == 401
 
 
+def test_non_access_token_type_rejected(setup):
+    # Un token de sesión de panel (typ=session) no vale en un consumidor.
+    token = _sign(setup, aud="godin", typ="session")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_decode(token))
+    assert exc.value.status_code == 401
+
+
+def test_access_token_type_accepted(setup):
+    token = _sign(setup, aud="godin", typ="access")
+    payload = asyncio.run(_decode(token))
+    assert payload["typ"] == "access"
+
+
 def test_hs256_rejected(setup):
     # Solo RS256: un token HS256 se rechaza (anti-confusión de algoritmo).
     token = jwt.encode({"sub": "u1", "aud": "godin"}, "secreto-cualquiera", algorithm="HS256")

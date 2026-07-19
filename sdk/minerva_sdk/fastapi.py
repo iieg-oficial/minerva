@@ -72,6 +72,13 @@ async def _decode(token: str) -> dict:
 
     if settings.expected_issuer and payload.get("iss") != settings.expected_issuer:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Issuer inválido")
+
+    # Un consumidor solo acepta access tokens (typ=access). Una sesión de panel o
+    # un dev token no cruzan aquí aunque su firma sea válida (RFC 8725). Se tolera
+    # la ausencia de `typ` por tokens legacy en transición.
+    token_typ = payload.get("typ")
+    if token_typ is not None and token_typ != "access":
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Tipo de token no válido para un consumidor")
     return payload
 
 
