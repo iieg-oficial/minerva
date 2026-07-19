@@ -151,3 +151,27 @@ def test_duplicate_slug(client, admin_token):
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert response.status_code == 409
+
+
+def test_import_manifest_rejects_foreign_permission(client, admin_token):
+    bad = """
+application:
+  code: godin
+permissions:
+  - key: mariachi.database.view
+    name: Mal
+"""
+    resp = _import_manifest(client, admin_token, bad)
+    assert resp.status_code == 400
+
+
+def test_import_manifest_rejects_bad_convention(client, admin_token):
+    bad = """
+application:
+  code: godin
+permissions:
+  - key: godin-oficios-view
+    name: Mal
+"""
+    resp = _import_manifest(client, admin_token, bad)
+    assert resp.status_code == 400
