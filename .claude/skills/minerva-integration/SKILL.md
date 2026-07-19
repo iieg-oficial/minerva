@@ -68,7 +68,7 @@ Never replace this with local role checks, copied JWT decoding code, or a local 
 6. Configure environments:
    - Required for SDK validation: `MINERVA_ISSUER_URL`, `MINERVA_APPLICATION_CODE`.
    - Required for login flow: `MINERVA_CLIENT_ID`, `MINERVA_REDIRECT_URI`; add `MINERVA_CLIENT_SECRET` only for confidential clients.
-   - In production, keep `MINERVA_VERIFY_AUD=true` and set `MINERVA_EXPECTED_ISSUER` to Minerva's public issuer.
+   - The SDK always verifies `aud` (= `MINERVA_APPLICATION_CODE`) and `iss`; set `MINERVA_EXPECTED_ISSUER` to Minerva's public issuer when it differs from `MINERVA_ISSUER_URL`. Neither check can be disabled.
    - Do not introduce `MINERVA_JWT_SECRET` for consumers; Minerva signs with RS256 and publishes JWKS.
 
 7. Validate the integration:

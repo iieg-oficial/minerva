@@ -27,9 +27,10 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   (`session`/`access`/`dev`/`id`) y cada endpoint acepta solo su clase mediante dependencias
   explícitas: el panel/admin, `/auth/refresh` y `/auth/authorize` exigen `typ=session`
   (`aud=minerva`); `/userinfo` solo `typ=access`; el self-service del Dev Kit (`/api/v1/me*`)
-  `access`/`dev`; y el SDK de un consumidor solo `typ=access`. El backend verifica además
-  **siempre** el `iss`. Antes, un access de consumidor de 15 min cuyo sujeto fuera admin cruzaba al
-  panel o refrescaba una sesión de 480 min, y `/userinfo` aceptaba cualquier token firmado.
+  `access`/`dev`; y el SDK de un consumidor solo `typ=access`. Tanto el backend como el SDK
+  verifican **siempre** el `iss` (y el SDK el `aud` = `application_code`), sin interruptor para
+  desactivarlo. Antes, un access de consumidor de 15 min cuyo sujeto fuera admin cruzaba al panel o
+  refrescaba una sesión de 480 min, y `/userinfo` aceptaba cualquier token firmado.
 
 ### Fixed
 

@@ -18,9 +18,8 @@ pip install -e ./sdk          # desde la raíz del repo Minerva
 | Variable | Descripción | Default |
 |---|---|---|
 | `MINERVA_ISSUER_URL` | URL base de Minerva | `http://localhost:9000` |
-| `MINERVA_APPLICATION_CODE` | Código de tu aplicación (slug) | `` |
-| `MINERVA_EXPECTED_ISSUER` | Si se define, valida el claim `iss` | `` |
-| `MINERVA_VERIFY_AUD` | Verifica que el `aud` sea tu aplicación | `true` |
+| `MINERVA_APPLICATION_CODE` | Código de tu aplicación (slug). **Obligatorio**: es el `aud` que se exige siempre | `` |
+| `MINERVA_EXPECTED_ISSUER` | Issuer esperado del `iss`; si se deja vacío se usa `MINERVA_ISSUER_URL`. La validación NO se puede desactivar | `` |
 | `MINERVA_PERMISSIONS_CACHE_TTL` | TTL de caché de permisos (segundos) | `300` |
 | `MINERVA_JWKS_CACHE_TTL` | TTL de caché del JWKS (segundos) | `3600` |
 | `MINERVA_JWT_SECRET` | Secreto HS256 legacy (solo transición; vacío = solo RS256) | `` |

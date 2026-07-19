@@ -319,9 +319,8 @@ Variables de entorno del SDK (`minerva_sdk/config.py`):
 | Variable | Para qué |
 |---|---|
 | `MINERVA_ISSUER_URL` | URL base de Minerva (de donde se descarga el JWKS) |
-| `MINERVA_APPLICATION_CODE` | tu `application_code` — se usa para verificar `aud` y para consultar `/me/permissions` |
-| `MINERVA_EXPECTED_ISSUER` | (opcional) valida `iss` exacto del token |
-| `MINERVA_VERIFY_AUD` | si `true` (default), exige que `aud` coincida con tu `application_code` |
+| `MINERVA_APPLICATION_CODE` | tu `application_code` — **obligatorio**: se exige siempre como `aud` y se usa para consultar `/me/permissions` |
+| `MINERVA_EXPECTED_ISSUER` | issuer esperado del `iss`; si se deja vacío se usa `MINERVA_ISSUER_URL`. La validación de `iss` no se puede desactivar |
 | `MINERVA_JWKS_CACHE_TTL` | segundos de caché del JWKS (default 3600) |
 | `MINERVA_PERMISSIONS_CACHE_TTL` | segundos de caché de permisos por usuario (default 300) |
 
@@ -361,7 +360,7 @@ probar el endpoint protegido.
 | Aspecto | Dev | Producción |
 |---|---|---|
 | `MINERVA_ISSUER_URL` (en tu sistema) | `http://localhost:9000` | URL pública de Minerva = el host de nginx **sin `:9000`** (todo va consolidado tras nginx); HTTPS al tener certificado |
-| Verificación de `aud`/`iss` | puede dejarse relajada para probar rápido | `MINERVA_VERIFY_AUD=true` y `MINERVA_EXPECTED_ISSUER` fijado |
+| Verificación de `aud`/`iss` | siempre activa (`aud`=`application_code`, `iss`=`issuer_url`) | fija `MINERVA_EXPECTED_ISSUER` al issuer público si difiere del host de JWKS |
 | Registro de `redirect_uri` | localhost, puertos de desarrollo | dominio real de tu sistema, HTTPS |
 | Manifiesto | auto-importado al arrancar Minerva en local | importar explícitamente vía API/CI en el despliegue, no depender de auto-import |
 | Secrets (`client_secret`) | puede vivir en `.env` local | secret manager — nunca en el repo ni en logs |
