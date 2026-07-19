@@ -92,7 +92,15 @@ permisos finos de autorización (`godin.oficios.create`) — esos se consultan a
 **Access Token**
 Token de vida corta (`MINERVA_ACCESS_TOKEN_TTL_MINUTES`, default 15 min) que el cliente
 envía como `Authorization: Bearer <token>` para llamar APIs. En Minerva lleva `sub`,
-`email`, `roles`, `permissions`, `scope` y `jti`, firmado RS256.
+`email`, `roles`, `permissions`, `scope`, `jti` y `typ=access`, firmado RS256.
+
+**Clase de token (`typ`)**
+Todos los JWT firmados por Minerva llevan un claim `typ` que marca su clase y es
+mutuamente excluyente: `session` (sesión del panel, 480 min, `aud=minerva`), `access`
+(consumidor OIDC, 15 min, `aud=<código de app>`), `dev` (Dev Kit) e `id` (ID Token). Cada
+endpoint acepta solo su clase: p. ej. el panel/admin y `/auth/refresh` exigen `typ=session`,
+y el SDK de un consumidor solo acepta `typ=access`. Así un token de un contexto no cruza a otro
+aunque su firma sea válida.
 
 **ID Token**
 Token OIDC con la **identidad** del usuario (no permisos), pensado para el propio cliente,
