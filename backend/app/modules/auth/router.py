@@ -7,7 +7,7 @@ from redis.asyncio import Redis
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.core.dependencies.auth import get_current_user, get_optional_user
+from app.core.dependencies.auth import get_current_session_user, get_current_user, get_optional_user
 from app.core.dependencies.db import get_db
 from app.core.exceptions import BadRequestError, ForbiddenError, TooManyRequestsError
 from app.core.rate_limit import enforce_rate_limit
@@ -357,6 +357,8 @@ async def revoke_token(
 def refresh_token(
     request: Request,
     service: AuthService = Depends(get_auth_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_session_user),
 ):
+    # Solo un token de sesión del panel se refresca en otra sesión de 480 min; un
+    # access de consumidor de 15 min (o un dev token) no puede escalar aquí (R2).
     return service.reissue_session_token(current_user)

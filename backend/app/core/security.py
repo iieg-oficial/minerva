@@ -62,6 +62,7 @@ def create_access_token_rs256(
     expires_minutes: int | None = None,
     scope: str = "",
     email_verified: bool = False,
+    typ: str = "access",
 ) -> str:
     """Access token firmado con RS256. Incluye `jti` para revocación (blacklist).
 
@@ -70,6 +71,8 @@ def create_access_token_rs256(
     `scope` queda registrado en el token (el canje OIDC lo usa; los tokens de sesión
     interna del panel no lo pasan y quedan con `scope=""`) para que `/userinfo`
     pueda filtrar los claims de identidad por scope sin volver a consultar la BD.
+    `typ` marca la clase de token (`session` para el panel, `access` para el canje
+    OIDC de consumidores) para que cada endpoint rechace tokens de otra clase (R2).
     """
     now = datetime.now(timezone.utc)
     minutes = expires_minutes if expires_minutes is not None else settings.effective_token_expire_minutes
@@ -78,6 +81,7 @@ def create_access_token_rs256(
         "email": email,
         "name": name,
         "email_verified": email_verified,
+        "typ": typ,
         "iss": settings.effective_jwt_issuer,
         "aud": application_slug or "minerva",
         "roles": roles or [],
@@ -110,6 +114,7 @@ def create_id_token(
     minutes = expires_minutes if expires_minutes is not None else settings.effective_token_expire_minutes
     payload = {
         "sub": str(user_id),
+        "typ": "id",
         "iss": settings.effective_jwt_issuer,
         "aud": client_id,
         "iat": int(now.timestamp()),
@@ -146,6 +151,7 @@ def create_dev_token_rs256(
         "sub": str(user_id),
         "email": email,
         "name": name,
+        "typ": "dev",
         "applications": applications or [],
         "roles": roles_by_application or {},
         "jti": uuid.uuid4().hex,

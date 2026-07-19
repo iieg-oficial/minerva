@@ -32,12 +32,24 @@ async def _get_jwks_cached(session: Session, redis: Redis) -> dict:
     return jwks
 
 
-async def _resolve_token(token: str, session: Session, redis: Redis) -> dict:
+async def _resolve_token(
+    token: str,
+    session: Session,
+    redis: Redis,
+    expected_types: set[str] | None = None,
+    audience: str | None = None,
+) -> dict:
     """Valida un token RS256 contra el JWKS local (clave activa + retiradas) y lo
     rechaza si su `jti` está en la blacklist (revocado). Toda la firma del sistema
-    es RS256: tokens de consumidores y de sesión interna del panel."""
+    es RS256: tokens de consumidores y de sesión interna del panel.
+
+    `expected_types` restringe la clase de token (`typ`) aceptada por el endpoint:
+    sin esto, un access de consumidor (15 min) valía en cualquier endpoint del panel
+    (R2). `audience` activa la verificación de `aud` cuando el endpoint la conoce."""
     jwks = await _get_jwks_cached(session, redis)
-    payload = decode_token_rs256(token, jwks)
+    payload = decode_token_rs256(token, jwks, audience=audience)
+    if expected_types is not None and payload.get("typ") not in expected_types:
+        raise ValueError("Tipo de token no válido para esta operación")
     if await is_revoked(redis, payload.get("jti")):
         raise ValueError("Token revocado")
     # Invalidación por usuario: si cambió su contraseña/correo/status, los tokens
@@ -58,6 +70,25 @@ async def get_current_user(
         raise UnauthorizedError(detail="Token no proporcionado")
     try:
         return await _resolve_token(credentials.credentials, session, redis)
+    except ValueError as e:
+        raise UnauthorizedError(detail=str(e))
+
+
+async def get_current_session_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    session: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> dict:
+    """Como `get_current_user`, pero solo acepta el token de **sesión del panel**
+    (`typ=session`, `aud=minerva`). Protege los endpoints del panel/admin y el
+    refresh de sesión: un access de consumidor o un dev token no cruzan aquí (R2)."""
+    if credentials is None:
+        raise UnauthorizedError(detail="Token no proporcionado")
+    try:
+        return await _resolve_token(
+            credentials.credentials, session, redis, expected_types={"session"}, audience="minerva"
+        )
     except ValueError as e:
         raise UnauthorizedError(detail=str(e))
 
