@@ -107,10 +107,13 @@ cada arranque del backend.
 **Manual, vía API:**
 
 ```bash
-curl -X POST http://localhost:9000/api/v1/manifests/import \
+curl -X POST http://localhost:9000/applications/import-manifest \
   -H "Authorization: Bearer <admin_token>" \
   -F "file=@manifest.minerva.yml"
 ```
+
+> El import por API vive en el panel admin (`/applications/import-manifest`, requiere rol
+> de administrador). El Dev Kit `/api/v1` es solo self-service (dev-login, `me`, `me/permissions`).
 
 ## 3. Flujo OIDC: Authorization Code + PKCE
 

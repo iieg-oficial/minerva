@@ -7,6 +7,29 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING · CRUD administrativo retirado de `/api/v1`.** El Minerva Dev Kit ya no expone
+  gestión de aplicaciones, usuarios, roles, permisos, asignaciones ni import de manifiestos.
+  `/api/v1` queda solo con self-service: `POST /api/v1/auth/dev-login`, `GET /api/v1/me` y
+  `GET /api/v1/me/permissions`. La administración vive únicamente en los routers canónicos del
+  panel (`/applications`, `/users`, `/roles`, `/permissions`, `/groups`), protegidos con
+  `require_minerva_admin`. El import de manifiestos por API pasa a `POST /applications/import-manifest`.
+
+### Security
+
+- **Escalada de privilegios por dev-login cerrada.** Antes, cualquier token de dev-login podía
+  autoasignarse el rol Administrador porque el CRUD de `/api/v1` solo exigía estar autenticado.
+- **Registro público cerrado por defecto.** `/auth/register` queda deshabilitado salvo que se
+  active `MINERVA_ENABLE_PUBLIC_REGISTER=true`; además valida el correo (`EmailStr`) y exige una
+  contraseña de al menos 8 caracteres.
+
+### Fixed
+
+- **Correo case-insensitive.** El correo se normaliza a minúsculas en el repositorio de usuarios,
+  así distinto casing (`Alice@` vs `alice@`) no crea cuentas duplicadas y el login funciona sin
+  importar mayúsculas.
+
 ## [0.3.4] - 2026-07-18
 
 ### Fixed

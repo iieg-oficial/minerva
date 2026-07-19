@@ -96,7 +96,7 @@ completas (no se repiten aquí).
 | `groups` | Grupos de usuarios; herencia de roles vía grupo |
 | `authorization` | Chequeo de permisos efectivos (`/authorization/check`, `/authorization/me/permissions`) |
 | `audit` | Bitácora de eventos (login, token exchange, rate limit excedido, etc.) |
-| `devkit` | Contrato `/api/v1/*`: dev-login, `me/permissions` (consumido por el SDK), CRUD administrativo, import de manifiestos |
+| `devkit` | Contrato `/api/v1/*` **solo self-service**: dev-login, `me` y `me/permissions` (consumido por el SDK). La administración (CRUD, import de manifiestos) vive en los routers canónicos del panel |
 
 ### `core/`: utilidades compartidas
 

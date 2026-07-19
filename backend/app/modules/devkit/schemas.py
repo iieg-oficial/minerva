@@ -29,22 +29,6 @@ class MePermissionsResponse(BaseModel):
     permissions: list[str]
 
 
-# --- Access assignments -----------------------------------------------------
-class AccessAssignmentCreate(BaseModel):
-    user_id: str
-    role_id: str
-
-
-class AccessAssignmentRead(BaseModel):
-    id: str
-    user_id: str
-    role_id: str
-    role_name: str
-    role_slug: str
-    application_id: str
-    application_code: str
-
-
 # --- Manifests --------------------------------------------------------------
 class ManifestImportRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

@@ -1,27 +1,3 @@
-MANIFEST = """
-application:
-  code: godin
-  name: Godín
-  description: Gestor de oficios
-  base_url: http://localhost:8000
-  redirect_uris:
-    - http://localhost:8000/auth/callback
-permissions:
-  - key: godin.oficios.view
-    name: Ver oficios
-  - key: godin.oficios.create
-    name: Crear oficios
-roles:
-  - name: Consulta
-    permissions:
-      - godin.oficios.view
-  - name: Administrador
-    permissions:
-      - godin.oficios.view
-      - godin.oficios.create
-"""
-
-
 def dev_login(client, email="admin@local.dev"):
     resp = client.post("/api/v1/auth/dev-login", json={"email": email})
     assert resp.status_code == 200, resp.text
@@ -46,92 +22,42 @@ def test_dev_login_and_me(client):
     assert "id" in body
 
 
-def test_manifest_import(client):
-    token = dev_login(client)
-    resp = client.post("/api/v1/manifests/import", content=MANIFEST, headers=auth(token))
-    assert resp.status_code == 200, resp.text
-    data = resp.json()
-    assert data["application_code"] == "godin"
-    assert data["created_application"] is True
-    assert data["permissions_upserted"] == 2
-    assert data["roles_upserted"] == 2
-    # Al crear la app, el client_secret se devuelve una sola vez.
-    assert data["client_id"]
-    assert data["client_secret"]
-
-    # Idempotente: segunda importación no duplica ni reexpone credenciales
-    resp2 = client.post("/api/v1/manifests/import", content=MANIFEST, headers=auth(token))
-    data2 = resp2.json()
-    assert data2["created_application"] is False
-    assert data2["permissions_upserted"] == 0
-    assert data2["roles_upserted"] == 0
-    assert data2["client_secret"] is None
-
-    perms = client.get("/api/v1/permissions?application_code=godin", headers=auth(token))
-    assert len(perms.json()["items"]) == 2
-
-
-def test_manifest_validation_rejects_foreign_permission(client):
-    token = dev_login(client)
-    bad = """
-application:
-  code: godin
-permissions:
-  - key: mariachi.database.view
-    name: Mal
-"""
-    resp = client.post("/api/v1/manifests/import", content=bad, headers=auth(token))
-    assert resp.status_code == 400
-
-
-def test_manifest_validation_rejects_bad_convention(client):
-    token = dev_login(client)
-    bad = """
-application:
-  code: godin
-permissions:
-  - key: godin-oficios-view
-    name: Mal
-"""
-    resp = client.post("/api/v1/manifests/import", content=bad, headers=auth(token))
-    assert resp.status_code == 400
-
-
-def test_assign_role_and_check_permissions(client):
-    token = dev_login(client)
-    client.post("/api/v1/manifests/import", content=MANIFEST, headers=auth(token))
-
-    # usuario nuevo, sin permisos
-    me = client.get("/api/v1/me", headers=auth(token))
-    user_id = me.json()["id"]
-
-    roles = client.get("/api/v1/roles?application_code=godin", headers=auth(token)).json()["items"]
-    admin_role = next(r for r in roles if r["name"] == "Administrador")
-
-    perms_before = client.get("/api/v1/me/permissions?application=godin", headers=auth(token)).json()
-    assert perms_before["permissions"] == []
-
-    assignment = client.post(
-        "/api/v1/access-assignments",
-        json={"user_id": user_id, "role_id": admin_role["id"]},
-        headers=auth(token),
-    )
-    assert assignment.status_code == 201
-    assignment_id = assignment.json()["id"]
-
-    perms_after = client.get("/api/v1/me/permissions?application=godin", headers=auth(token)).json()
-    assert set(perms_after["permissions"]) == {"godin.oficios.view", "godin.oficios.create"}
-    assert perms_after["roles"] == ["Administrador"]
-
-    listing = client.get("/api/v1/access-assignments", headers=auth(token)).json()
-    assert any(a["id"] == assignment_id for a in listing)
-
-    deleted = client.delete(f"/api/v1/access-assignments/{assignment_id}", headers=auth(token))
-    assert deleted.status_code == 204
-
-    perms_final = client.get("/api/v1/me/permissions?application=godin", headers=auth(token)).json()
-    assert perms_final["permissions"] == []
+def test_me_permissions_self_service(client):
+    """El endpoint canónico del SDK sigue siendo self-service: un usuario recién
+    creado por dev-login puede consultar SUS permisos (vacíos) sin ser admin."""
+    token = dev_login(client, "sdkuser@local.dev")
+    # La app minerva existe por el seed de los fixtures que la usan; consultamos una
+    # app cualquiera registrada. Sin app, responde 404, no 403: no exige admin.
+    resp = client.get("/api/v1/me/permissions?application=minerva", headers=auth(token))
+    assert resp.status_code in (200, 404)
+    assert resp.status_code != 403
 
 
 def test_me_requires_auth(client):
     assert client.get("/api/v1/me").status_code == 401
+
+
+# --- R1: el Dev Kit ya NO expone administración ------------------------------
+def test_devkit_admin_endpoints_removed(client):
+    """El CRUD administrativo que antes colgaba de /api/v1 (y que cualquier token
+    de dev-login podía usar para autoasignarse roles) fue retirado: esas rutas ya
+    no existen. La administración vive solo en los routers canónicos con admin."""
+    token = dev_login(client)
+    headers = auth(token)
+    assert client.get("/api/v1/applications", headers=headers).status_code == 404
+    assert client.get("/api/v1/users", headers=headers).status_code == 404
+    assert client.get("/api/v1/roles", headers=headers).status_code == 404
+    assert client.get("/api/v1/permissions", headers=headers).status_code == 404
+    assert client.get("/api/v1/access-assignments", headers=headers).status_code == 404
+    assert client.post("/api/v1/access-assignments", json={}, headers=headers).status_code == 404
+    assert client.post("/api/v1/manifests/import", content="x", headers=headers).status_code == 404
+
+
+def test_non_admin_cannot_self_assign_role(client, non_admin_token):
+    """El flujo de escalada (autoasignarse Administrador) queda cerrado: la única
+    vía de asignación es el canónico /groups, protegido con require_minerva_admin."""
+    resp = client.post(
+        "/groups/users/some-user/roles/some-role",
+        headers=auth(non_admin_token),
+    )
+    assert resp.status_code == 403

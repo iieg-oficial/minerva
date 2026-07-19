@@ -97,6 +97,7 @@ equivalentes heredadas (`DATABASE_URL`, `JWT_SECRET_KEY`, etc.).
 | `MINERVA_MODE` | `dev` | `dev` o `central`. En despliegues reales normalmente `central`. |
 | `MINERVA_DB_URL` | `postgresql://minerva:minerva@minerva-db:5432/minerva` | Conexión a PostgreSQL. Tiene prioridad sobre `DATABASE_URL`. |
 | `MINERVA_ENABLE_DEV_LOGIN` | `true` | Habilita el login de desarrollo (sin Google). **`false` en producción.** |
+| `MINERVA_ENABLE_PUBLIC_REGISTER` | `false` | Habilita el registro público self-service en `/auth/register`. Cerrado por defecto: las cuentas las provisiona un admin. |
 | `MINERVA_AUTO_IMPORT_MANIFESTS` | `true` | Importa los manifests de `MINERVA_MANIFESTS_PATH` al arrancar. |
 | `MINERVA_MANIFESTS_PATH` | `/app/manifests` | Ruta interna donde se leen los manifests (montada como volumen). |
 | `MINERVA_JWT_SECRET` | `dev-secret` | Legado; la firma real es RS256. Cámbialo igualmente. |
