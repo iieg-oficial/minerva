@@ -27,6 +27,23 @@ def test_register_rejects_short_password(client):
     assert resp.status_code == 422
 
 
+def test_email_is_case_insensitive(client):
+    """El correo es la identidad: distinto casing no debe crear cuentas duplicadas
+    y el login debe funcionar sin importar mayúsculas."""
+    first = client.post(
+        "/auth/register",
+        json={"email": "Alice@iieg.gob.mx", "full_name": "Alice", "password": "testpass123"},
+    )
+    assert first.status_code == 201
+    dup = client.post(
+        "/auth/register",
+        json={"email": "alice@iieg.gob.mx", "full_name": "Alice", "password": "testpass123"},
+    )
+    assert dup.status_code == 409
+    login = client.post("/auth/login", json={"email": "ALICE@iieg.gob.mx", "password": "testpass123"})
+    assert login.status_code == 200
+
+
 def test_register_manual(client):
     response = client.post(
         "/auth/register",
