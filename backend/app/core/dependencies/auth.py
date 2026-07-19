@@ -1,6 +1,6 @@
 import json
 
-from fastapi import Depends, Request
+from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
 from sqlmodel import Session
@@ -32,12 +32,25 @@ async def _get_jwks_cached(session: Session, redis: Redis) -> dict:
     return jwks
 
 
-async def _resolve_token(token: str, session: Session, redis: Redis) -> dict:
+async def _resolve_token(
+    token: str,
+    session: Session,
+    redis: Redis,
+    expected_types: set[str] | None = None,
+    audience: str | None = None,
+) -> dict:
     """Valida un token RS256 contra el JWKS local (clave activa + retiradas) y lo
     rechaza si su `jti` está en la blacklist (revocado). Toda la firma del sistema
-    es RS256: tokens de consumidores y de sesión interna del panel."""
+    es RS256: tokens de consumidores y de sesión interna del panel.
+
+    Verifica **siempre** el `iss` contra el issuer del sistema. `expected_types`
+    restringe la clase de token (`typ`) aceptada por el endpoint: sin esto, un
+    access de consumidor (15 min) valía en cualquier endpoint del panel (R2).
+    `audience` activa la verificación de `aud` cuando el endpoint la conoce."""
     jwks = await _get_jwks_cached(session, redis)
-    payload = decode_token_rs256(token, jwks)
+    payload = decode_token_rs256(token, jwks, audience=audience, issuer=settings.effective_jwt_issuer)
+    if expected_types is not None and payload.get("typ") not in expected_types:
+        raise ValueError("Tipo de token no válido para esta operación")
     if await is_revoked(redis, payload.get("jti")):
         raise ValueError("Token revocado")
     # Invalidación por usuario: si cambió su contraseña/correo/status, los tokens
@@ -48,29 +61,44 @@ async def _resolve_token(token: str, session: Session, redis: Redis) -> dict:
     return payload
 
 
-async def get_current_user(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    session: Session = Depends(get_db),
-    redis: Redis = Depends(get_redis),
-) -> dict:
-    if credentials is None:
-        raise UnauthorizedError(detail="Token no proporcionado")
-    try:
-        return await _resolve_token(credentials.credentials, session, redis)
-    except ValueError as e:
-        raise UnauthorizedError(detail=str(e))
+def _bearer_user_dependency(
+    expected_types: set[str] | None,
+    audience: str | None = None,
+    optional: bool = False,
+):
+    """Fábrica de dependencias de autenticación por **clase de token**. Cada endpoint
+    declara qué `typ` (y opcionalmente qué `aud`) acepta, en vez de compartir una
+    dependencia genérica que dejaba cruzar cualquier JWT firmado (R2)."""
+
+    async def dependency(
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+        session: Session = Depends(get_db),
+        redis: Redis = Depends(get_redis),
+    ) -> dict | None:
+        if credentials is None:
+            if optional:
+                return None
+            raise UnauthorizedError(detail="Token no proporcionado")
+        try:
+            return await _resolve_token(
+                credentials.credentials, session, redis, expected_types=expected_types, audience=audience
+            )
+        except ValueError as e:
+            if optional:
+                return None
+            raise UnauthorizedError(detail=str(e))
+
+    return dependency
 
 
-async def get_optional_user(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    session: Session = Depends(get_db),
-    redis: Redis = Depends(get_redis),
-) -> dict | None:
-    if credentials is None:
-        return None
-    try:
-        return await _resolve_token(credentials.credentials, session, redis)
-    except ValueError:
-        return None
+# Sesión del panel/admin (`typ=session`, `aud=minerva`). Un access de consumidor o
+# un dev token —aunque su sujeto sea admin— no cruzan aquí.
+get_current_session_user = _bearer_user_dependency({"session"}, audience="minerva")
+get_optional_session_user = _bearer_user_dependency({"session"}, audience="minerva", optional=True)
+
+# Access token de consumidor (`typ=access`). Para `/userinfo`: el `aud` es el código
+# de la app y varía por consumidor, así que no se fija aquí (se valida en el SDK).
+get_current_access_user = _bearer_user_dependency({"access"})
+
+# Self-service del Dev Kit (`/api/v1/me*`): access de consumidor o dev token.
+get_current_devkit_user = _bearer_user_dependency({"access", "dev"})

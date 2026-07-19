@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlmodel import Session
 
 from app.core.dependencies.admin import require_minerva_admin
-from app.core.dependencies.auth import get_current_user
+from app.core.dependencies.auth import get_current_session_user
 from app.core.dependencies.db import get_db
 from app.modules.audit.service import AuditService
 from app.modules.authorization.schemas import PermissionCheckRequest, PermissionCheckResponse
@@ -43,7 +43,7 @@ def check_permission(
 def get_my_permissions(
     application_slug: str = Query(...),
     service: AuthorizationService = Depends(get_authorization_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_session_user),
 ):
     """Permisos del usuario autenticado, en *shape rico* (objetos Role/Permission completos).
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlmodel import Session
 
 from app.core.dependencies.admin import require_minerva_admin
-from app.core.dependencies.auth import get_current_user
+from app.core.dependencies.auth import get_current_session_user
 from app.core.dependencies.db import get_db
 from app.modules.groups.schemas import GroupCreate, GroupRead, GroupUpdate
 from app.modules.groups.service import GroupService
@@ -20,7 +20,7 @@ def list_groups(
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     service: GroupService = Depends(get_group_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     groups, total = service.list_groups(offset, limit)
     return PaginatedResponse.create(groups, total)
@@ -31,7 +31,7 @@ def create_group(
     data: GroupCreate,
     request: Request,
     service: GroupService = Depends(get_group_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.create_group(data)
 
@@ -40,7 +40,7 @@ def create_group(
 def get_group(
     group_id: str,
     service: GroupService = Depends(get_group_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.get_group(group_id)
 
@@ -50,7 +50,7 @@ def update_group(
     group_id: str,
     data: GroupUpdate,
     service: GroupService = Depends(get_group_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     return service.update_group(group_id, data)
 
@@ -60,7 +60,7 @@ def add_user_to_group(
     group_id: str,
     user_id: str,
     service: GroupService = Depends(get_group_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     service.add_user_to_group(group_id, user_id)
     return {"message": "Usuario agregado al grupo"}
@@ -71,7 +71,7 @@ def remove_user_from_group(
     group_id: str,
     user_id: str,
     service: GroupService = Depends(get_group_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     service.remove_user_from_group(group_id, user_id)
 
@@ -81,7 +81,7 @@ def add_role_to_group(
     group_id: str,
     role_id: str,
     service: GroupService = Depends(get_group_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     service.add_role_to_group(group_id, role_id)
     return {"message": "Rol asignado al grupo"}
@@ -92,7 +92,7 @@ def remove_role_from_group(
     group_id: str,
     role_id: str,
     service: GroupService = Depends(get_group_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     service.remove_role_from_group(group_id, role_id)
 
@@ -102,7 +102,7 @@ def assign_role_to_user(
     user_id: str,
     role_id: str,
     service: GroupService = Depends(get_group_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     service.assign_role_to_user(user_id, role_id)
     return {"message": "Rol asignado al usuario"}
@@ -113,6 +113,6 @@ def remove_role_from_user(
     user_id: str,
     role_id: str,
     service: GroupService = Depends(get_group_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_session_user),
 ):
     service.remove_role_from_user(user_id, role_id)

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
-from app.core.dependencies.auth import get_current_user
+from app.core.dependencies.auth import get_current_devkit_user
 from app.core.dependencies.db import get_db
 from app.modules.devkit.schemas import (
     DevLoginRequest,
@@ -33,7 +33,7 @@ def dev_login(data: DevLoginRequest, service: DevKitService = Depends(get_devkit
 @router.get("/me", response_model=MeResponse)
 def me(
     service: DevKitService = Depends(get_devkit_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_devkit_user),
 ):
     return service.get_me(current_user["sub"])
 
@@ -42,7 +42,7 @@ def me(
 def me_permissions(
     application: str = Query(..., description="Código (slug) de la aplicación"),
     service: DevKitService = Depends(get_devkit_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_devkit_user),
 ):
     """Permisos del usuario autenticado, en *shape lean* (roles por nombre, permisos por slug).
 

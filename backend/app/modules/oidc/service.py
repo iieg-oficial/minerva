@@ -135,6 +135,7 @@ class OIDCService:
             application_slug=application_slug,
             roles=roles,
             permissions=permissions,
+            typ="session",
         )
 
     def issue_dev_token(

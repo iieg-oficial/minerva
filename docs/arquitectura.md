@@ -189,7 +189,8 @@ Helpers de FastAPI para que un sistema consumidor valide identidad y permisos si
 reimplementar la verificación JWT:
 
 - `get_current_user`: decodifica el Bearer, exige `alg=RS256` (rechaza confusión de
-  algoritmo), valida contra el JWKS de Minerva (cacheado), opcionalmente verifica `aud`/`iss`.
+  algoritmo), valida contra el JWKS de Minerva (cacheado), verifica `aud`/`iss` y que el
+  token sea de clase `typ=access` (un consumidor no acepta sesiones de panel ni dev tokens).
 - `require_permission(permission, application_code=None)`: dependencia que además
   consulta `GET /api/v1/me/permissions` en tiempo real (con caché corta) — un permiso
   revocado en Minerva deja de pasar en el siguiente request, sin esperar a que expire el token.

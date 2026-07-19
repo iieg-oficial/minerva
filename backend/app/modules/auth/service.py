@@ -304,6 +304,7 @@ class AuthService:
             email_verified=user.auth_provider == "google",
             jti=jti,
             expires_minutes=access_ttl,
+            typ="access",
         )
 
         raw_refresh = secrets.token_urlsafe(32)

@@ -13,13 +13,12 @@ class MinervaSettings:
 
     issuer_url: str = os.getenv("MINERVA_ISSUER_URL", "http://localhost:9000")
     application_code: str = os.getenv("MINERVA_APPLICATION_CODE", "")
-    # Si está vacío no se valida el issuer (útil cuando el host difiere
-    # entre red docker y localhost en desarrollo).
+    # Issuer esperado del token. Si el `iss` público difiere del host desde el que se
+    # descubre el JWKS (p. ej. red docker vs. dominio público), fíjalo aquí; si se deja
+    # vacío se usa `issuer_url`. La validación de `iss` NO se puede desactivar.
     expected_issuer: str = os.getenv("MINERVA_EXPECTED_ISSUER", "")
     permissions_cache_ttl: int = int(os.getenv("MINERVA_PERMISSIONS_CACHE_TTL", "300"))
     jwks_cache_ttl: int = int(os.getenv("MINERVA_JWKS_CACHE_TTL", "3600"))
-    # Verifica que el `aud` del access token sea esta aplicación. Recomendado.
-    verify_aud: bool = os.getenv("MINERVA_VERIFY_AUD", "true").lower() == "true"
     request_timeout: float = float(os.getenv("MINERVA_REQUEST_TIMEOUT", "10"))
 
 

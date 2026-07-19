@@ -51,10 +51,18 @@ async def _decode(token: str) -> dict:
     # El algoritmo se fija a RS256 (único soportado) para evitar ataques de
     # confusión de algoritmo. No hay validación HS256.
     if alg != "RS256":
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Algoritmo de token no soportado: {alg}")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, f"Algoritmo de token no soportado: {alg}"
+        )
 
-    # El audience esperado es el código de esta aplicación (= aud del access token).
-    audience = settings.application_code if (settings.verify_aud and settings.application_code) else None
+    # La audiencia es obligatoria (= código de esta app): sin ella no se puede
+    # verificar que el token fue emitido para este consumidor. No hay switch para
+    # desactivarla; si falta la configuración, es un error de despliegue.
+    if not settings.application_code:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "MINERVA_APPLICATION_CODE no configurado",
+        )
 
     try:
         jwks = await _get_jwks()
@@ -62,20 +70,34 @@ async def _decode(token: str) -> dict:
             token,
             jwks,
             algorithms=["RS256"],
-            audience=audience,
-            options={"verify_aud": audience is not None},
+            audience=settings.application_code,
+            options={"verify_aud": True},
         )
     except JWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Token inválido: {exc}")
     except httpx.HTTPError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"No se pudo obtener el JWKS de Minerva: {exc}")
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"No se pudo obtener el JWKS de Minerva: {exc}"
+        )
 
-    if settings.expected_issuer and payload.get("iss") != settings.expected_issuer:
+    # El `iss` se valida SIEMPRE: contra MINERVA_EXPECTED_ISSUER o, por defecto, el
+    # issuer_url del que se descubre el JWKS. No se puede desactivar.
+    expected_iss = (settings.expected_issuer or settings.issuer_url).rstrip("/")
+    if str(payload.get("iss", "")).rstrip("/") != expected_iss:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Issuer inválido")
+
+    # Un consumidor solo acepta access tokens (typ=access). Una sesión de panel, un
+    # dev token o un id token no cruzan aquí aunque su firma sea válida (RFC 8725).
+    if payload.get("typ") != "access":
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Tipo de token no válido para un consumidor"
+        )
     return payload
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict:
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> dict:
     """Devuelve los claims del usuario autenticado (valida firma del JWT)."""
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token no proporcionado")
@@ -103,10 +125,18 @@ async def _fetch_permissions(token: str, sub: str, application_code: str) -> set
     except httpx.HTTPStatusError as exc:
         # 401 de Minerva (p. ej. token revocado) se propaga como 401 al cliente.
         if exc.response.status_code == status.HTTP_401_UNAUTHORIZED:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido o revocado")
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"No se pudo consultar permisos en Minerva: {exc}")
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "Token inválido o revocado"
+            )
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"No se pudo consultar permisos en Minerva: {exc}",
+        )
     except httpx.HTTPError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"No se pudo consultar permisos en Minerva: {exc}")
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"No se pudo consultar permisos en Minerva: {exc}",
+        )
 
     perms = set(resp.json().get("permissions", []))
     _permissions_cache[cache_key] = (now + settings.permissions_cache_ttl, perms)
@@ -129,7 +159,9 @@ def require_permission(permission: str, application_code: str | None = None):
             )
         perms = await _fetch_permissions(user["_token"], user["sub"], app_code)
         if permission not in perms:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, f"Requiere permiso: {permission}")
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, f"Requiere permiso: {permission}"
+            )
         return user
 
     return dependency

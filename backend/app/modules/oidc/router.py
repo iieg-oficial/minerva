@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.core.dependencies.auth import get_current_user
+from app.core.dependencies.auth import get_current_access_user
 from app.core.dependencies.db import get_db
 from app.modules.oidc.schemas import JWKS, OpenIDConfiguration
 from app.modules.oidc.service import OIDCService
@@ -114,7 +114,7 @@ def _userinfo_claims(payload: dict) -> dict:
 
 @userinfo_app.get("")
 @userinfo_app.get("/")
-def userinfo(current_user: dict = Depends(get_current_user)) -> dict:
+def userinfo(current_user: dict = Depends(get_current_access_user)) -> dict:
     """OIDC UserInfo (Core 5.3): claims de identidad filtrados por el scope del
     access token presentado como Bearer."""
     return _userinfo_claims(current_user)
