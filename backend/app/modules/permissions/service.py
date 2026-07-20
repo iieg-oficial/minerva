@@ -1,6 +1,6 @@
 from sqlmodel import Session
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.modules.permissions.models import Permission, RolePermission
 from app.modules.permissions.repository import PermissionRepository, RolePermissionRepository
 from app.modules.permissions.schemas import PermissionCreate, PermissionRead, PermissionUpdate
@@ -58,6 +58,9 @@ class PermissionService:
         perm = self.repo.get_by_id(perm_id)
         if not perm:
             raise NotFoundError(detail="Permiso no encontrado")
+
+        if role.application_id != perm.application_id:
+            raise BadRequestError(detail="El permiso pertenece a otra aplicación")
 
         existing = self.role_perm_repo.get(role_id, perm_id)
         if existing:
