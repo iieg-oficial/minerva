@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, update
 
 from app.modules.auth.models import AuthCode, RefreshToken
 
@@ -42,10 +42,13 @@ class AuthCodeRepository:
         statement = select(AuthCode).where(AuthCode.code == code, AuthCode.used.is_(False))
         return self.session.exec(statement).first()
 
-    def mark_used(self, auth_code: AuthCode) -> None:
-        auth_code.used = True
-        self.session.add(auth_code)
+    def mark_used(self, auth_code: AuthCode) -> bool:
+        """Reclama el código de forma atómica. False si otro canje concurrente ya lo tomó."""
+        result = self.session.execute(
+            update(AuthCode).where(AuthCode.id == auth_code.id, AuthCode.used.is_(False)).values(used=True)
+        )
         self.session.commit()
+        return result.rowcount == 1
 
 
 class RefreshTokenRepository:
@@ -85,10 +88,15 @@ class RefreshTokenRepository:
     def get_by_hash(self, token_hash: str) -> RefreshToken | None:
         return self.session.exec(select(RefreshToken).where(RefreshToken.token_hash == token_hash)).first()
 
-    def mark_rotated(self, refresh: RefreshToken, commit: bool = True) -> None:
-        refresh.status = "rotated"
-        self.session.add(refresh)
+    def mark_rotated(self, refresh: RefreshToken, commit: bool = True) -> bool:
+        """Reclama la rotación de forma atómica. False si ya fue rotado/revocado (reúso)."""
+        result = self.session.execute(
+            update(RefreshToken)
+            .where(RefreshToken.id == refresh.id, RefreshToken.status == "active")
+            .values(status="rotated")
+        )
         self.session.commit() if commit else self.session.flush()
+        return result.rowcount == 1
 
     def revoke(self, refresh: RefreshToken) -> None:
         refresh.status = "revoked"
