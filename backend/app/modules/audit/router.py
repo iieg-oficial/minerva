@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from app.core.dependencies.admin import require_minerva_admin
-from app.core.dependencies.auth import get_current_session_user
+from app.core.dependencies.auth import get_current_panel_user
 from app.core.dependencies.db import get_db
 from app.modules.audit.schemas import AuditLogRead
 from app.modules.audit.service import AuditService
@@ -24,7 +24,7 @@ def list_audit_logs(
     target_type: str | None = Query(None),
     application_id: str | None = Query(None),
     service: AuditService = Depends(get_audit_service),
-    _current_user: dict = Depends(get_current_session_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     logs, total = service.list_logs(offset, limit, actor_user_id, action, target_type, application_id)
     return PaginatedResponse.create(logs, total)

@@ -94,11 +94,15 @@ async def rotate_sid(redis: Redis, old_sid: str | None, container: dict) -> str:
 # --- Operaciones sobre el contenedor (puras) -------------------------------
 
 
-def add_account(container: dict, sub: str, token: str, *, email: str, name: str, is_admin: bool, exp: int) -> None:
-    """Agrega o reemplaza una cuenta y la deja activa."""
+def add_account(
+    container: dict, sub: str, token: str, *, email: str, name: str, is_admin: bool, exp: int, jti: str | None = None
+) -> None:
+    """Agrega o reemplaza una cuenta y la deja activa. Guarda `jti` para poder
+    revocar el token al quitar la cuenta o cerrar todas las sesiones, sin re-decodificar."""
     container["accounts"][sub] = {
         "token": token,
         "exp": exp,
+        "jti": jti,
         "email": email,
         "name": name,
         "is_admin": is_admin,

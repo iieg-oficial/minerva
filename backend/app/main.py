@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 
 from app.core.config import settings
+from app.core.csrf import panel_csrf_middleware
 from app.core.database import engine
 from app.core.models import import_models
 from app.core.redis import close_redis, init_redis
@@ -174,6 +175,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# CSRF + Origin para las mutaciones del panel (solo las que traen la cookie de sesión).
+app.middleware("http")(panel_csrf_middleware)
 
 app.include_router(auth_router)
 app.include_router(users_router)

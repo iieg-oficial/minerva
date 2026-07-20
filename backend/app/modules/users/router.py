@@ -4,7 +4,7 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.dependencies.admin import require_minerva_admin
-from app.core.dependencies.auth import get_current_session_user
+from app.core.dependencies.auth import get_current_panel_user
 from app.core.dependencies.db import get_db
 from app.core.redis import get_redis
 from app.core.token_blacklist import invalidate_user_tokens, revoke_jti
@@ -35,7 +35,7 @@ def list_users(
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     service: UserService = Depends(get_user_service),
-    _current_user: dict = Depends(get_current_session_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     users, total = service.list_users(offset, limit)
     return PaginatedResponse.create(users, total)
@@ -45,7 +45,7 @@ def list_users(
 def get_user(
     user_id: str,
     service: UserService = Depends(get_user_service),
-    _current_user: dict = Depends(get_current_session_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     return service.get_user(user_id)
 
@@ -55,7 +55,7 @@ def create_user(
     data: UserCreate,
     request: Request,
     service: UserService = Depends(get_user_service),
-    _current_user: dict = Depends(get_current_session_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     return service.create_user(data)
 
@@ -66,7 +66,7 @@ async def update_user(
     data: UserUpdate,
     service: UserService = Depends(get_user_service),
     redis: Redis = Depends(get_redis),
-    _current_user: dict = Depends(get_current_session_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     result = service.update_user(user_id, data)
     # Cambiar contraseña, correo o desactivar invalida las sesiones vigentes.
@@ -81,7 +81,7 @@ async def update_user_status(
     data: UserStatusUpdate,
     service: UserService = Depends(get_user_service),
     redis: Redis = Depends(get_redis),
-    _current_user: dict = Depends(get_current_session_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     result = service.update_status(user_id, data)
     if data.status != "active":

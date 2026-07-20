@@ -1,21 +1,36 @@
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, quote
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from redis.asyncio import Redis
 from sqlmodel import Session
 
+from app.core import panel_session
 from app.core.config import settings
-from app.core.dependencies.auth import get_current_session_user, get_optional_session_user
+from app.core.dependencies.auth import (
+    _resolve_token,
+    get_current_panel_user,
+    get_optional_panel_user,
+    get_panel_session,
+)
 from app.core.dependencies.db import get_db
-from app.core.exceptions import BadRequestError, ForbiddenError, TooManyRequestsError
+from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError, TooManyRequestsError
 from app.core.rate_limit import enforce_rate_limit
 from app.core.redis import get_redis
 from app.core.token_blacklist import revoke_jti
 from app.modules.audit.service import AuditService
-from app.modules.auth.schemas import AuthLogin, AuthRegister, AuthTokenResponse
+from app.modules.auth.schemas import (
+    AccountDescriptor,
+    AuthLogin,
+    AuthRegister,
+    AuthTokenResponse,
+    PanelSessionResponse,
+    SessionView,
+    SetActiveRequest,
+)
 from app.modules.auth.service import AuthService
+from app.modules.authorization.service import AuthorizationService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -60,26 +75,81 @@ def get_audit_service(session: Session = Depends(get_db)) -> AuditService:
     return AuditService(session)
 
 
-@router.post("/register", response_model=AuthTokenResponse, status_code=201)
-def register(
+def _set_session_cookie(response: Response, sid: str) -> None:
+    """Fija la cookie opaca de sesión del panel. Nombre y Secure dependen del entorno
+    (`__Host-` + Secure en prod; nombre distinto sin Secure en dev HTTP). SameSite=Lax
+    es deliberado: la cookie debe viajar cuando un consumidor navega a `/authorize`."""
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=sid,
+        max_age=settings.effective_token_expire_minutes * 60,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="lax",
+        path="/",
+    )
+
+
+async def _establish_panel_session(
+    request: Request, response: Response, session: Session, redis: Redis, token: str
+) -> dict:
+    """Mete el JWT `typ=session` recién emitido en el contenedor (Redis) como cuenta
+    activa, rota el sid (fijación de sesión) y el CSRF, y fija la cookie. Devuelve
+    solo el descriptor de la cuenta activa + el CSRF (nunca el JWT)."""
+    payload = await _resolve_token(token, session, redis, expected_types={"session"}, audience="minerva")
+    sub = payload["sub"]
+    is_admin = AuthorizationService(session).is_minerva_admin(sub)
+    old_sid = request.cookies.get(settings.session_cookie_name)
+    container = await panel_session.read(redis, old_sid) or panel_session.empty_container()
+    panel_session.rotate_csrf(container)
+    panel_session.add_account(
+        container,
+        sub,
+        token,
+        email=payload.get("email", ""),
+        name=payload.get("name", ""),
+        is_admin=is_admin,
+        exp=payload.get("exp", 0),
+        jti=payload.get("jti"),
+    )
+    sid = await panel_session.rotate_sid(redis, old_sid, container)
+    _set_session_cookie(response, sid)
+    return {"active": panel_session.descriptor(sub, container["accounts"][sub]), "csrf": container["csrf"]}
+
+
+async def _revoke_account_token(redis: Redis, account: dict | None) -> None:
+    """Blacklistea el `jti` del token de una cuenta hasta que habría expirado."""
+    if not account:
+        return
+    ttl = int(account.get("exp", 0) - datetime.now(timezone.utc).timestamp())
+    await revoke_jti(redis, account.get("jti"), max(ttl, 1))
+
+
+@router.post("/register", response_model=PanelSessionResponse, status_code=201)
+async def register(
     data: AuthRegister,
     request: Request,
+    response: Response,
     service: AuthService = Depends(get_auth_service),
     audit: AuditService = Depends(get_audit_service),
+    session: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
     if not settings.MINERVA_ENABLE_PUBLIC_REGISTER:
         raise ForbiddenError(detail="El registro público está deshabilitado; contacta a un administrador")
     result = service.register(data)
     audit.log("manual_register_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
-    return result
+    return await _establish_panel_session(request, response, session, redis, result["access_token"])
 
 
-@router.post("/login", response_model=AuthTokenResponse)
+@router.post("/login", response_model=PanelSessionResponse)
 async def login(
     data: AuthLogin,
     request: Request,
+    response: Response,
     service: AuthService = Depends(get_auth_service),
     audit: AuditService = Depends(get_audit_service),
+    session: Session = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
     await _enforce_rate_limit_audited(
@@ -94,7 +164,7 @@ async def login(
     try:
         result = service.login(data.email, data.password)
         audit.log("manual_login_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
-        return result
+        return await _establish_panel_session(request, response, session, redis, result["access_token"])
     except Exception:
         audit.log(
             "manual_login_failed",
@@ -105,33 +175,86 @@ async def login(
         raise
 
 
+@router.get("/session", response_model=SessionView)
+async def get_session(ps: dict = Depends(get_panel_session)):
+    """Estado del selector multi-cuenta (cuentas del navegador + activa + CSRF). Fuente
+    de verdad del selector: el navegador ya no guarda tokens. Tolera no tener cuenta
+    activa (logout suave) para poder seguir pintando el selector."""
+    return panel_session.session_view(ps["container"])
+
+
+@router.post("/session/active", response_model=AccountDescriptor)
+async def set_active_account(
+    data: SetActiveRequest,
+    ps: dict = Depends(get_panel_session),
+    redis: Redis = Depends(get_redis),
+):
+    """Cambia la cuenta activa del navegador (dentro del contenedor de sesión)."""
+    container = ps["container"]
+    if not panel_session.set_active(container, data.sub):
+        raise NotFoundError(detail="La cuenta no está iniciada en este navegador")
+    await panel_session.write(redis, ps["sid"], container)
+    return panel_session.descriptor(data.sub, container["accounts"][data.sub])
+
+
 @router.post("/logout")
 async def logout(
     request: Request,
+    ps: dict = Depends(get_panel_session),
     audit: AuditService = Depends(get_audit_service),
-    current_user: dict = Depends(get_current_session_user),
     redis: Redis = Depends(get_redis),
 ):
+    """Logout suave (estilo Google): sale de la cuenta activa pero conserva las cuentas
+    del navegador y sus tokens (para volver a entrar sin re-teclear). NO revoca el jti:
+    para invalidar de verdad están "quitar cuenta" y "cerrar todas las sesiones"."""
+    container = ps["container"]
+    active = container.get("active")
+    panel_session.soft_logout(container)
+    await panel_session.write(redis, ps["sid"], container)
     audit.log(
         "logout",
-        actor_user_id=current_user.get("sub"),
+        actor_user_id=active,
         ip_address=request.client.host,
         user_agent=request.headers.get("user-agent"),
     )
-    # Invalida el token del lado del servidor: sin esto, cerrar sesión solo borraba
-    # el token en el cliente y el mismo JWT seguía válido hasta su `exp`, permitiendo
-    # re-login silencioso en /authorize. Se blacklista su `jti` hasta que habría
-    # expirado (TTL restante); get_current_user lo rechaza desde ese momento.
-    exp = current_user.get("exp")
-    ttl = int(exp - datetime.now(timezone.utc).timestamp()) if exp else 1
-    await revoke_jti(redis, current_user.get("jti"), ttl)
     return {"message": "Sesión cerrada"}
+
+
+@router.delete("/session/accounts/{sub}")
+async def remove_account(
+    sub: str,
+    ps: dict = Depends(get_panel_session),
+    redis: Redis = Depends(get_redis),
+):
+    """Quita una cuenta del dispositivo y revoca su token (blacklist del jti). Las
+    demás cuentas del navegador siguen intactas."""
+    container = ps["container"]
+    account = panel_session.remove_account(container, sub)
+    await _revoke_account_token(redis, account)
+    await panel_session.write(redis, ps["sid"], container)
+    return {"removed": account is not None}
+
+
+@router.post("/logout-all")
+async def logout_all(
+    response: Response,
+    ps: dict = Depends(get_panel_session),
+    redis: Redis = Depends(get_redis),
+):
+    """Cierra TODAS las cuentas del navegador: revoca cada jti, destruye el contenedor
+    en Redis y borra la cookie."""
+    container = ps["container"]
+    for account in container["accounts"].values():
+        await _revoke_account_token(redis, account)
+    await panel_session.destroy(redis, ps["sid"])
+    response.delete_cookie(settings.session_cookie_name, path="/")
+    return {"message": "Todas las sesiones cerradas"}
 
 
 @router.get("/me")
 def me(
     service: AuthService = Depends(get_auth_service),
-    current_user: dict = Depends(get_current_session_user),
+    current_user: dict = Depends(get_current_panel_user),
 ):
     return service.get_me(current_user["sub"])
 
@@ -175,14 +298,14 @@ async def authorize(
     prompt: str | None = Query(None),
     max_age: int | None = Query(None),
     service: AuthService = Depends(get_auth_service),
-    current_user: dict | None = Depends(get_optional_session_user),
+    current_user: dict | None = Depends(get_optional_panel_user),
     redis: Redis = Depends(get_redis),
     audit: AuditService = Depends(get_audit_service),
 ):
-    """Inicia el flujo `/authorize`. Modo A: SPA con Bearer ya presente. Modo B:
-    un sistema externo redirige aquí el navegador SIN Bearer (no hay JS de por
-    medio) — sin sesión, se redirige a login y se retoma con `?next=` tras
-    autenticar (mismo patrón que ya usa `AuthorizePage.jsx`)."""
+    """Inicia el flujo `/authorize`. Modo A: la cookie de sesión del panel viaja en
+    la navegación directa (SameSite=Lax) y resuelve la cuenta activa. Modo B: un
+    sistema externo redirige aquí el navegador sin sesión — se redirige a login y se
+    retoma con `?next=` tras autenticar (mismo patrón que ya usa `AuthorizePage.jsx`)."""
     await _enforce_rate_limit_audited(
         redis,
         f"minerva:rl:authorize:{request.client.host}",
@@ -237,7 +360,7 @@ async def authorize_url(
     prompt: str | None = Query(None),
     max_age: int | None = Query(None),
     service: AuthService = Depends(get_auth_service),
-    current_user: dict = Depends(get_current_session_user),
+    current_user: dict = Depends(get_current_panel_user),
     redis: Redis = Depends(get_redis),
     audit: AuditService = Depends(get_audit_service),
 ):
@@ -245,8 +368,8 @@ async def authorize_url(
 
     Devuelve la URL de redirección (con el `code`) en lugar de un RedirectResponse,
     porque un SPA no puede leer el header `Location` de un redirect cross-origin.
-    El frontend hace `window.location` con esta URL. Es Modo A puro: la SPA ya
-    garantiza Bearer antes de llamar aquí (sigue exigiéndolo, no usa `get_optional_user`).
+    El frontend hace `window.location` con esta URL. Es Modo A puro: la SPA ya tiene
+    sesión de panel (cookie) antes de llamar aquí (la exige, no usa la variante opcional).
     """
     await _enforce_rate_limit_audited(
         redis,
@@ -353,12 +476,17 @@ async def revoke_token(
     return {"revoked": True}
 
 
-@router.post("/refresh", response_model=AuthTokenResponse)
-def refresh_token(
+@router.post("/refresh", response_model=PanelSessionResponse)
+async def refresh_token(
     request: Request,
+    response: Response,
     service: AuthService = Depends(get_auth_service),
-    current_user: dict = Depends(get_current_session_user),
+    current_user: dict = Depends(get_current_panel_user),
+    session: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
-    # Solo un token de sesión del panel se refresca en otra sesión de 480 min; un
-    # access de consumidor de 15 min (o un dev token) no puede escalar aquí (R2).
-    return service.reissue_session_token(current_user)
+    # Reemite el token de sesión de la cuenta activa (480 min) y actualiza el
+    # contenedor (rota sid + CSRF); las demás cuentas del navegador se conservan.
+    # Autentica por la cookie de panel: un access/dev de consumidor no puede escalar (R2).
+    result = service.reissue_session_token(current_user)
+    return await _establish_panel_session(request, response, session, redis, result["access_token"])
