@@ -7,6 +7,31 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING · Sesión del panel migrada a cookie opaca HttpOnly (patrón BFF).** El panel admin ya
+  no guarda JWT ni credenciales en `localStorage`: el navegador solo conserva una cookie opaca
+  `__Host-minerva_sid` (`HttpOnly`, `Secure`, `SameSite=Lax`; en dev HTTP `minerva_sid` sin
+  `Secure`). El estado multi-cuenta (cuentas iniciadas, cuál está activa, el token `typ=session`
+  de cada una y el token CSRF) vive en Redis, con TTL igual al de la sesión del panel; es la
+  **única** excepción al principio stateless de Minerva y aplica solo al panel. OAuth/OIDC de
+  consumidores (Authorization Code+PKCE, `/token`, `/userinfo`, `/revoke`, discovery, JWKS,
+  access/refresh/dev tokens, SDK) sigue **stateless y sin cambios**. `POST /auth/login` y
+  `POST /auth/register` dejan de devolver `access_token`: responden `{ active, csrf }` y fijan la
+  cookie. `POST /auth/logout` pasa a ser logout **suave** (cierra la cuenta activa sin revocar);
+  la revocación real está en `DELETE /auth/session/accounts/{sub}` y `POST /auth/logout-all`.
+  Nuevos endpoints: `GET /auth/session`, `POST /auth/session/active`.
+
+### Security
+
+- **Sesión del panel fuera del alcance de JavaScript.** Un XSS ya no puede exfiltrar los tokens del
+  panel (antes vivían legibles en `localStorage`). Se añade protección **CSRF** (synchronizer token
+  en `X-CSRF-Token`, validado en tiempo constante) más validación de `Origin` para las mutaciones
+  del panel, y el `sid` se guarda hasheado en Redis y se **rota** en cada autenticación.
+- **Cabeceras HTTP defensivas en `nginx.conf`.** CSP (con `frame-ancestors 'none'`),
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy` y HSTS (condicionado a HTTPS; inerte
+  mientras nginx sirva solo HTTP).
+
 ### Removed
 
 - **BREAKING · CRUD administrativo retirado de `/api/v1`.** El Minerva Dev Kit ya no expone

@@ -45,15 +45,17 @@ Reglas:
   **nunca** importa `axios` ni arma URLs directamente: importa funciones de `src/api/`.
 - **Una página/feature por dominio.** Componentes reutilizables en `features/<area>/components/`.
 - Manejo de errores con `message`/`notification` de AntD (`App.useApp()`), no `alert`.
-- **Sesión y multi-cuenta:** la fuente de verdad es `src/api/session.js` (store multi-sesión en
-  `localStorage`: `minerva_sessions` + `minerva_active_sub`). Mantiene un **espejo legacy** de la
-  cuenta activa en `access_token`/`user`/`is_admin`, que es lo que leen `api/client.js` (interceptor
-  Bearer + logout en 401) y `ProtectedRoute`. No leas/escribas esas claves directo desde una feature:
-  usa `session.js` (`addSession`/`setActive`/`removeSession`/`getSessions`/`getActive`/`isExpired`/
-  `deactivate`) o las funciones de `api/auth.js`. `logout()` es **suave** (`deactivate()`: sale sin
-  invalidar el token, para volver rápido); solo `logoutAll()` revoca en el backend. El selector de
-  cuentas (`features/auth/components/AccountSelector.jsx`) y el formulario de login comparten el shell
-  visual `features/auth/components/AuthShell.jsx`.
+- **Sesión y multi-cuenta (patrón BFF):** el panel **no** guarda tokens en el navegador. La fuente de
+  verdad del multi-cuenta es el **backend** (contenedor en Redis); el navegador solo trae una cookie
+  opaca HttpOnly. `src/api/session.js` es un cliente + caché en memoria de ese estado
+  (`fetchSession`/`getSessions`/`getActive`/`isExpired`/`setActive`/`removeSession`/`deactivate`/
+  `logoutAll` + `getCsrf`/`setCsrf`). El estado reactivo lo expone `SessionProvider`
+  (`features/auth/SessionContext.jsx`) vía `useSession()` (`{loading, active, accounts, isAdmin,
+  refresh}`), que consumen `ProtectedRoute`, `AccountSelector`, `AdminLayout`, `LoginPage`,
+  `AuthorizePage`. `api/client.js` va con `withCredentials` y adjunta `X-CSRF-Token` en mutaciones.
+  `logout()` es **suave** (cierra la cuenta activa sin revocar); `logoutAll()` y quitar cuenta revocan
+  en el backend. El selector (`components/AccountSelector.jsx`) y el formulario de login comparten el
+  shell `components/AuthShell.jsx`. **No** vuelvas a meter tokens/`is_admin` en `localStorage`.
 - **Al crear una página nueva, registra su ruta** en `App.jsx` (dentro de `ProtectedRoute` si aplica).
 
 ## Convenciones

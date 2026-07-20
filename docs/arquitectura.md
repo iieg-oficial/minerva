@@ -183,6 +183,13 @@ se guarda en la tabla `signing_keys`. El JWKS público solo expone la(s) clave(s
 - **`features/admin/`** — panel administrativo (usuarios, aplicaciones, roles, permisos,
   grupos, autorización, auditoría), protegido por `ProtectedRoute`.
 
+**Sesión del panel (patrón BFF).** El panel es **stateful**: el navegador guarda solo una cookie
+opaca HttpOnly (`__Host-minerva_sid`), y el estado multi-cuenta (tokens `typ=session`, cuenta
+activa, CSRF) vive en Redis (`backend/app/core/panel_session.py`). El frontend nunca ve el JWT: el
+`SessionProvider` consulta `GET /auth/session` (descriptores no sensibles) y las mutaciones llevan
+`X-CSRF-Token`. Es la única excepción al principio stateless; **OAuth/OIDC de consumidores sigue
+stateless** (Bearer). La pérdida/limpieza de Redis invalida las sesiones del panel.
+
 ## SDK (`sdk/minerva_sdk`)
 
 Helpers de FastAPI para que un sistema consumidor valide identidad y permisos sin

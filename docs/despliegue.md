@@ -97,6 +97,16 @@ Implicaciones:
 - El backend recibe `FORWARDED_ALLOW_IPS=*` (seguro: nadie más que nginx lo alcanza), así honra
   `X-Forwarded-For` y el **rate limit de login se cuenta por IP real del cliente**, no por la de nginx.
 - SSL futuro = terminar TLS en este nginx (un solo lugar); `nginx.conf` ya envía `X-Forwarded-Proto`.
+- **Cabeceras defensivas:** `nginx.conf` emite CSP (con `frame-ancestors 'none'`),
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy` y HSTS. La CSP permite `style-src
+  'unsafe-inline'` por Ant Design (cssinjs). **HSTS está condicionado a HTTPS** (`map $scheme`): hoy
+  que nginx sirve solo `:80` el header no se emite; al terminar TLS aquí se activa solo. La cookie de
+  sesión del panel usa el prefijo `__Host-` (exige HTTPS): en HTTP local se usa `minerva_sid` sin
+  `Secure`, derivado de `MINERVA_MODE`.
+- **Redis es control de seguridad, no solo caché.** Además del rate limit, guarda la blacklist de
+  `jti`, los cortes de invalidación por usuario y el **contenedor de sesión del panel**. Perder Redis
+  cierra las sesiones del panel y re-habilita tokens revocados: en producción, persistencia
+  (`appendonly`) y `maxmemory-policy noeviction` para su keyspace de seguridad.
 
 ### 2.3 Variables a revisar/ajustar
 
