@@ -469,9 +469,18 @@ async def revoke_token(
     if not client_id or not token:
         raise BadRequestError(detail="Faltan parámetros requeridos para revocar el token")
 
-    revoked_jtis = service.revoke_refresh_token(client_id, token, client_secret=client_secret)
-    for jti in revoked_jtis:
-        await revoke_jti(redis, jti, settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60)
+    # Fail-closed: revoca la familia en PG (pendiente), blacklistea los access_jti en Redis
+    # y solo entonces confirma. Si Redis falla, rollback → la revocación no queda a medias
+    # (el cliente recibe error y sabe que el token sigue vivo); si PG falla después, quedan
+    # jtis blacklisteados de más (fallo seguro).
+    revoked_jtis = service.revoke_refresh_token(client_id, token, client_secret=client_secret, commit=False)
+    try:
+        for jti in revoked_jtis:
+            await revoke_jti(redis, jti, settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60)
+    except Exception:
+        service.session.rollback()
+        raise
+    service.session.commit()
     audit.log("token_revoke", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
     return {"revoked": True}
 

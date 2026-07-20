@@ -89,9 +89,10 @@ class RefreshTokenRepository:
         self.session.add(refresh)
         self.session.commit()
 
-    def revoke_family(self, family_id: str) -> list[str]:
+    def revoke_family(self, family_id: str, commit: bool = True) -> list[str]:
         """Revoca toda la familia (detección de reúso). Devuelve los access_jti
-        afectados para poder ponerlos en la blacklist."""
+        afectados para poder ponerlos en la blacklist. Con commit=False deja la
+        revocación pendiente para que el router confirme tras blacklistear en Redis."""
         members = list(self.session.exec(select(RefreshToken).where(RefreshToken.family_id == family_id)).all())
         jtis: list[str] = []
         for member in members:
@@ -100,13 +101,14 @@ class RefreshTokenRepository:
                 self.session.add(member)
             if member.access_jti:
                 jtis.append(member.access_jti)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
         return jtis
 
-    def revoke_all_for_user(self, user_id: str) -> list[str]:
+    def revoke_all_for_user(self, user_id: str, commit: bool = True) -> list[str]:
         """Revoca todos los refresh tokens vigentes del usuario (cambio de
         credenciales/status): así ningún consumidor puede seguir emitiendo access
-        tokens. Devuelve los access_jti afectados para ponerlos en la blacklist."""
+        tokens. Devuelve los access_jti afectados para ponerlos en la blacklist.
+        Con commit=False deja la revocación pendiente para confirmar tras Redis."""
         members = list(self.session.exec(select(RefreshToken).where(RefreshToken.user_id == user_id)).all())
         jtis: list[str] = []
         for member in members:
@@ -115,5 +117,5 @@ class RefreshTokenRepository:
                 self.session.add(member)
                 if member.access_jti:
                     jtis.append(member.access_jti)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
         return jtis

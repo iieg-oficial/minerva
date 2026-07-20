@@ -48,7 +48,7 @@ class UserService:
         user = self.repo.create(user)
         return UserRead.model_validate(user)
 
-    def update_user(self, user_id: str, data: UserUpdate) -> UserRead:
+    def update_user(self, user_id: str, data: UserUpdate, commit: bool = True) -> UserRead:
         user = self.repo.get_by_id(user_id)
         if not user:
             raise NotFoundError(detail="Usuario no encontrado")
@@ -67,26 +67,27 @@ class UserService:
         if data.domain is not None:
             user.domain = data.domain
 
-        user = self.repo.update(user)
+        user = self.repo.update(user, commit=commit)
         return UserRead.model_validate(user)
 
-    def update_status(self, user_id: str, data: UserStatusUpdate) -> UserRead:
+    def update_status(self, user_id: str, data: UserStatusUpdate, commit: bool = True) -> UserRead:
         user = self.repo.get_by_id(user_id)
         if not user:
             raise NotFoundError(detail="Usuario no encontrado")
 
         user.status = data.status
-        user = self.repo.update(user)
+        user = self.repo.update(user, commit=commit)
         return UserRead.model_validate(user)
 
-    def revoke_refresh_tokens(self, user_id: str) -> list[str]:
+    def revoke_refresh_tokens(self, user_id: str, commit: bool = True) -> list[str]:
         """Revoca los refresh tokens OIDC vigentes del usuario (parte de invalidar
         sus sesiones al cambiar credenciales/status). Devuelve los access_jti a
         blacklistear. La invalidación de los bearer/sesión (por `iat`) la resuelve
-        el marcador en Redis desde el router."""
+        el marcador en Redis desde el router. commit=False deja la revocación pendiente
+        para confirmarla junto con el cambio, tras escribir las invalidaciones en Redis."""
         from app.modules.auth.repository import RefreshTokenRepository
 
-        return RefreshTokenRepository(self.session).revoke_all_for_user(user_id)
+        return RefreshTokenRepository(self.session).revoke_all_for_user(user_id, commit=commit)
 
     def authenticate(self, email: str, password: str) -> str:
         user = self.repo.get_by_email(email)

@@ -391,11 +391,12 @@ class AuthService:
         return response, [refresh.access_jti] if refresh.access_jti else []
 
     def revoke_refresh_token(
-        self, client_id: str, refresh_token_raw: str, client_secret: str | None = None
+        self, client_id: str, refresh_token_raw: str, client_secret: str | None = None, commit: bool = True
     ) -> list[str]:
         """Revoca un refresh token y toda su familia (RFC 7009). Devuelve los jtis
         de access tokens a poner en la blacklist. Idempotente y silencioso si el
-        token no existe (no se filtra información)."""
+        token no existe (no se filtra información). commit=False deja la revocación
+        pendiente para que el router la confirme tras blacklistear los jtis en Redis."""
         app = self.app_service.get_application_by_client_id(client_id)
         if not app:
             raise BadRequestError(detail="Aplicación no encontrada")
@@ -406,7 +407,7 @@ class AuthService:
         refresh = self.refresh_repo.get_by_hash(hash_token(refresh_token_raw))
         if not refresh or refresh.client_id != client_id:
             return []
-        return self.refresh_repo.revoke_family(refresh.family_id)
+        return self.refresh_repo.revoke_family(refresh.family_id, commit=commit)
 
     def _get_user_permissions(self, user_id: str, app_slug: str) -> tuple[list[str], list[str]]:
         direct_roles = self.user_role_repo.list_roles_for_user(user_id)
