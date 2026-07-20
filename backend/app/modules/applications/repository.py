@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 
 from app.modules.applications.models import Application, RedirectURI
+from app.modules.audit.models import AuditLog
 from app.modules.auth.models import AuthCode, RefreshToken
 from app.modules.devkit.models import ManifestImport
 from app.modules.groups.models import GroupRole, UserRole
@@ -51,7 +52,8 @@ class ApplicationRepository:
         redirect URIs, permisos, roles, sus vínculos rol-permiso, las
         asignaciones de esos roles a usuarios y grupos, el historial de
         importaciones de manifiesto y los tokens OIDC emitidos (auth_codes y
-        refresh_tokens, ambos con FK a `applications.client_id`). Es una
+        refresh_tokens, ambos con FK a `applications.client_id`). Los registros
+        de auditoría se conservan: se les pone `application_id = None`. Es una
         operación destructiva e irreversible.
 
         Se hace `flush()` por niveles de dependencia para forzar el orden de los
@@ -90,6 +92,10 @@ class ApplicationRepository:
             self.session.delete(code)
         for token in self.session.exec(select(RefreshToken).where(RefreshToken.client_id == app.client_id)).all():
             self.session.delete(token)
+        # Los registros de auditoría se conservan: solo se desliga la app (FK a applications.id).
+        for log in self.session.exec(select(AuditLog).where(AuditLog.application_id == app.id)).all():
+            log.application_id = None
+            self.session.add(log)
         self.session.flush()
 
         # Nivel 3: la aplicación.
