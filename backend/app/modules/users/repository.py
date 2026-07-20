@@ -36,10 +36,15 @@ class UserRepository:
         self.session.refresh(user)
         return user
 
-    def update(self, user: User) -> User:
+    def update(self, user: User, commit: bool = True) -> User:
         user.email = normalize_email(user.email)
         user.updated_at = datetime.now(timezone.utc)
         self.session.add(user)
-        self.session.commit()
-        self.session.refresh(user)
+        # commit=False deja el cambio pendiente para que el router lo confirme DESPUÉS de
+        # escribir las invalidaciones en Redis (fail-closed: si Redis falla, se hace rollback).
+        if commit:
+            self.session.commit()
+            self.session.refresh(user)
+        else:
+            self.session.flush()
         return user

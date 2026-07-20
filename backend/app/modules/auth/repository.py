@@ -61,6 +61,7 @@ class RefreshTokenRepository:
         scope: str | None,
         access_jti: str | None,
         ttl_days: int,
+        commit: bool = True,
     ) -> RefreshToken:
         refresh = RefreshToken(
             token_hash=token_hash,
@@ -72,26 +73,32 @@ class RefreshTokenRepository:
             expires_at=datetime.now(timezone.utc) + timedelta(days=ttl_days),
         )
         self.session.add(refresh)
-        self.session.commit()
-        self.session.refresh(refresh)
+        # commit=False deja el nuevo refresh pendiente: en la rotación, el router confirma
+        # tras blacklistear en Redis el access_jti viejo (fail-closed).
+        if commit:
+            self.session.commit()
+            self.session.refresh(refresh)
+        else:
+            self.session.flush()
         return refresh
 
     def get_by_hash(self, token_hash: str) -> RefreshToken | None:
         return self.session.exec(select(RefreshToken).where(RefreshToken.token_hash == token_hash)).first()
 
-    def mark_rotated(self, refresh: RefreshToken) -> None:
+    def mark_rotated(self, refresh: RefreshToken, commit: bool = True) -> None:
         refresh.status = "rotated"
         self.session.add(refresh)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
 
     def revoke(self, refresh: RefreshToken) -> None:
         refresh.status = "revoked"
         self.session.add(refresh)
         self.session.commit()
 
-    def revoke_family(self, family_id: str) -> list[str]:
+    def revoke_family(self, family_id: str, commit: bool = True) -> list[str]:
         """Revoca toda la familia (detección de reúso). Devuelve los access_jti
-        afectados para poder ponerlos en la blacklist."""
+        afectados para poder ponerlos en la blacklist. Con commit=False deja la
+        revocación pendiente para que el router confirme tras blacklistear en Redis."""
         members = list(self.session.exec(select(RefreshToken).where(RefreshToken.family_id == family_id)).all())
         jtis: list[str] = []
         for member in members:
@@ -100,13 +107,14 @@ class RefreshTokenRepository:
                 self.session.add(member)
             if member.access_jti:
                 jtis.append(member.access_jti)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
         return jtis
 
-    def revoke_all_for_user(self, user_id: str) -> list[str]:
+    def revoke_all_for_user(self, user_id: str, commit: bool = True) -> list[str]:
         """Revoca todos los refresh tokens vigentes del usuario (cambio de
         credenciales/status): así ningún consumidor puede seguir emitiendo access
-        tokens. Devuelve los access_jti afectados para ponerlos en la blacklist."""
+        tokens. Devuelve los access_jti afectados para ponerlos en la blacklist.
+        Con commit=False deja la revocación pendiente para confirmar tras Redis."""
         members = list(self.session.exec(select(RefreshToken).where(RefreshToken.user_id == user_id)).all())
         jtis: list[str] = []
         for member in members:
@@ -115,5 +123,5 @@ class RefreshTokenRepository:
                 self.session.add(member)
                 if member.access_jti:
                     jtis.append(member.access_jti)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
         return jtis

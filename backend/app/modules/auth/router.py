@@ -29,7 +29,7 @@ from app.modules.auth.schemas import (
     SessionView,
     SetActiveRequest,
 )
-from app.modules.auth.service import AuthService
+from app.modules.auth.service import AuthService, RefreshReuseError
 from app.modules.authorization.service import AuthorizationService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -414,6 +414,19 @@ async def _read_token_request(request: Request) -> dict:
     return {key: values[0] for key, values in parse_qs(raw).items()}
 
 
+async def _blacklist_jtis_then_commit(service: AuthService, redis: Redis, jtis: list[str]) -> None:
+    """Fail-closed para los flujos que revocan/rotan tokens: blacklistea los access_jti en
+    Redis y solo entonces confirma PostgreSQL. Si Redis falla, rollback (PG intacto) y
+    propaga; si PG falla después, quedan jtis blacklisteados de más (fallo seguro)."""
+    try:
+        for jti in jtis:
+            await revoke_jti(redis, jti, settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60)
+    except Exception:
+        service.session.rollback()
+        raise
+    service.session.commit()
+
+
 @router.post("/token", response_model=AuthTokenResponse)
 async def token_exchange(
     request: Request,
@@ -430,9 +443,18 @@ async def token_exchange(
         refresh_token = body.get("refresh_token")
         if not client_id or not refresh_token:
             raise BadRequestError(detail="Faltan parámetros requeridos para refrescar el token")
-        result, revoked_jtis = service.rotate_refresh_token(client_id, refresh_token, client_secret=client_secret)
-        for jti in revoked_jtis:
-            await revoke_jti(redis, jti, settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60)
+        # Fail-closed: la rotación (marcar rotado + emitir el nuevo refresh) queda pendiente
+        # en PG; se blacklistea el access_jti viejo en Redis y solo entonces se confirma. Si
+        # Redis falla, rollback → el refresh original NO queda rotado a medias (el cliente
+        # reintenta limpio). En reúso, se blacklistean los jtis de la familia antes de confirmar.
+        try:
+            result, revoked_jtis = service.rotate_refresh_token(
+                client_id, refresh_token, client_secret=client_secret, commit=False
+            )
+        except RefreshReuseError as reuse:
+            await _blacklist_jtis_then_commit(service, redis, reuse.blacklist_jtis)
+            raise
+        await _blacklist_jtis_then_commit(service, redis, revoked_jtis)
         audit.log("token_refresh_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
         return result
 
@@ -469,9 +491,10 @@ async def revoke_token(
     if not client_id or not token:
         raise BadRequestError(detail="Faltan parámetros requeridos para revocar el token")
 
-    revoked_jtis = service.revoke_refresh_token(client_id, token, client_secret=client_secret)
-    for jti in revoked_jtis:
-        await revoke_jti(redis, jti, settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60)
+    # Fail-closed: revoca la familia en PG (pendiente), blacklistea los access_jti en Redis
+    # y solo entonces confirma (ver _blacklist_jtis_then_commit).
+    revoked_jtis = service.revoke_refresh_token(client_id, token, client_secret=client_secret, commit=False)
+    await _blacklist_jtis_then_commit(service, redis, revoked_jtis)
     audit.log("token_revoke", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
     return {"revoked": True}
 

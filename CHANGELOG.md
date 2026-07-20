@@ -28,6 +28,18 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   panel (antes vivían legibles en `localStorage`). Se añade protección **CSRF** (synchronizer token
   en `X-CSRF-Token`, validado en tiempo constante) más validación de `Origin` para las mutaciones
   del panel, y el `sid` se guarda hasheado en Redis y se **rota** en cada autenticación.
+- **Revocación durable en Redis.** Redis pasa a correr con persistencia AOF (`appendonly yes`) y
+  `maxmemory-policy noeviction` sobre un volumen (`minerva_redis_data`), en vez de sin persistencia y
+  `allkeys-lru`. Antes, un reinicio del contenedor o una evicción por presión de memoria borraba la
+  blacklist de `jti`, los cortes de invalidación por usuario y las sesiones del panel, **resucitando
+  tokens revocados** hasta su `exp` (hasta 8 h). Ahora un token revocado sigue rechazado tras
+  reiniciar Redis; la política ante Redis caído es fail-closed (la request se rechaza, nunca fail-open).
+  Además, todos los flujos que revocan/rotan tokens —invalidación al cambiar credenciales/status,
+  revocación OAuth (`/revoke`), rotación de refresh (`grant_type=refresh_token`) y la revocación de
+  familia por detección de reúso— ahora escriben las invalidaciones en Redis **antes** de confirmar
+  PostgreSQL: si Redis falla, se hace rollback y el cambio no queda durable sin su invalidación
+  (antes podía confirmarse el cambio en PG y perderse el corte/blacklist en Redis, o rotarse un
+  refresh a medias).
 - **Cabeceras HTTP defensivas en `nginx.conf`.** CSP (con `frame-ancestors 'none'`;
   `style-src 'unsafe-inline'` por Ant Design/cssinjs; `img-src` incluye `https:` para los logos de
   branding por app), `X-Content-Type-Options: nosniff` y `Referrer-Policy`. **HSTS no lo emite este
