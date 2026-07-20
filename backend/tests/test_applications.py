@@ -93,6 +93,39 @@ def test_delete_application_cascades(client, admin_token):
     assert client.get(f"/roles?application_id={app_id}", headers=auth).json()["items"] == []
 
 
+def test_delete_application_used_removes_tokens(client, admin_token, admin_user):
+    """R15: borrar una app ya usada (con auth_codes/refresh_tokens emitidos) no debe
+    dejar huérfanos ni violar la FK a applications.client_id."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlmodel import Session, select
+
+    from app.modules.auth.models import AuthCode, RefreshToken
+    from tests.conftest import test_engine
+
+    auth = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post("/applications", json={"name": "Used App", "slug": "used-app"}, headers=auth).json()
+    app_id, client_id = created["id"], created["client_id"]
+
+    expires = datetime.now(timezone.utc) + timedelta(minutes=5)
+    with Session(test_engine) as session:
+        session.add(
+            AuthCode(code="c-1", client_id=client_id, user_id=admin_user["id"], redirect_uri="x", expires_at=expires)
+        )
+        session.add(
+            RefreshToken(
+                token_hash="h-1", family_id="f-1", client_id=client_id, user_id=admin_user["id"], expires_at=expires
+            )
+        )
+        session.commit()
+
+    assert client.delete(f"/applications/{app_id}", headers=auth).status_code == 204
+
+    with Session(test_engine) as session:
+        assert session.exec(select(AuthCode).where(AuthCode.client_id == client_id)).all() == []
+        assert session.exec(select(RefreshToken).where(RefreshToken.client_id == client_id)).all() == []
+
+
 def test_delete_application_not_found(client, admin_token):
     resp = client.delete("/applications/no-existe", headers={"Authorization": f"Bearer {admin_token}"})
     assert resp.status_code == 404
