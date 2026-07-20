@@ -231,6 +231,8 @@ class AuthService:
         app = self.app_service.get_application_by_client_id(client_id)
         if not app:
             raise BadRequestError(detail="Aplicación no encontrada")
+        if app.status != "active":
+            raise ForbiddenError(detail="Aplicación inactiva")
 
         if app.client_secret_hash is not None:
             if not client_secret or not verify_secret(client_secret, app.client_secret_hash):
@@ -268,8 +270,11 @@ class AuthService:
         user = self.user_repo.get_by_id(auth_code.user_id)
         if not user:
             raise NotFoundError(detail="Usuario no encontrado")
+        if user.status != "active":
+            raise ForbiddenError(detail="Usuario inactivo")
 
-        self.auth_code_repo.mark_used(auth_code)
+        if not self.auth_code_repo.mark_used(auth_code):
+            raise BadRequestError(detail="Código de autorización inválido o ya usado")
 
         all_perms, all_role_slugs = self._get_user_permissions(user.id, app.slug)
         return self._issue_tokens(
@@ -366,6 +371,8 @@ class AuthService:
         app = self.app_service.get_application_by_client_id(client_id)
         if not app:
             raise BadRequestError(detail="Aplicación no encontrada")
+        if app.status != "active":
+            raise ForbiddenError(detail="Aplicación inactiva")
         if app.client_secret_hash is not None:
             if not client_secret or not verify_secret(client_secret, app.client_secret_hash):
                 raise ForbiddenError(detail="client_secret inválido")
@@ -393,7 +400,12 @@ class AuthService:
         if not user or user.status != "active":
             raise ForbiddenError(detail="Usuario inválido o inactivo")
 
-        self.refresh_repo.mark_rotated(refresh, commit=False)
+        if not self.refresh_repo.mark_rotated(refresh, commit=False):
+            # Perdió la carrera contra una rotación concurrente: mismo tratamiento que el
+            # reúso (posible robo), revoca la familia entera.
+            jtis = self.refresh_repo.revoke_family(refresh.family_id, commit=commit)
+            raise RefreshReuseError(jtis, detail="refresh token ya utilizado; la sesión fue revocada por seguridad")
+
         perms, role_slugs = self._get_user_permissions(user.id, app.slug)
         response = self._issue_tokens(
             user=user,
