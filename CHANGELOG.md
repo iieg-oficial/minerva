@@ -28,9 +28,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   panel (antes vivían legibles en `localStorage`). Se añade protección **CSRF** (synchronizer token
   en `X-CSRF-Token`, validado en tiempo constante) más validación de `Origin` para las mutaciones
   del panel, y el `sid` se guarda hasheado en Redis y se **rota** en cada autenticación.
-- **Cabeceras HTTP defensivas en `nginx.conf`.** CSP (con `frame-ancestors 'none'`),
-  `X-Content-Type-Options: nosniff`, `Referrer-Policy` y HSTS (condicionado a HTTPS; inerte
-  mientras nginx sirva solo HTTP).
+- **Cabeceras HTTP defensivas en `nginx.conf`.** CSP (con `frame-ancestors 'none'`;
+  `style-src 'unsafe-inline'` por Ant Design/cssinjs; `img-src` incluye `https:` para los logos de
+  branding por app), `X-Content-Type-Options: nosniff` y `Referrer-Policy`. **HSTS no lo emite este
+  nginx** (sirve HTTP; el deploy va tras un terminador TLS externo): debe configurarse en ese
+  terminador, sin `preload` por defecto.
 
 ### Removed
 

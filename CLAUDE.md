@@ -123,9 +123,10 @@ Minerva firma **todo con RS256/JWKS** (no HS256). Dos modelos de sesión, delibe
 - **Red en producción (nginx consolidado):** un solo punto público (nginx del servicio `frontend`)
   sirve la SPA y proxea al backend `/.well-known`, `/auth`, `/userinfo`, `/api` (strip) y `/api/v1`
   (preserva). El backend **no publica puerto** en el deploy; el issuer va sin `:9000`. `FORWARDED_ALLOW_IPS`
-  hace que el rate limit cuente por IP real. `nginx.conf` emite además cabeceras defensivas (CSP,
-  `nosniff`, `Referrer-Policy` y HSTS condicionado a HTTPS). Detalle: `frontend/nginx.conf` y
-  `docs/despliegue.md` §2.2.
+  hace que el rate limit cuente por IP real. `nginx.conf` emite además cabeceras defensivas (CSP con
+  `frame-ancestors 'none'` y `img-src ... https:` para logos de branding, `nosniff`, `Referrer-Policy`).
+  **HSTS no se emite aquí** (nginx sirve HTTP): va en el terminador TLS externo, sin `preload`. Detalle:
+  `frontend/nginx.conf` y `docs/despliegue.md` §2.2.
 
 ### Selector de cuentas / multi-sesión (v0.3.0)
 

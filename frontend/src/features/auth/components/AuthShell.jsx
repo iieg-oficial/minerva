@@ -75,6 +75,9 @@ export default function AuthShell({ appName, brandColor = BRAND.purple, logoUrl,
                                     }
                                     alt=""
                                     aria-hidden="true"
+                                    // El logo puede venir de un host externo (branding por app):
+                                    // no filtres el referer del panel a ese tercero.
+                                    referrerPolicy="no-referrer"
                                     style={{
                                         height: 86,
                                         width: 'auto',

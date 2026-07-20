@@ -98,9 +98,12 @@ Implicaciones:
   `X-Forwarded-For` y el **rate limit de login se cuenta por IP real del cliente**, no por la de nginx.
 - SSL futuro = terminar TLS en este nginx (un solo lugar); `nginx.conf` ya envía `X-Forwarded-Proto`.
 - **Cabeceras defensivas:** `nginx.conf` emite CSP (con `frame-ancestors 'none'`),
-  `X-Content-Type-Options: nosniff`, `Referrer-Policy` y HSTS. La CSP permite `style-src
-  'unsafe-inline'` por Ant Design (cssinjs). **HSTS está condicionado a HTTPS** (`map $scheme`): hoy
-  que nginx sirve solo `:80` el header no se emite; al terminar TLS aquí se activa solo. La cookie de
+  `X-Content-Type-Options: nosniff` y `Referrer-Policy`. La CSP permite `style-src 'unsafe-inline'`
+  por Ant Design (cssinjs) e `img-src ... https:` para los logos de branding por app (`logo_url`).
+  **HSTS no lo emite este nginx** (sirve solo `:80`; el navegador ignora un HSTS recibido por HTTP):
+  configúralo en el **terminador TLS** que va delante, con
+  `add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;` — **sin
+  `preload`** por defecto (es difícil de revertir y exige HTTPS en todos los subdominios). La cookie de
   sesión del panel usa el prefijo `__Host-` (exige HTTPS): en HTTP local se usa `minerva_sid` sin
   `Secure`, derivado de `MINERVA_MODE`.
 - **Redis es control de seguridad, no solo caché.** Además del rate limit, guarda la blacklist de
