@@ -28,15 +28,27 @@ def _read_container(fake, sid):
     return asyncio.run(panel_session.read(fake, sid))
 
 
-# 1. Login/register fija cookie HttpOnly y NO devuelve el JWT.
+# 1. Login/register fija cookie HttpOnly (SameSite=Lax, Path=/) y NO devuelve el JWT.
 def test_login_sets_httponly_cookie_without_jwt(client):
     resp = _register(client, "bff-1@iieg.gob.mx")
     assert resp.status_code == 201
     body = resp.json()
     assert "access_token" not in body and "token" not in str(body)
     assert body["csrf"] and body["active"]["email"] == "bff-1@iieg.gob.mx"
-    set_cookie = resp.headers.get("set-cookie", "")
-    assert COOKIE in set_cookie and "HttpOnly" in set_cookie
+    set_cookie = resp.headers.get("set-cookie", "").lower()
+    assert f"{COOKIE.lower()}=" in set_cookie
+    assert "httponly" in set_cookie and "samesite=lax" in set_cookie and "path=/" in set_cookie
+
+
+# 1b. En producción la cookie usa el prefijo __Host- y Secure (exige HTTPS); en dev,
+#     nombre distinto sin Secure para no romper el desarrollo local HTTP.
+def test_cookie_name_and_secure_by_environment(monkeypatch):
+    monkeypatch.setattr(settings, "MINERVA_MODE", "production")
+    assert settings.session_cookie_name == "__Host-minerva_sid"
+    assert settings.session_cookie_secure is True
+    monkeypatch.setattr(settings, "MINERVA_MODE", "dev")
+    assert settings.session_cookie_name == "minerva_sid"
+    assert settings.session_cookie_secure is False
 
 
 # 2 + 3. Dos cuentas coexisten en un navegador y se puede cambiar la activa.
