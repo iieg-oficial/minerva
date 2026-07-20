@@ -109,9 +109,10 @@ Implicaciones:
   sesión del panel usa el prefijo `__Host-` (exige HTTPS): en HTTP local se usa `minerva_sid` sin
   `Secure`, derivado de `MINERVA_MODE`.
 - **Redis es control de seguridad, no solo caché.** Además del rate limit, guarda la blacklist de
-  `jti`, los cortes de invalidación por usuario y el **contenedor de sesión del panel**. Perder Redis
-  cierra las sesiones del panel y re-habilita tokens revocados: en producción, persistencia
-  (`appendonly`) y `maxmemory-policy noeviction` para su keyspace de seguridad.
+  `jti`, los cortes de invalidación por usuario y el **contenedor de sesión del panel**. Por eso corre
+  con persistencia AOF (`appendonly yes`) y `maxmemory-policy noeviction` (ver §3.4): sobrevive
+  reinicios y no desaloja revocaciones por presión de memoria. Perder Redis cierra las sesiones del
+  panel y re-habilita tokens revocados, por eso es durable.
 
 ### 2.3 Variables a revisar/ajustar
 
@@ -206,19 +207,31 @@ alembic revision --autogenerate -m "descripcion breve"
 alembic upgrade head
 ```
 
-### 3.4 Redis: alcance y expectativas
+### 3.4 Redis: control de seguridad durable
 
-Redis se levanta **sin persistencia** (`redis-server --maxmemory 256mb
---maxmemory-policy allkeys-lru`, sin RDB/AOF) — decisión explícita, no un descuido.
-Solo guarda:
-- Rate limiting (`/auth/login`, `/auth/authorize`).
-- Blacklist de `jti` de tokens revocados.
-- Sesiones efímeras del flujo `/authorize` (código + PKCE/nonce/state, de vida muy corta).
+Redis es un **control de seguridad**, no solo caché. Guarda:
+- Blacklist de `jti` de tokens revocados (logout-all, quitar cuenta, rotación de refresh).
+- Cortes de invalidación por usuario (`minerva:uinval:*`, al cambiar contraseña/correo/status).
+- Contenedor de sesión del panel (patrón BFF): cuentas iniciadas y token `typ=session` de cada una.
+- Rate limiting (`/auth/login`, `/auth/authorize`) y sesiones efímeras del flujo `/authorize`.
 
-Perder este estado en un restart **no corrompe nada**: solo relaja temporalmente el
-rate limiting y permite que tokens recién revocados sigan aceptándose hasta que
-expiren por sí solos (ventana acotada por `MINERVA_ACCESS_TOKEN_TTL_MINUTES`). No
-requiere backup.
+Por eso corre con **persistencia AOF y sin evicción**:
+`redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction`, con un
+volumen nombrado `minerva_redis_data:/data`. Consecuencias:
+- **Sobrevive reinicios:** un token revocado sigue rechazado tras reiniciar el contenedor
+  `minerva_redis` (antes, sin persistencia, un restart lo resucitaba hasta su `exp` — hasta 8 h
+  para la sesión del panel).
+- **`noeviction`:** las claves de seguridad no se desalojan por presión de memoria. Todas tienen
+  TTL acotado (blacklist ≤ vida del token, panel 8 h, rate-limit 15 min), así que 256 mb sobra; si
+  la memoria llegara a llenarse, fallan las escrituras (fail-closed) en vez de borrar revocaciones.
+- **Backup:** incluye el volumen `minerva_redis_data` en la estrategia de respaldo junto con el de
+  PostgreSQL (el AOF vive ahí).
+
+**Política de fail-safe (fail-closed):** si Redis no está disponible, las operaciones de seguridad
+(validar revocación, rate limit) fallan y la request se rechaza — Minerva **no** degrada a fail-open
+(nunca honra un token que no pudo verificar contra la blacklist). Verificarlo tras un cambio de infra:
+`docker compose restart minerva_redis` y reintentar un token revocado (sigue devolviendo 401);
+`docker exec minerva_redis redis-cli config get appendonly maxmemory-policy` → `yes` / `noeviction`.
 
 ### 3.5 Checklist rápido antes de exponer Minerva a producción
 
@@ -227,7 +240,8 @@ requiere backup.
 3. `MINERVA_KEY_ENCRYPTION_KEY` generada y guardada en un secret manager.
 4. `MINERVA_ISSUER` apunta a la URL pública real (HTTPS).
 5. TLS terminado en el reverse proxy delante de backend y frontend.
-6. Backup de PostgreSQL programado (cron diario mínimo).
+6. Backup de PostgreSQL programado (cron diario mínimo); incluir el volumen `minerva_redis_data`
+   (AOF con la blacklist/invalidaciones/sesiones del panel).
 7. `rotate-key` programado en cron.
 8. Confirmar que el backend arranca y `validate_production_config()` no lanza error
    (revisar logs del primer arranque).

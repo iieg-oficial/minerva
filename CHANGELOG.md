@@ -28,6 +28,12 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   panel (antes vivían legibles en `localStorage`). Se añade protección **CSRF** (synchronizer token
   en `X-CSRF-Token`, validado en tiempo constante) más validación de `Origin` para las mutaciones
   del panel, y el `sid` se guarda hasheado en Redis y se **rota** en cada autenticación.
+- **Revocación durable en Redis.** Redis pasa a correr con persistencia AOF (`appendonly yes`) y
+  `maxmemory-policy noeviction` sobre un volumen (`minerva_redis_data`), en vez de sin persistencia y
+  `allkeys-lru`. Antes, un reinicio del contenedor o una evicción por presión de memoria borraba la
+  blacklist de `jti`, los cortes de invalidación por usuario y las sesiones del panel, **resucitando
+  tokens revocados** hasta su `exp` (hasta 8 h). Ahora un token revocado sigue rechazado tras
+  reiniciar Redis; la política ante Redis caído es fail-closed (la request se rechaza, nunca fail-open).
 - **Cabeceras HTTP defensivas en `nginx.conf`.** CSP (con `frame-ancestors 'none'`;
   `style-src 'unsafe-inline'` por Ant Design/cssinjs; `img-src` incluye `https:` para los logos de
   branding por app), `X-Content-Type-Options: nosniff` y `Referrer-Policy`. **HSTS no lo emite este
