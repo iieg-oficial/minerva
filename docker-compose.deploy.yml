@@ -52,7 +52,12 @@ services:
     image: redis:7-alpine
     container_name: minerva_redis
     restart: unless-stopped
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # Redis es control de seguridad (blacklist de `jti`, cortes de invalidación por
+    # usuario y sesiones del panel BFF): persistencia AOF para sobrevivir reinicios y
+    # `noeviction` para no desalojar revocaciones por presión de memoria. Ver docs/despliegue.md §3.4.
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    volumes:
+      - minerva_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -87,6 +92,7 @@ services:
 
 volumes:
   minerva_postgres_data:
+  minerva_redis_data:
 
 networks:
   minerva_network:
