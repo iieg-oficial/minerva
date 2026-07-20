@@ -48,7 +48,10 @@ export default function GroupsPage() {
         } catch {}
     }, []);
 
-    useEffect(() => { fetchGroups(); fetchRefs(); }, [fetchGroups, fetchRefs]);
+    useEffect(() => {
+        fetchGroups();
+        fetchRefs();
+    }, [fetchGroups, fetchRefs]);
 
     const handleCreate = async (values) => {
         try {
@@ -109,15 +112,27 @@ export default function GroupsPage() {
         { title: 'Nombre', dataIndex: 'name', key: 'name' },
         { title: 'Slug', dataIndex: 'slug', key: 'slug' },
         {
-            title: 'Origen', dataIndex: 'source', key: 'source', width: 80,
-            render: (v) => v ? <Tag>{v}</Tag> : <Tag color="#2e4372">local</Tag>,
+            title: 'Origen',
+            dataIndex: 'source',
+            key: 'source',
+            width: 80,
+            render: (v) => (v ? <Tag>{v}</Tag> : <Tag color="#2e4372">local</Tag>),
         },
         {
-            title: '', key: 'actions', width: 120,
+            title: '',
+            key: 'actions',
+            width: 120,
             render: (_, record) => (
                 <Space>
-                    <Button type="link" size="small" onClick={() => handleMemberOpen(record)}>Miembros</Button>
-                    <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                    <Button type="link" size="small" onClick={() => handleMemberOpen(record)}>
+                        Miembros
+                    </Button>
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => handleEdit(record)}
+                    />
                 </Space>
             ),
         },
@@ -125,19 +140,43 @@ export default function GroupsPage() {
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <Title level={4} style={{ margin: 0 }}>Grupos</Title>
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 16,
+                }}
+            >
+                <Title level={4} style={{ margin: 0 }}>
+                    Grupos
+                </Title>
                 <Space>
-                    <Button icon={<ReloadOutlined />} onClick={fetchGroups}>Actualizar</Button>
-                    <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingGroup(null); form.resetFields(); setModalOpen(true); }}>
+                    <Button icon={<ReloadOutlined />} onClick={fetchGroups}>
+                        Actualizar
+                    </Button>
+                    <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => {
+                            setEditingGroup(null);
+                            form.resetFields();
+                            setModalOpen(true);
+                        }}
+                    >
                         Nuevo grupo
                     </Button>
                 </Space>
             </div>
 
-            <Table columns={columns} dataSource={groups} rowKey="id" loading={loading}
+            <Table
+                columns={columns}
+                dataSource={groups}
+                rowKey="id"
+                loading={loading}
                 pagination={{
-                    total, current: Math.floor(page.offset / page.limit) + 1,
+                    total,
+                    current: Math.floor(page.offset / page.limit) + 1,
                     pageSize: page.limit,
                     onChange: (p, ps) => setPage({ offset: (p - 1) * ps, limit: ps }),
                 }}
@@ -146,10 +185,19 @@ export default function GroupsPage() {
             <Modal
                 title={editingGroup ? 'Editar grupo' : 'Nuevo grupo'}
                 open={modalOpen}
-                onCancel={() => { setModalOpen(false); setEditingGroup(null); form.resetFields(); editForm.resetFields(); }}
+                onCancel={() => {
+                    setModalOpen(false);
+                    setEditingGroup(null);
+                    form.resetFields();
+                    editForm.resetFields();
+                }}
                 footer={null}
             >
-                <Form form={editingGroup ? editForm : form} layout="vertical" onFinish={editingGroup ? handleUpdate : handleCreate}>
+                <Form
+                    form={editingGroup ? editForm : form}
+                    layout="vertical"
+                    onFinish={editingGroup ? handleUpdate : handleCreate}
+                >
                     <Form.Item name="name" label="Nombre" rules={[{ required: true }]}>
                         <Input />
                     </Form.Item>
@@ -185,17 +233,27 @@ export default function GroupsPage() {
                 <div style={{ marginBottom: 16 }}>
                     <Title level={5}>Agregar usuario</Title>
                     <Form form={memberForm} layout="inline" onFinish={handleAddUser}>
-                        <Form.Item name="user_id" rules={[{ required: true, message: 'Seleccione un usuario' }]}>
+                        <Form.Item
+                            name="user_id"
+                            rules={[{ required: true, message: 'Seleccione un usuario' }]}
+                        >
                             <Select
                                 showSearch
                                 placeholder="Seleccionar usuario"
-                                filterOption={(input, option) => option?.label?.toLowerCase().includes(input.toLowerCase())}
-                                options={users.map((u) => ({ label: `${u.full_name} (${u.email})`, value: u.id }))}
+                                filterOption={(input, option) =>
+                                    option?.label?.toLowerCase().includes(input.toLowerCase())
+                                }
+                                options={users.map((u) => ({
+                                    label: `${u.full_name} (${u.email})`,
+                                    value: u.id,
+                                }))}
                                 style={{ width: 280 }}
                             />
                         </Form.Item>
                         <Form.Item>
-                            <Button type="primary" htmlType="submit">Agregar</Button>
+                            <Button type="primary" htmlType="submit">
+                                Agregar
+                            </Button>
                         </Form.Item>
                     </Form>
                 </div>
@@ -203,17 +261,24 @@ export default function GroupsPage() {
                 <div>
                     <Title level={5}>Asignar rol al grupo</Title>
                     <Form layout="inline" onFinish={handleAddRole}>
-                        <Form.Item name="role_id" rules={[{ required: true, message: 'Seleccione un rol' }]}>
+                        <Form.Item
+                            name="role_id"
+                            rules={[{ required: true, message: 'Seleccione un rol' }]}
+                        >
                             <Select
                                 showSearch
                                 placeholder="Seleccionar rol"
-                                filterOption={(input, option) => option?.label?.toLowerCase().includes(input.toLowerCase())}
+                                filterOption={(input, option) =>
+                                    option?.label?.toLowerCase().includes(input.toLowerCase())
+                                }
                                 options={allRoles.map((r) => ({ label: r.name, value: r.id }))}
                                 style={{ width: 280 }}
                             />
                         </Form.Item>
                         <Form.Item>
-                            <Button type="primary" htmlType="submit">Asignar</Button>
+                            <Button type="primary" htmlType="submit">
+                                Asignar
+                            </Button>
                         </Form.Item>
                     </Form>
                 </div>

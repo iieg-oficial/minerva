@@ -20,7 +20,12 @@ export default function NoAccessPage() {
                     Cerrar sesión
                 </Button>
             }
-            style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
+            style={{
+                minHeight: '100dvh',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+            }}
         />
     );
 }

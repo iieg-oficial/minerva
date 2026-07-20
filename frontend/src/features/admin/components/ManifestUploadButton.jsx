@@ -22,10 +22,12 @@ export default function ManifestUploadButton({
     const handleFile = async (file) => {
         setLoading(true);
         try {
-            const res = appId ? await appsAPI.updateManifest(appId, file) : await appsAPI.importManifest(file);
+            const res = appId
+                ? await appsAPI.updateManifest(appId, file)
+                : await appsAPI.importManifest(file);
             message.success(
                 `Manifiesto "${res.application_code}" ${appId ? 'actualizado' : 'importado'}: ` +
-                `${res.permissions_upserted} permisos nuevos, ${res.roles_upserted} roles nuevos.`
+                    `${res.permissions_upserted} permisos nuevos, ${res.roles_upserted} roles nuevos.`
             );
             onImported?.(res);
         } catch (err) {
@@ -38,7 +40,13 @@ export default function ManifestUploadButton({
 
     return (
         <Upload accept=".yml,.yaml" showUploadList={false} maxCount={1} beforeUpload={handleFile}>
-            <Button type={type} size={size} title={title} icon={icon || <UploadOutlined />} loading={loading}>
+            <Button
+                type={type}
+                size={size}
+                title={title}
+                icon={icon || <UploadOutlined />}
+                loading={loading}
+            >
                 {children === undefined ? 'Subir manifiesto' : children}
             </Button>
         </Upload>

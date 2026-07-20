@@ -1,16 +1,23 @@
 import axios from 'axios';
-import { expireActive } from './session';
+import { clearCache, getCsrf } from './session';
 
 const client = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || '/api',
+    baseURL: import.meta.env?.VITE_API_URL || '/api',
     timeout: 30000,
+    // Envía la cookie de sesión del panel (HttpOnly) en cada petición.
+    withCredentials: true,
     headers: { 'Content-Type': 'application/json' },
 });
 
+const UNSAFE_METHODS = ['post', 'put', 'patch', 'delete'];
+
+// Adjunta el token CSRF (synchronizer) en las mutaciones del panel. El backend lo
+// exige junto con la cookie; en login/register (que crean la sesión) aún no hay
+// token y el backend los exime.
 client.interceptors.request.use((config) => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+    if (UNSAFE_METHODS.includes((config.method || '').toLowerCase())) {
+        const csrf = getCsrf();
+        if (csrf) config.headers['X-CSRF-Token'] = csrf;
     }
     return config;
 });
@@ -22,10 +29,11 @@ let redirectingToLogin = false;
 client.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
-            // Degrada la cuenta activa a expirada y limpia el espejo (access_token/
-            // user/is_admin). El selector la seguirá mostrando para reingresar.
-            expireActive();
+        // El sondeo `GET /auth/session` responde 401 sin sesión: es esperado en /login
+        // y /authorize; no debe forzar un redirect (rompería el flujo con `next=`).
+        const isSessionProbe = (error.config?.url || '').includes('/auth/session');
+        if (error.response?.status === 401 && !isSessionProbe) {
+            clearCache();
             if (!redirectingToLogin && window.location.pathname !== '/login') {
                 redirectingToLogin = true;
                 window.location.href = '/login';

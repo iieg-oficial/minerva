@@ -1,10 +1,27 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-    Table, Button, Modal, Form, Input, Select, Typography, Space, Tag, App,
-    Collapse, Checkbox, Empty, Spin,
+    Table,
+    Button,
+    Modal,
+    Form,
+    Input,
+    Select,
+    Typography,
+    Space,
+    Tag,
+    App,
+    Collapse,
+    Checkbox,
+    Empty,
+    Spin,
 } from 'antd';
 import {
-    PlusOutlined, EditOutlined, DeleteOutlined, SafetyOutlined, ReloadOutlined, KeyOutlined,
+    PlusOutlined,
+    EditOutlined,
+    DeleteOutlined,
+    SafetyOutlined,
+    ReloadOutlined,
+    KeyOutlined,
 } from '@ant-design/icons';
 import * as rolesAPI from '@/api/roles';
 import * as appsAPI from '@/api/applications';
@@ -47,11 +64,17 @@ export default function RolesPage() {
         }
     }, [message]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
     const handleCreate = async (values) => {
         try {
-            await rolesAPI.createRole(values.application_id, { name: values.name, slug: values.slug, description: values.description });
+            await rolesAPI.createRole(values.application_id, {
+                name: values.name,
+                slug: values.slug,
+                description: values.description,
+            });
             message.success('Rol creado');
             setModalOpen(false);
             form.resetFields();
@@ -106,7 +129,7 @@ export default function RolesPage() {
         setAssignedPerms([]);
         try {
             const [rolePerms, allPermsRes] = await Promise.all([
-                rolesAPI.getRolePermissions(role.id),       // devuelve una lista plana
+                rolesAPI.getRolePermissions(role.id), // devuelve una lista plana
                 permsAPI.listPermissions({ application_id: role.application_id, limit: 500 }),
             ]);
             setAssignedPerms((rolePerms || []).map((p) => p.id));
@@ -139,23 +162,45 @@ export default function RolesPage() {
     const columns = [
         { title: 'Nombre', dataIndex: 'name', key: 'name', width: 200 },
         {
-            title: 'Slug', dataIndex: 'slug', key: 'slug',
+            title: 'Slug',
+            dataIndex: 'slug',
+            key: 'slug',
             render: (slug) => <Tag color={NAVY}>{slug}</Tag>,
         },
         {
-            title: 'Descripción', dataIndex: 'description', key: 'description',
+            title: 'Descripción',
+            dataIndex: 'description',
+            key: 'description',
             render: (d) => d || <Text type="secondary">—</Text>,
         },
         {
-            title: '', key: 'actions', width: 130,
+            title: '',
+            key: 'actions',
+            width: 130,
             render: (_, record) => (
                 <Space>
-                    <Button type="text" size="small" icon={<SafetyOutlined />}
-                        title="Administrar permisos" onClick={() => handlePermOpen(record)} />
-                    <Button type="text" size="small" icon={<EditOutlined />}
-                        title="Editar" onClick={() => handleEdit(record)} />
-                    <Button type="text" size="small" icon={<DeleteOutlined />} danger
-                        title="Eliminar" onClick={() => handleDelete(record)} />
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<SafetyOutlined />}
+                        title="Administrar permisos"
+                        onClick={() => handlePermOpen(record)}
+                    />
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<EditOutlined />}
+                        title="Editar"
+                        onClick={() => handleEdit(record)}
+                    />
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        danger
+                        title="Eliminar"
+                        onClick={() => handleDelete(record)}
+                    />
                 </Space>
             ),
         },
@@ -175,33 +220,75 @@ export default function RolesPage() {
             label: (
                 <Space>
                     <SafetyOutlined style={{ color: NAVY }} />
-                    <Text strong style={{ fontFamily: FONT }}>{g.app.name}</Text>
+                    <Text strong style={{ fontFamily: FONT }}>
+                        {g.app.name}
+                    </Text>
                     <Tag>{g.roles.length}</Tag>
                 </Space>
             ),
-            children: <Table columns={columns} dataSource={g.roles} rowKey="id" size="small" pagination={false} />,
-        })),
-        ...(orphan.length > 0 ? [{
-            key: '__orphan__',
-            label: (
-                <Space>
-                    <SafetyOutlined />
-                    <Text strong style={{ fontFamily: FONT }}>Sin sistema asociado</Text>
-                    <Tag>{orphan.length}</Tag>
-                </Space>
+            children: (
+                <Table
+                    columns={columns}
+                    dataSource={g.roles}
+                    rowKey="id"
+                    size="small"
+                    pagination={false}
+                />
             ),
-            children: <Table columns={columns} dataSource={orphan} rowKey="id" size="small" pagination={false} />,
-        }] : []),
+        })),
+        ...(orphan.length > 0
+            ? [
+                  {
+                      key: '__orphan__',
+                      label: (
+                          <Space>
+                              <SafetyOutlined />
+                              <Text strong style={{ fontFamily: FONT }}>
+                                  Sin sistema asociado
+                              </Text>
+                              <Tag>{orphan.length}</Tag>
+                          </Space>
+                      ),
+                      children: (
+                          <Table
+                              columns={columns}
+                              dataSource={orphan}
+                              rowKey="id"
+                              size="small"
+                              pagination={false}
+                          />
+                      ),
+                  },
+              ]
+            : []),
     ];
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <Title level={4} style={{ margin: 0, fontFamily: FONT }}>Roles</Title>
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 16,
+                }}
+            >
+                <Title level={4} style={{ margin: 0, fontFamily: FONT }}>
+                    Roles
+                </Title>
                 <Space>
-                    <Button icon={<ReloadOutlined />} onClick={fetchData}>Actualizar</Button>
-                    <Button type="primary" icon={<PlusOutlined />}
-                        onClick={() => { setEditingRole(null); form.resetFields(); setModalOpen(true); }}>
+                    <Button icon={<ReloadOutlined />} onClick={fetchData}>
+                        Actualizar
+                    </Button>
+                    <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => {
+                            setEditingRole(null);
+                            form.resetFields();
+                            setModalOpen(true);
+                        }}
+                    >
                         Nuevo rol
                     </Button>
                 </Space>
@@ -222,10 +309,19 @@ export default function RolesPage() {
             <Modal
                 title={editingRole ? 'Editar rol' : 'Nuevo rol'}
                 open={modalOpen}
-                onCancel={() => { setModalOpen(false); setEditingRole(null); form.resetFields(); editForm.resetFields(); }}
+                onCancel={() => {
+                    setModalOpen(false);
+                    setEditingRole(null);
+                    form.resetFields();
+                    editForm.resetFields();
+                }}
                 footer={null}
             >
-                <Form form={editingRole ? editForm : form} layout="vertical" onFinish={editingRole ? handleUpdate : handleCreate}>
+                <Form
+                    form={editingRole ? editForm : form}
+                    layout="vertical"
+                    onFinish={editingRole ? handleUpdate : handleCreate}
+                >
                     <Form.Item name="name" label="Nombre" rules={[{ required: true }]}>
                         <Input />
                     </Form.Item>
@@ -234,8 +330,14 @@ export default function RolesPage() {
                             <Form.Item name="slug" label="Slug" rules={[{ required: true }]}>
                                 <Input placeholder="Ej. minerva.editor" />
                             </Form.Item>
-                            <Form.Item name="application_id" label="Sistema" rules={[{ required: true }]}>
-                                <Select options={apps.map((a) => ({ label: a.name, value: a.id }))} />
+                            <Form.Item
+                                name="application_id"
+                                label="Sistema"
+                                rules={[{ required: true }]}
+                            >
+                                <Select
+                                    options={apps.map((a) => ({ label: a.name, value: a.id }))}
+                                />
                             </Form.Item>
                         </>
                     )}
@@ -267,9 +369,17 @@ export default function RolesPage() {
                 ) : (
                     <>
                         <Text type="secondary" style={{ fontFamily: FONT }}>
-                            Marca los permisos que tendrá este rol. Los cambios se guardan automáticamente.
+                            Marca los permisos que tendrá este rol. Los cambios se guardan
+                            automáticamente.
                         </Text>
-                        <div style={{ marginTop: 12, maxHeight: 400, overflowY: 'auto', paddingRight: 8 }}>
+                        <div
+                            style={{
+                                marginTop: 12,
+                                maxHeight: 400,
+                                overflowY: 'auto',
+                                paddingRight: 8,
+                            }}
+                        >
                             <Space direction="vertical" size={10} style={{ width: '100%' }}>
                                 {appPerms.map((p) => (
                                     <Checkbox
@@ -280,7 +390,9 @@ export default function RolesPage() {
                                     >
                                         <Space size={6}>
                                             <Text style={{ fontFamily: FONT }}>{p.name}</Text>
-                                            <Tag color={PURPLE} style={{ marginInlineEnd: 0 }}>{p.slug}</Tag>
+                                            <Tag color={PURPLE} style={{ marginInlineEnd: 0 }}>
+                                                {p.slug}
+                                            </Tag>
                                         </Space>
                                     </Checkbox>
                                 ))}

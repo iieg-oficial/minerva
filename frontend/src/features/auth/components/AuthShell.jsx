@@ -70,15 +70,25 @@ export default function AuthShell({ appName, brandColor = BRAND.purple, logoUrl,
                         >
                             <Flex align="center" justify="center" gap={18} wrap>
                                 <img
-                                    src={logoUrl || `${import.meta.env.BASE_URL}iieg-favicon-192.png`}
+                                    src={
+                                        logoUrl || `${import.meta.env.BASE_URL}iieg-favicon-192.png`
+                                    }
                                     alt=""
                                     aria-hidden="true"
-                                    style={{ height: 86, width: 'auto', maxWidth: 200, objectFit: 'contain' }}
+                                    style={{
+                                        height: 86,
+                                        width: 'auto',
+                                        maxWidth: 200,
+                                        objectFit: 'contain',
+                                    }}
                                     onError={(e) => {
                                         e.currentTarget.src = `${import.meta.env.BASE_URL}iieg-favicon-192.png`;
                                     }}
                                 />
-                                <div style={{ width: 2, height: 54, background: BRAND.orange }} aria-hidden />
+                                <div
+                                    style={{ width: 2, height: 54, background: BRAND.orange }}
+                                    aria-hidden
+                                />
                                 <Title
                                     level={1}
                                     style={{
