@@ -21,6 +21,37 @@ class AuthTokenResponse(BaseModel):
     refresh_token: str | None = None  # se rota en cada uso (RFC 6749 §10.4)
 
 
+# --- Sesión del panel (BFF) ------------------------------------------------
+# El panel ya no recibe el JWT: solo descriptores no sensibles + el token CSRF.
+class AccountDescriptor(BaseModel):
+    sub: str
+    email: str
+    name: str
+    is_admin: bool
+    exp: int
+    expired: bool
+
+
+class PanelSessionResponse(BaseModel):
+    """Respuesta de login/register/refresh del panel: la cuenta activa y el token
+    CSRF. El sid opaco viaja en la cookie HttpOnly, nunca en el cuerpo."""
+
+    active: AccountDescriptor | None
+    csrf: str
+
+
+class SessionView(BaseModel):
+    """Estado del selector multi-cuenta: cuentas del navegador + activa + CSRF."""
+
+    accounts: list[AccountDescriptor]
+    active: AccountDescriptor | None
+    csrf: str
+
+
+class SetActiveRequest(BaseModel):
+    sub: str
+
+
 class TokenExchange(BaseModel):
     client_id: str
     client_secret: str

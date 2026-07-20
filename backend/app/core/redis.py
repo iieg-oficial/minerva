@@ -1,8 +1,11 @@
 """Cliente Redis async compartido.
 
-Redis se usa con alcance acotado: rate limiting, blacklist de tokens
-revocados y sesiones efímeras del flujo
-`/authorize`. NO es la fuente de verdad de datos persistentes (eso es PostgreSQL).
+Redis es también un **control de seguridad**, no solo caché: rate limiting, blacklist
+de `jti` revocados, cortes de invalidación por usuario y el **contenedor de sesión del
+panel** (patrón BFF, `panel_session.py`) — la fuente de verdad efímera del multi-cuenta.
+Perder Redis cierra las sesiones del panel y re-habilita tokens revocados; en producción
+conviene persistencia (`appendonly`) y `noeviction` en ese keyspace. NO es la fuente de
+verdad de datos persistentes (eso es PostgreSQL).
 
 El cliente es un singleton por proceso. Con Gunicorn cada worker es un proceso
 propio y crea su propia instancia; es correcto porque Redis es externo y

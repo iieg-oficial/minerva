@@ -85,46 +85,64 @@ puerto sea consistente extremo a extremo antes de asumir un bug. No "corrijas" u
 
 ## Sesiones, autenticación y selector de cuentas
 
-Minerva firma **todo con RS256/JWKS** (no HS256). Autenticación por **Bearer en header**,
-stateless: **no hay tabla `sessions` ni cookies de sesión**.
+Minerva firma **todo con RS256/JWKS** (no HS256). Dos modelos de sesión, deliberadamente distintos:
+
+- **Consumidores OAuth/OIDC → stateless, Bearer en header.** No hay estado de sesión en servidor:
+  el token se valida por firma/`jti`/corte. Sin cambios.
+- **Panel admin → stateful (patrón BFF), cookie opaca HttpOnly.** El navegador NO guarda el JWT:
+  solo una cookie opaca `__Host-minerva_sid` (dev: `minerva_sid`). El estado multi-cuenta vive en
+  Redis (`backend/app/core/panel_session.py`). Es la **única** excepción al principio stateless.
 
 - **Emisión/validación de tokens:** `backend/app/core/security.py` (create/decode RS256, `jti`,
-  `hash_token`) y `backend/app/core/dependencies/auth.py` (`get_current_user`/`get_optional_user`:
-  valida contra JWKS, rechaza `jti` revocado y rechaza tokens con `iat` anterior al corte de
-  invalidación del usuario).
-- **Sesión del panel admin:** token RS256 (TTL 8h) emitido en login/register vía
-  `OIDCService.issue_session_token`. En el frontend vive en `localStorage`.
+  `hash_token`) y `backend/app/core/dependencies/auth.py`: `_resolve_token` valida contra JWKS,
+  rechaza `jti` revocado y tokens con `iat` anterior al corte de invalidación. Dependencias por
+  clase: `get_current_panel_user`/`get_optional_panel_user` (cookie → contenedor Redis → JWT
+  `typ=session` de la cuenta activa → `_resolve_token`); `get_current_access_user` y
+  `get_current_devkit_user` (Bearer, consumidores).
+- **Contenedor de sesión del panel:** `backend/app/core/panel_session.py`. Clave Redis
+  `minerva:psid:{sha256(sid)}`; guarda por cuenta el JWT `typ=session`, `exp`, `jti` y el descriptor
+  no sensible, más la cuenta activa y el token CSRF. TTL = TTL de sesión del panel. El `sid` (256
+  bits) se genera en el backend, se guarda hasheado y se **rota** en cada login/registro/refresh
+  (fijación de sesión). La pérdida/limpieza de Redis invalida las sesiones del panel.
+- **CSRF + Origin:** `backend/app/core/csrf.py` — middleware que exige `X-CSRF-Token` (synchronizer,
+  comparación constante) y `Origin` válido en las mutaciones que traen la cookie de panel. Exentos:
+  `/auth/login`, `/auth/register` (crean sesión) y los endpoints OAuth de consumidor.
 - **OIDC para consumidores:** módulo `backend/app/modules/auth/` (`/authorize`, `/token`,
   `/revoke`, PKCE, refresh con rotación) + `backend/app/modules/oidc/` (discovery, JWKS,
   `/userinfo`, claves de firma). Guía consumidor: `docs/integracion.md` y skill
   `.claude/skills/minerva-integration/`.
-- **Logout:** `POST /auth/logout` blacklistea el `jti` en Redis
-  (`backend/app/core/token_blacklist.py`) — invalida el token de verdad. **Pero el panel lo usa
-  solo en "Cerrar todas las sesiones"** (`logoutAll`). El "Cerrar sesión" normal es un **logout
-  suave client-side** (`session.deactivate()`): sale de la cuenta sin invalidar el token, que sigue
-  válido en el store para volver a entrar sin re-teclear (estilo Google). Ver la subsección del
-  selector.
+- **Logout del panel:** `POST /auth/logout` es **suave** (cierra la cuenta activa del contenedor sin
+  revocar; las demás quedan para reingresar). La revocación real (blacklist del `jti` en Redis,
+  `backend/app/core/token_blacklist.py`) está en `DELETE /auth/session/accounts/{sub}` (quitar cuenta)
+  y `POST /auth/logout-all` (cerrar todo + destruir el contenedor + borrar cookie).
 - **Invalidación por usuario (cambio de credenciales/status):** cambiar contraseña, correo o poner
   status ≠ `active` mata las sesiones vigentes. `invalidate_user_tokens` marca un corte por `iat` en
-  Redis (`minerva:uinval:{sub}`, chequeado en `get_current_user`) y `UserService.revoke_refresh_tokens`
+  Redis (`minerva:uinval:{sub}`, chequeado en `_resolve_token`) y `UserService.revoke_refresh_tokens`
   revoca los refresh tokens OIDC (blacklisteando sus access `jti`). Disparado en el router de usuarios
   (`update_user`/`update_user_status`). Login/authorize/refresh ya rechazan usuarios no-`active`.
 - **Red en producción (nginx consolidado):** un solo punto público (nginx del servicio `frontend`)
   sirve la SPA y proxea al backend `/.well-known`, `/auth`, `/userinfo`, `/api` (strip) y `/api/v1`
   (preserva). El backend **no publica puerto** en el deploy; el issuer va sin `:9000`. `FORWARDED_ALLOW_IPS`
-  hace que el rate limit cuente por IP real. Detalle: `frontend/nginx.conf` y `docs/despliegue.md` §2.2.
+  hace que el rate limit cuente por IP real. `nginx.conf` emite además cabeceras defensivas (CSP con
+  `frame-ancestors 'none'` y `img-src ... https:` para logos de branding, `nosniff`, `Referrer-Policy`).
+  **HSTS no se emite aquí** (nginx sirve HTTP): va en el terminador TLS externo, sin `preload`. Detalle:
+  `frontend/nginx.conf` y `docs/despliegue.md` §2.2.
 
 ### Selector de cuentas / multi-sesión (v0.3.0)
 
-Patrón "cambiar de cuenta" de Google/GitHub. El estado multi-sesión vive en el **cliente** (no
-hay tabla de sesiones): la SPA guarda varias cuentas iniciadas y muestra un selector.
+Patrón "cambiar de cuenta" de Google/GitHub. La **fuente de verdad del multi-cuenta es el backend**
+(contenedor en Redis); la SPA solo cachea descriptores no sensibles para pintar el selector.
 
-- **Store (fuente de verdad):** `frontend/src/api/session.js` — arreglo `minerva_sessions` +
-  `minerva_active_sub` en localStorage; mantiene el **espejo legacy** `access_token`/`user`/
-  `is_admin` de la cuenta activa (por eso `client.js` y `ProtectedRoute` **no cambiaron**).
-  Estados de una cuenta: `isExpired` (por `exp`) → activa/vencida; `deactivate()` = logout suave
-  (limpia el espejo, conserva `exp`); `expireActive()` = degradar a vencida tras un 401. Self-check
-  ejecutable: `frontend/src/api/session.selfcheck.mjs` (`node`).
+- **Fuente de verdad:** el contenedor de sesión en Redis (`backend/app/core/panel_session.py`).
+  `GET /auth/session` devuelve los descriptores (`sub`, email, nombre, `is_admin`, `exp`, `expired`),
+  la cuenta activa y el CSRF — **nunca** el JWT. `POST /auth/session/active` cambia la activa;
+  `DELETE /auth/session/accounts/{sub}` quita+revoca; `POST /auth/logout` es logout suave;
+  `POST /auth/logout-all` cierra todo.
+- **Cliente:** `frontend/src/api/session.js` es un cliente + caché en memoria de ese estado (sin
+  tokens en `localStorage`). `frontend/src/features/auth/SessionContext.jsx` (`SessionProvider`) hace
+  un fetch al montar y expone `{loading, active, accounts, isAdmin, refresh}`; lo consumen
+  `ProtectedRoute`, `AccountSelector`, `AdminLayout`, `LoginPage` y `AuthorizePage`. `client.js`
+  adjunta `X-CSRF-Token` en mutaciones y va con `withCredentials`.
 - **Shell visual compartido:** `frontend/src/features/auth/components/AuthShell.jsx` — fondo
   morado + card de dos columnas (contenido izquierdo vía `children`, branding a la derecha) +
   footer Jalisco. Lo usan tanto `LoginPage.jsx` (formulario) como el selector, para que se vean

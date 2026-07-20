@@ -96,7 +96,22 @@ Implicaciones:
   `http://<host>` **sin `:9000`**.
 - El backend recibe `FORWARDED_ALLOW_IPS=*` (seguro: nadie más que nginx lo alcanza), así honra
   `X-Forwarded-For` y el **rate limit de login se cuenta por IP real del cliente**, no por la de nginx.
-- SSL futuro = terminar TLS en este nginx (un solo lugar); `nginx.conf` ya envía `X-Forwarded-Proto`.
+- **TLS lo termina un terminador externo** delante de nginx (este nginx sirve HTTP). nginx propaga el
+  esquema real del cliente al backend con `X-Forwarded-Proto` (respeta el que envía el terminador;
+  si no hay, usa `$scheme`), así el backend ve `https` aunque el salto interno sea HTTP.
+- **Cabeceras defensivas:** `nginx.conf` emite CSP (con `frame-ancestors 'none'`),
+  `X-Content-Type-Options: nosniff` y `Referrer-Policy`. La CSP permite `style-src 'unsafe-inline'`
+  por Ant Design (cssinjs) e `img-src ... https:` para los logos de branding por app (`logo_url`).
+  **HSTS no lo emite este nginx** (sirve solo `:80`; el navegador ignora un HSTS recibido por HTTP):
+  configúralo en el **terminador TLS** que va delante, con
+  `add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;` — **sin
+  `preload`** por defecto (es difícil de revertir y exige HTTPS en todos los subdominios). La cookie de
+  sesión del panel usa el prefijo `__Host-` (exige HTTPS): en HTTP local se usa `minerva_sid` sin
+  `Secure`, derivado de `MINERVA_MODE`.
+- **Redis es control de seguridad, no solo caché.** Además del rate limit, guarda la blacklist de
+  `jti`, los cortes de invalidación por usuario y el **contenedor de sesión del panel**. Perder Redis
+  cierra las sesiones del panel y re-habilita tokens revocados: en producción, persistencia
+  (`appendonly`) y `maxmemory-policy noeviction` para su keyspace de seguridad.
 
 ### 2.3 Variables a revisar/ajustar
 
@@ -128,8 +143,11 @@ resto de variables de la sección 2.1) en el `.env` de producción.
 Lo siguiente es **decisión de infraestructura del IIEG al desplegar a un servidor
 real**, no algo que el backend resuelva por sí mismo:
 
-- **TLS/HTTPS**: al tener certificado, terminar TLS en el nginx del servicio `frontend` (el único
-  punto público; ver 2.2) y cambiar `MINERVA_ISSUER`/`FRONTEND_URL` a `https://`. Por ahora HTTP.
+- **TLS/HTTPS**: al tener certificado, terminar TLS en un **terminador/reverse proxy externo** delante
+  del nginx del servicio `frontend`, emitir ahí **HSTS** (sin `preload` por defecto) y cambiar
+  `MINERVA_ISSUER`/`FRONTEND_URL` a `https://`. Ese terminador debe enviar `X-Forwarded-Proto: https`
+  (nginx ya lo propaga al backend). Por ahora HTTP. Alternativa: terminar TLS en el propio nginx
+  añadiendo un `server` con `listen 443 ssl` y su `add_header Strict-Transport-Security`.
 - **Secret manager**: `MINERVA_KEY_ENCRYPTION_KEY`, `ADMIN_PASSWORD`, credenciales de
   PostgreSQL/Redis deben vivir en un gestor de secretos real, no en un `.env` plano en
   el servidor.

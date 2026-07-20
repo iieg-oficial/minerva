@@ -1,10 +1,11 @@
 import json
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
 from sqlmodel import Session
 
+from app.core import panel_session
 from app.core.config import settings
 from app.core.dependencies.db import get_db
 from app.core.exceptions import UnauthorizedError
@@ -91,14 +92,72 @@ def _bearer_user_dependency(
     return dependency
 
 
-# Sesión del panel/admin (`typ=session`, `aud=minerva`). Un access de consumidor o
-# un dev token —aunque su sujeto sea admin— no cruzan aquí.
-get_current_session_user = _bearer_user_dependency({"session"}, audience="minerva")
-get_optional_session_user = _bearer_user_dependency({"session"}, audience="minerva", optional=True)
-
 # Access token de consumidor (`typ=access`). Para `/userinfo`: el `aud` es el código
 # de la app y varía por consumidor, así que no se fija aquí (se valida en el SDK).
 get_current_access_user = _bearer_user_dependency({"access"})
 
 # Self-service del Dev Kit (`/api/v1/me*`): access de consumidor o dev token.
 get_current_devkit_user = _bearer_user_dependency({"access", "dev"})
+
+
+# --- Sesión del panel por cookie opaca (patrón BFF) ------------------------
+# El panel ya NO autentica por Bearer: el token `typ=session` vive en Redis
+# (contenedor multi-cuenta) y el navegador solo trae la cookie opaca. La
+# validación del JWT sigue siendo `_resolve_token` (firma/iss/aud/typ/jti/corte):
+# aquí solo se resuelve QUÉ token usar (el de la cuenta activa del contenedor).
+
+
+async def _panel_user_from_cookie(request: Request, session: Session, redis: Redis, optional: bool) -> dict | None:
+    sid = request.cookies.get(settings.session_cookie_name)
+    container = await panel_session.read(redis, sid)
+    if container is None:
+        if optional:
+            return None
+        raise UnauthorizedError(detail="Sesión de panel no encontrada")
+    token = panel_session.active_token(container)
+    if not token:
+        if optional:
+            return None
+        raise UnauthorizedError(detail="No hay una cuenta activa en la sesión")
+    try:
+        payload = await _resolve_token(token, session, redis, expected_types={"session"}, audience="minerva")
+    except ValueError as e:
+        if optional:
+            return None
+        raise UnauthorizedError(detail=str(e))
+    payload["sid"] = sid
+    return payload
+
+
+async def get_current_panel_user(
+    request: Request,
+    session: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> dict:
+    """Usuario de la cuenta activa del contenedor de sesión (cookie opaca). Reemplaza
+    al antiguo Bearer `typ=session` en los endpoints del panel/admin."""
+    return await _panel_user_from_cookie(request, session, redis, optional=False)
+
+
+async def get_optional_panel_user(
+    request: Request,
+    session: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> dict | None:
+    """Variante opcional para `/authorize` (navegación directa del consumidor con la
+    cookie de panel presente; sin sesión no falla, deja seguir el flujo a login)."""
+    return await _panel_user_from_cookie(request, session, redis, optional=True)
+
+
+async def get_panel_session(
+    request: Request,
+    redis: Redis = Depends(get_redis),
+) -> dict:
+    """Contenedor + sid de la sesión del panel, SIN exigir cuenta activa válida (para
+    el selector y los endpoints de logout/gestión de cuentas). No valida el JWT: eso
+    lo hacen los endpoints que actúan sobre la cuenta activa."""
+    sid = request.cookies.get(settings.session_cookie_name)
+    container = await panel_session.read(redis, sid)
+    if container is None:
+        raise UnauthorizedError(detail="Sesión de panel no encontrada")
+    return {"sid": sid, "container": container}

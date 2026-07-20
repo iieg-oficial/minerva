@@ -47,7 +47,10 @@ export default function UsersPage() {
 
     useEffect(() => {
         // Se precargan para el selector de "Aplicaciones y roles" al crear un usuario.
-        Promise.all([applicationsAPI.listApplications({ limit: 100 }), rolesAPI.listRoles({ limit: 500 })])
+        Promise.all([
+            applicationsAPI.listApplications({ limit: 100 }),
+            rolesAPI.listRoles({ limit: 500 }),
+        ])
             .then(([appsData, rolesData]) => {
                 setApplications(appsData.items || []);
                 setRoles(rolesData.items || []);
@@ -145,7 +148,12 @@ export default function UsersPage() {
             key: 'actions',
             width: 60,
             render: (_, record) => (
-                <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                <Button
+                    type="text"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => handleEdit(record)}
+                />
             ),
         },
     ];
@@ -154,11 +162,30 @@ export default function UsersPage() {
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <Title level={4} style={{ margin: 0 }}>Usuarios</Title>
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 16,
+                }}
+            >
+                <Title level={4} style={{ margin: 0 }}>
+                    Usuarios
+                </Title>
                 <Space>
-                    <Button icon={<ReloadOutlined />} onClick={fetchUsers}>Actualizar</Button>
-                    <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingUser(null); form.resetFields(); setModalOpen(true); }}>
+                    <Button icon={<ReloadOutlined />} onClick={fetchUsers}>
+                        Actualizar
+                    </Button>
+                    <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => {
+                            setEditingUser(null);
+                            form.resetFields();
+                            setModalOpen(true);
+                        }}
+                    >
                         Nuevo usuario
                     </Button>
                 </Space>
@@ -173,14 +200,20 @@ export default function UsersPage() {
                     total,
                     current: Math.floor(pagination.offset / pagination.limit) + 1,
                     pageSize: pagination.limit,
-                    onChange: (page, pageSize) => setPagination({ offset: (page - 1) * pageSize, limit: pageSize }),
+                    onChange: (page, pageSize) =>
+                        setPagination({ offset: (page - 1) * pageSize, limit: pageSize }),
                 }}
             />
 
             <Modal
                 title={isEditMode ? 'Editar usuario' : 'Nuevo usuario'}
                 open={modalOpen}
-                onCancel={() => { setModalOpen(false); setEditingUser(null); form.resetFields(); editForm.resetFields(); }}
+                onCancel={() => {
+                    setModalOpen(false);
+                    setEditingUser(null);
+                    form.resetFields();
+                    editForm.resetFields();
+                }}
                 footer={null}
             >
                 <Form
@@ -193,43 +226,82 @@ export default function UsersPage() {
                             <Form.Item name="full_name" label="Nombre" rules={[{ required: true }]}>
                                 <Input />
                             </Form.Item>
-                            <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
+                            <Form.Item
+                                name="email"
+                                label="Email"
+                                rules={[{ required: true, type: 'email' }]}
+                            >
                                 <Input />
                             </Form.Item>
                             <Form.Item name="password" label="Contraseña">
                                 <Input.Password placeholder="Opcional si es Google" />
                             </Form.Item>
                             <Form.Item name="auth_provider" label="Proveedor" initialValue="local">
-                                <Select options={[{ label: 'Local', value: 'local' }, { label: 'Google', value: 'google' }]} />
+                                <Select
+                                    options={[
+                                        { label: 'Local', value: 'local' },
+                                        { label: 'Google', value: 'google' },
+                                    ]}
+                                />
                             </Form.Item>
 
-                            <Divider style={{ margin: '8px 0 16px' }}>Aplicaciones y roles (opcional)</Divider>
+                            <Divider style={{ margin: '8px 0 16px' }}>
+                                Aplicaciones y roles (opcional)
+                            </Divider>
                             <Form.List name="roleAssignments">
                                 {(fields, { add, remove }) => (
                                     <>
                                         {fields.map(({ key, name, ...restField }) => {
-                                            const applicationId = roleAssignments[name]?.application_id;
+                                            const applicationId =
+                                                roleAssignments[name]?.application_id;
                                             const roleOptions = roles
                                                 .filter((r) => r.application_id === applicationId)
                                                 .map((r) => ({ label: r.name, value: r.id }));
                                             return (
-                                                <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+                                                <Space
+                                                    key={key}
+                                                    align="baseline"
+                                                    style={{ display: 'flex', marginBottom: 8 }}
+                                                >
                                                     <Form.Item
                                                         {...restField}
                                                         name={[name, 'application_id']}
-                                                        rules={[{ required: true, message: 'Selecciona una aplicación' }]}
+                                                        rules={[
+                                                            {
+                                                                required: true,
+                                                                message:
+                                                                    'Selecciona una aplicación',
+                                                            },
+                                                        ]}
                                                     >
                                                         <Select
                                                             placeholder="Aplicación"
                                                             style={{ width: 160 }}
-                                                            options={applications.map((a) => ({ label: a.name, value: a.id }))}
-                                                            onChange={() => form.setFieldValue(['roleAssignments', name, 'role_id'], undefined)}
+                                                            options={applications.map((a) => ({
+                                                                label: a.name,
+                                                                value: a.id,
+                                                            }))}
+                                                            onChange={() =>
+                                                                form.setFieldValue(
+                                                                    [
+                                                                        'roleAssignments',
+                                                                        name,
+                                                                        'role_id',
+                                                                    ],
+                                                                    undefined
+                                                                )
+                                                            }
                                                         />
                                                     </Form.Item>
                                                     <Form.Item
                                                         {...restField}
                                                         name={[name, 'role_id']}
-                                                        rules={[{ required: true, message: 'Selecciona un rol' }]}
+                                                        rules={[
+                                                            {
+                                                                required: true,
+                                                                message: 'Selecciona un rol',
+                                                            },
+                                                        ]}
                                                     >
                                                         <Select
                                                             placeholder="Rol"
@@ -238,12 +310,21 @@ export default function UsersPage() {
                                                             options={roleOptions}
                                                         />
                                                     </Form.Item>
-                                                    <Button type="text" icon={<DeleteOutlined />} onClick={() => remove(name)} />
+                                                    <Button
+                                                        type="text"
+                                                        icon={<DeleteOutlined />}
+                                                        onClick={() => remove(name)}
+                                                    />
                                                 </Space>
                                             );
                                         })}
                                         <Form.Item>
-                                            <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                                            <Button
+                                                type="dashed"
+                                                onClick={() => add()}
+                                                block
+                                                icon={<PlusOutlined />}
+                                            >
                                                 Agregar aplicación
                                             </Button>
                                         </Form.Item>
@@ -257,7 +338,11 @@ export default function UsersPage() {
                             <Form.Item name="full_name" label="Nombre" rules={[{ required: true }]}>
                                 <Input />
                             </Form.Item>
-                            <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
+                            <Form.Item
+                                name="email"
+                                label="Email"
+                                rules={[{ required: true, type: 'email' }]}
+                            >
                                 <Input />
                             </Form.Item>
                             <Form.Item
@@ -265,7 +350,10 @@ export default function UsersPage() {
                                 label="Nueva contraseña"
                                 extra="Déjalo vacío para conservar la contraseña actual"
                             >
-                                <Input.Password placeholder="••••••••" autoComplete="new-password" />
+                                <Input.Password
+                                    placeholder="••••••••"
+                                    autoComplete="new-password"
+                                />
                             </Form.Item>
                             <Form.Item name="status" label="Estado">
                                 <Select options={STATUS_OPTIONS} />

@@ -11,7 +11,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             theme={{
                 token: {
                     colorPrimary: '#2e4372',
-                    fontFamily: '"Garet", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    fontFamily:
+                        '"Garet", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                     borderRadius: 8,
                     borderRadiusLG: 12,
                     borderRadiusSM: 6,

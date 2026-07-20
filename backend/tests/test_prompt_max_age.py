@@ -44,8 +44,13 @@ def app_ctx():
 
 
 def _login_and_get_token(client, email: str, password: str = "testpass123") -> str:
-    resp = client.post("/auth/register", json={"email": email, "full_name": "U", "password": password})
-    return resp.json()["access_token"]
+    # El panel es cookie-only: /register ya no devuelve el JWT. Se crea el usuario y se
+    # acuña su token de sesión para usarlo por Bearer (limpiando la cookie residual).
+    client.post("/auth/register", json={"email": email, "full_name": "U", "password": password})
+    client.cookies.clear()
+    with Session(test_engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        return OIDCService(session).issue_session_token(user.id, user.email, user.full_name)
 
 
 def test_prompt_login_forces_redirect_to_login(client, app_ctx):

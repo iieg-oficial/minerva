@@ -73,8 +73,9 @@ class Settings(BaseSettings):
     MINERVA_JWKS_CACHE_TTL_SECONDS: int = 300
 
     # --- Redis -------------------------------------------------------------
-    # Redis tiene un alcance acotado: rate limiting, blacklist de tokens y
-    # sesiones efímeras del flujo /authorize. NO es la fuente de verdad de datos.
+    # Redis es control de seguridad: rate limiting, blacklist de tokens, cortes de
+    # invalidación por usuario y el contenedor de sesión del panel (patrón BFF, la
+    # fuente de verdad efímera del multi-cuenta). NO es la fuente de verdad de datos.
     REDIS_URL: str = "redis://minerva_redis:6379/0"
     RATE_LIMIT_LOGIN_MAX: int = 5
     RATE_LIMIT_LOGIN_WINDOW: int = 900  # segundos (15 min)
@@ -101,6 +102,19 @@ class Settings(BaseSettings):
     @property
     def is_dev_mode(self) -> bool:
         return self.MINERVA_MODE.lower() == "dev"
+
+    # --- Cookie de sesión del panel (BFF) ----------------------------------
+    # El panel usa una cookie opaca HttpOnly (solo un id de sesión, nunca el JWT).
+    # En producción usa el prefijo `__Host-` (exige Secure + Path=/ + sin Domain,
+    # por eso solo funciona sobre HTTPS); en dev HTTP se usa un nombre distinto sin
+    # Secure para no romper el desarrollo local, sin debilitar producción.
+    @property
+    def session_cookie_secure(self) -> bool:
+        return not self.is_dev_mode
+
+    @property
+    def session_cookie_name(self) -> str:
+        return "minerva_sid" if self.is_dev_mode else "__Host-minerva_sid"
 
     def validate_production_config(self) -> None:
         """Falla rápido al arrancar si MINERVA_MODE no es dev y quedó algún valor

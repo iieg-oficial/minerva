@@ -11,7 +11,9 @@ export async function getPermission(permId) {
 }
 
 export async function createPermission(applicationId, data) {
-    const res = await client.post('/permissions', data, { params: { application_id: applicationId } });
+    const res = await client.post('/permissions', data, {
+        params: { application_id: applicationId },
+    });
     return res.data;
 }
 

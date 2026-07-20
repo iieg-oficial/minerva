@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { App as AntApp, Form, Input, Button, Typography, Flex, theme } from 'antd';
+import { App as AntApp, Form, Input, Button, Typography, Flex, Spin, theme } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router';
 import * as authAPI from '@/api/auth';
-import { getSessions, setActive } from '@/api/session';
+import { useSession } from '@features/auth/SessionContext';
 import { getAppBranding } from '@/api/public';
 import AuthShell, { BRAND } from '../components/AuthShell';
 import AccountSelector from '../components/AccountSelector';
@@ -40,6 +40,7 @@ export default function LoginPage() {
     const [searchParams] = useSearchParams();
     const { token } = useToken();
     const { message } = AntApp.useApp();
+    const { accounts, loading: sessionLoading, refresh } = useSession();
 
     const next = safeNext(searchParams.get('next'));
     const clientId = clientIdFromNext(searchParams.get('next'));
@@ -51,7 +52,7 @@ export default function LoginPage() {
     // Sin cuentas guardadas → login_first siempre; con cuentas → selector
     // (login_again) salvo que se pida el formulario (agregar/reingresar/?add=1).
     // Ya no auto-saltamos al panel. `forceSelector` gana sobre ?add=1 de la URL.
-    const hasSessions = getSessions().length > 0;
+    const hasSessions = accounts.length > 0;
     const showForm = !hasSessions || (!forceSelector && (addMode || forcedForm));
 
     useEffect(() => {
@@ -70,6 +71,7 @@ export default function LoginPage() {
         setLoading(true);
         try {
             await authAPI.login(values.email, values.password);
+            await refresh(); // refresca el contexto para que ProtectedRoute vea la sesión
             navigate(next, { replace: true });
         } catch (error) {
             const status = error.response?.status;
@@ -79,7 +81,9 @@ export default function LoginPage() {
                     { name: 'password', errors: [detail || 'Usuario o contraseña incorrectos'] },
                 ]);
             } else if (status === 429) {
-                message.error(detail || 'Demasiados intentos. Espera unos minutos e intenta de nuevo.');
+                message.error(
+                    detail || 'Demasiados intentos. Espera unos minutos e intenta de nuevo.'
+                );
             } else {
                 // Cualquier otro error (500, red caída, etc.): antes fallaba en silencio.
                 message.error(detail || 'No se pudo iniciar sesión. Intenta de nuevo.');
@@ -89,16 +93,28 @@ export default function LoginPage() {
         }
     };
 
+    // Mientras se resuelve el estado de sesión, evita el parpadeo formulario↔selector.
+    if (sessionLoading) {
+        return (
+            <AuthShell appName={appName} brandColor={brandColor} logoUrl={branding?.logo_url}>
+                <Flex align="center" justify="center" style={{ minHeight: 200, width: '100%' }}>
+                    <Spin size="large" />
+                </Flex>
+            </AuthShell>
+        );
+    }
+
     if (!showForm) {
         return (
             <AuthShell appName={appName} brandColor={brandColor} logoUrl={branding?.logo_url}>
                 <AccountSelector
                     appName={appName}
                     brandColor={brandColor}
-                    onSelect={(s) => {
-                        setActive(s.sub);
+                    onSelect={async () => {
+                        await refresh();
                         navigate(next, { replace: true });
                     }}
+                    onAccountsChanged={refresh}
                     onReauth={(s) => {
                         setReauthEmail(s.email);
                         setForceSelector(false);
@@ -129,7 +145,14 @@ export default function LoginPage() {
                 >
                     Hola
                 </Title>
-                <Text style={{ fontSize: 12, color: '#1f2937', fontWeight: 400, fontFamily: '"Garet", sans-serif' }}>
+                <Text
+                    style={{
+                        fontSize: 12,
+                        color: '#1f2937',
+                        fontWeight: 400,
+                        fontFamily: '"Garet", sans-serif',
+                    }}
+                >
                     Ingresa tus datos para iniciar sesión.
                 </Text>
             </Flex>
@@ -140,12 +163,22 @@ export default function LoginPage() {
                 onFinish={onFinish}
                 autoComplete="off"
                 layout="vertical"
-                initialValues={prefillEmail ? { email: prefillEmail } : import.meta.env.DEV ? { email: 'admin@iieg.gob.mx' } : {}}
+                initialValues={
+                    prefillEmail
+                        ? { email: prefillEmail }
+                        : import.meta.env.DEV
+                          ? { email: 'admin@iieg.gob.mx' }
+                          : {}
+                }
                 className="login-form-minerva"
                 requiredMark={(label, info) => (
                     <>
                         {label}
-                        {info.required && <span style={{ color: BRAND.orange, marginLeft: 4, fontWeight: 700 }}>*</span>}
+                        {info.required && (
+                            <span style={{ color: BRAND.orange, marginLeft: 4, fontWeight: 700 }}>
+                                *
+                            </span>
+                        )}
                     </>
                 )}
             >
@@ -161,7 +194,11 @@ export default function LoginPage() {
                     <Input placeholder="correo@iieg.gob.mx" />
                 </Form.Item>
 
-                <Form.Item label="Contraseña" name="password" rules={[{ required: true, message: 'Ingrese su contraseña' }]}>
+                <Form.Item
+                    label="Contraseña"
+                    name="password"
+                    rules={[{ required: true, message: 'Ingrese su contraseña' }]}
+                >
                     <Input.Password
                         placeholder="Contraseña"
                         iconRender={(visible) => (
@@ -203,7 +240,11 @@ export default function LoginPage() {
                             setReauthEmail(null);
                             setForceSelector(true);
                         }}
-                        style={{ marginTop: 8, color: brandColor, fontFamily: '"Garet", sans-serif' }}
+                        style={{
+                            marginTop: 8,
+                            color: brandColor,
+                            fontFamily: '"Garet", sans-serif',
+                        }}
                     >
                         Volver a mis cuentas
                     </Button>
