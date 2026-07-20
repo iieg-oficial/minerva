@@ -34,6 +34,10 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   blacklist de `jti`, los cortes de invalidación por usuario y las sesiones del panel, **resucitando
   tokens revocados** hasta su `exp` (hasta 8 h). Ahora un token revocado sigue rechazado tras
   reiniciar Redis; la política ante Redis caído es fail-closed (la request se rechaza, nunca fail-open).
+  Además, la invalidación de sesiones al cambiar credenciales/status (y la revocación OAuth de
+  `/revoke`) ahora escribe las invalidaciones en Redis **antes** de confirmar PostgreSQL: si Redis
+  falla, se hace rollback y el cambio no queda durable sin su invalidación (antes podía confirmarse
+  el cambio en PG y perderse el corte/blacklist en Redis).
 - **Cabeceras HTTP defensivas en `nginx.conf`.** CSP (con `frame-ancestors 'none'`;
   `style-src 'unsafe-inline'` por Ant Design/cssinjs; `img-src` incluye `https:` para los logos de
   branding por app), `X-Content-Type-Options: nosniff` y `Referrer-Policy`. **HSTS no lo emite este
