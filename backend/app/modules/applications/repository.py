@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 
 from app.modules.applications.models import Application, RedirectURI
+from app.modules.audit.models import AuditLog
+from app.modules.auth.models import AuthCode, RefreshToken
 from app.modules.devkit.models import ManifestImport
 from app.modules.groups.models import GroupRole, UserRole
 from app.modules.permissions.models import Permission, RolePermission
@@ -48,8 +50,11 @@ class ApplicationRepository:
 
         Borra en cascada manualmente (las FKs no declaran ON DELETE CASCADE):
         redirect URIs, permisos, roles, sus vínculos rol-permiso, las
-        asignaciones de esos roles a usuarios y grupos, y el historial de
-        importaciones de manifiesto. Es una operación destructiva e irreversible.
+        asignaciones de esos roles a usuarios y grupos, el historial de
+        importaciones de manifiesto y los tokens OIDC emitidos (auth_codes y
+        refresh_tokens, ambos con FK a `applications.client_id`). Los registros
+        de auditoría se conservan: se les pone `application_id = None`. Es una
+        operación destructiva e irreversible.
 
         Se hace `flush()` por niveles de dependencia para forzar el orden de los
         DELETE: sin `relationship()` declaradas, la unit of work de SQLAlchemy no
@@ -82,6 +87,15 @@ class ApplicationRepository:
             self.session.delete(uri)
         for record in self.session.exec(select(ManifestImport).where(ManifestImport.application_id == app.id)).all():
             self.session.delete(record)
+        # Tokens OIDC emitidos: FK a applications.client_id (no a id).
+        for code in self.session.exec(select(AuthCode).where(AuthCode.client_id == app.client_id)).all():
+            self.session.delete(code)
+        for token in self.session.exec(select(RefreshToken).where(RefreshToken.client_id == app.client_id)).all():
+            self.session.delete(token)
+        # Los registros de auditoría se conservan: solo se desliga la app (FK a applications.id).
+        for log in self.session.exec(select(AuditLog).where(AuditLog.application_id == app.id)).all():
+            log.application_id = None
+            self.session.add(log)
         self.session.flush()
 
         # Nivel 3: la aplicación.

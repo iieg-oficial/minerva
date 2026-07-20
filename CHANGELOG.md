@@ -46,6 +46,15 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   nginx** (sirve HTTP; el deploy va tras un terminador TLS externo): debe configurarse en ese
   terminador, sin `preload` por defecto.
 
+### Fixed
+
+- **Borrar una aplicación ya usada dejaba huérfanos o violaba la FK.** `ApplicationRepository.delete`
+  cascadeaba roles, permisos, redirect URIs, vínculos e importaciones de manifiesto, pero omitía los
+  `auth_codes` y `refresh_tokens` emitidos por la app (ambos con FK a `applications.client_id`) ni los
+  `audit_logs` (FK a `applications.id`). Ahora, en la misma transacción y antes de eliminar la app, se
+  borran sus tokens OIDC (cascade duro, coherente con el resto) y se **conservan** los registros de
+  auditoría desligándolos (`application_id = None`).
+
 ### Removed
 
 - **BREAKING · CRUD administrativo retirado de `/api/v1`.** El Minerva Dev Kit ya no expone
