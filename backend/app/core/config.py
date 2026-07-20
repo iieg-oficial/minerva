@@ -102,6 +102,19 @@ class Settings(BaseSettings):
     def is_dev_mode(self) -> bool:
         return self.MINERVA_MODE.lower() == "dev"
 
+    # --- Cookie de sesión del panel (BFF) ----------------------------------
+    # El panel usa una cookie opaca HttpOnly (solo un id de sesión, nunca el JWT).
+    # En producción usa el prefijo `__Host-` (exige Secure + Path=/ + sin Domain,
+    # por eso solo funciona sobre HTTPS); en dev HTTP se usa un nombre distinto sin
+    # Secure para no romper el desarrollo local, sin debilitar producción.
+    @property
+    def session_cookie_secure(self) -> bool:
+        return not self.is_dev_mode
+
+    @property
+    def session_cookie_name(self) -> str:
+        return "minerva_sid" if self.is_dev_mode else "__Host-minerva_sid"
+
     def validate_production_config(self) -> None:
         """Falla rápido al arrancar si MINERVA_MODE no es dev y quedó algún valor
         de desarrollo sin cambiar. Sin esto, Minerva arranca "production-looking"
