@@ -68,12 +68,11 @@ export async function deactivate() {
 }
 
 // Cierra TODAS las cuentas: el backend revoca cada token y destruye el contenedor.
+// El error se PROPAGA a propósito: con cookie HttpOnly, JS no puede invalidar la
+// sesión por su cuenta; si el backend falla, la sesión sigue viva y el caller NO debe
+// aparentar que se cerró (OWASP Session Management: el logout invalida en servidor).
 export async function logoutAll() {
-    try {
-        await client.post('/auth/logout-all');
-    } catch {
-        // Aun si falla, limpiamos el caché local.
-    }
+    await client.post('/auth/logout-all');
     clearCache();
 }
 

@@ -1,5 +1,15 @@
 import { useState, useCallback } from 'react';
-import { Layout, Menu, Button, Typography, Flex, Dropdown, Avatar, theme } from 'antd';
+import {
+    App as AntApp,
+    Layout,
+    Menu,
+    Button,
+    Typography,
+    Flex,
+    Dropdown,
+    Avatar,
+    theme,
+} from 'antd';
 import {
     HomeOutlined,
     TeamOutlined,
@@ -48,7 +58,8 @@ export default function AdminLayout() {
     const selectedKey =
         MENU_ITEMS.find((item) => location.pathname.startsWith(item.key))?.key || '/admin';
 
-    const { accounts: sessions, active } = useSession();
+    const { accounts: sessions, active, refresh } = useSession();
+    const { message } = AntApp.useApp();
     const userName = active?.name || '';
 
     // Menú de cuenta: cambiar entre sesiones del navegador, agregar otra, o cerrar.
@@ -78,11 +89,25 @@ export default function AdminLayout() {
             if (key === 'add') return navigate('/login?add=1');
             if (key === 'logout') {
                 // Logout suave: cierra la cuenta activa; quedan las demás para reingresar.
-                await authAPI.logout();
+                try {
+                    await authAPI.logout();
+                } catch {
+                    message.error('No se pudo cerrar la sesión. Intenta de nuevo.');
+                    return;
+                }
+                await refresh();
                 return navigate('/login', { replace: true });
             }
             if (key === 'logoutAll') {
-                await authAPI.logoutAll();
+                // Con cookie HttpOnly, JS no puede invalidar la sesión: si el backend falla,
+                // la sesión sigue viva. No navegamos (no aparentar que se cerró) y avisamos.
+                try {
+                    await authAPI.logoutAll();
+                } catch {
+                    message.error('No se pudieron cerrar todas las sesiones. Intenta de nuevo.');
+                    return;
+                }
+                await refresh();
                 return navigate('/login', { replace: true });
             }
             const [action, sub] = key.split(':');
@@ -94,7 +119,7 @@ export default function AdminLayout() {
                 navigate(`/login?add=1&email=${encodeURIComponent(s?.email || '')}`);
             }
         },
-        [navigate, sessions]
+        [navigate, sessions, refresh, message]
     );
 
     return (
