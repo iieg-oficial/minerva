@@ -1,4 +1,4 @@
-"""Borra vinculos rol-permiso cruzados entre aplicaciones (issue #38)
+"""Borra vinculos rol-permiso cruzados entre aplicaciones y los bloquea a futuro (issue #38)
 
 Revision ID: 007_role_permissions_cross_app
 Revises: 006_application_branding
@@ -26,7 +26,28 @@ def upgrade() -> None:
         )
     """)
 
+    # Un CHECK no puede consultar otras tablas; un trigger es el mecanismo minimo para
+    # que PostgreSQL rechace por si solo los vinculos cruzados que el service ya valida
+    # (defensa en profundidad contra un INSERT/UPDATE directo que se salte la capa de app).
+    op.execute("""
+        CREATE OR REPLACE FUNCTION check_role_permission_same_app() RETURNS trigger AS $$
+        BEGIN
+            IF (SELECT application_id FROM roles WHERE id = NEW.role_id)
+               <> (SELECT application_id FROM permissions WHERE id = NEW.permission_id) THEN
+                RAISE EXCEPTION 'role_permissions: el rol y el permiso deben pertenecer a la misma aplicacion';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+    """)
+    op.execute("""
+        CREATE TRIGGER role_permissions_same_app
+        BEFORE INSERT OR UPDATE ON role_permissions
+        FOR EACH ROW EXECUTE FUNCTION check_role_permission_same_app();
+    """)
+
 
 def downgrade() -> None:
-    # No-op: no se pueden restaurar los vinculos borrados.
-    pass
+    op.execute("DROP TRIGGER IF EXISTS role_permissions_same_app ON role_permissions")
+    op.execute("DROP FUNCTION IF EXISTS check_role_permission_same_app()")
+    # Los vinculos cruzados borrados en el upgrade no se pueden restaurar.
