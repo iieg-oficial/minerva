@@ -61,6 +61,7 @@ class RefreshTokenRepository:
         scope: str | None,
         access_jti: str | None,
         ttl_days: int,
+        commit: bool = True,
     ) -> RefreshToken:
         refresh = RefreshToken(
             token_hash=token_hash,
@@ -72,17 +73,22 @@ class RefreshTokenRepository:
             expires_at=datetime.now(timezone.utc) + timedelta(days=ttl_days),
         )
         self.session.add(refresh)
-        self.session.commit()
-        self.session.refresh(refresh)
+        # commit=False deja el nuevo refresh pendiente: en la rotación, el router confirma
+        # tras blacklistear en Redis el access_jti viejo (fail-closed).
+        if commit:
+            self.session.commit()
+            self.session.refresh(refresh)
+        else:
+            self.session.flush()
         return refresh
 
     def get_by_hash(self, token_hash: str) -> RefreshToken | None:
         return self.session.exec(select(RefreshToken).where(RefreshToken.token_hash == token_hash)).first()
 
-    def mark_rotated(self, refresh: RefreshToken) -> None:
+    def mark_rotated(self, refresh: RefreshToken, commit: bool = True) -> None:
         refresh.status = "rotated"
         self.session.add(refresh)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
 
     def revoke(self, refresh: RefreshToken) -> None:
         refresh.status = "revoked"

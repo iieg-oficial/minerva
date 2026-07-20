@@ -28,6 +28,16 @@ from app.modules.users.service import UserService
 logger = logging.getLogger(__name__)
 
 
+class RefreshReuseError(BadRequestError):
+    """Reúso de un refresh token ya rotado/revocado (posible robo): revoca la familia.
+    Lleva los access_jti a blacklistear para que el router los ponga en Redis ANTES de
+    confirmar la revocación en PG (fail-closed), y luego devuelva el error 400."""
+
+    def __init__(self, blacklist_jtis: list[str], detail: str):
+        super().__init__(detail=detail)
+        self.blacklist_jtis = blacklist_jtis
+
+
 class AuthService:
     def __init__(self, session: Session):
         self.session = session
@@ -283,9 +293,11 @@ class AuthService:
         family_id: str,
         nonce: str | None = None,
         auth_time: int | None = None,
+        commit: bool = True,
     ) -> dict:
         """Emite el bundle de tokens (access + refresh + id_token) y persiste el
-        refresh token. Compartido por el canje del código y la rotación."""
+        refresh token. Compartido por el canje del código y la rotación. commit=False
+        deja el nuevo refresh pendiente para que la rotación lo confirme tras Redis."""
         wants_openid = "openid" in scope.split()
         access_ttl = settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES
         jti = uuid.uuid4().hex
@@ -316,6 +328,7 @@ class AuthService:
             scope=scope or None,
             access_jti=jti,
             ttl_days=settings.MINERVA_REFRESH_TOKEN_TTL_DAYS,
+            commit=commit,
         )
 
         result = {
@@ -342,13 +355,14 @@ class AuthService:
         return result
 
     def rotate_refresh_token(
-        self, client_id: str, refresh_token_raw: str, client_secret: str | None = None
+        self, client_id: str, refresh_token_raw: str, client_secret: str | None = None, commit: bool = True
     ) -> tuple[dict, list[str]]:
         """Canjea un refresh token por uno nuevo (rotación) y un access token nuevo.
 
         Devuelve (respuesta, jtis_a_revocar). Si se reutiliza un token ya rotado o
-        revocado (posible robo), revoca toda la familia y rechaza.
-        """
+        revocado (posible robo), revoca toda la familia y lanza RefreshReuseError.
+        commit=False deja la rotación (o la revocación de familia) pendiente para que el
+        router la confirme tras blacklistear en Redis (fail-closed)."""
         app = self.app_service.get_application_by_client_id(client_id)
         if not app:
             raise BadRequestError(detail="Aplicación no encontrada")
@@ -363,9 +377,10 @@ class AuthService:
             raise BadRequestError(detail="El refresh token no pertenece a esta aplicación")
 
         if refresh.status != "active":
-            # Reúso de un token ya rotado/revocado → posible robo: revoca la familia.
-            self.refresh_repo.revoke_family(refresh.family_id)
-            raise BadRequestError(detail="refresh token ya utilizado; la sesión fue revocada por seguridad")
+            # Reúso de un token ya rotado/revocado → posible robo: revoca la familia y
+            # entrega sus access_jti para que el router los blacklistee antes de confirmar.
+            jtis = self.refresh_repo.revoke_family(refresh.family_id, commit=commit)
+            raise RefreshReuseError(jtis, detail="refresh token ya utilizado; la sesión fue revocada por seguridad")
 
         expires_at = refresh.expires_at
         if expires_at.tzinfo is None:
@@ -378,7 +393,7 @@ class AuthService:
         if not user or user.status != "active":
             raise ForbiddenError(detail="Usuario inválido o inactivo")
 
-        self.refresh_repo.mark_rotated(refresh)
+        self.refresh_repo.mark_rotated(refresh, commit=False)
         perms, role_slugs = self._get_user_permissions(user.id, app.slug)
         response = self._issue_tokens(
             user=user,
@@ -387,6 +402,7 @@ class AuthService:
             roles=role_slugs,
             permissions=perms,
             family_id=refresh.family_id,
+            commit=commit,
         )
         return response, [refresh.access_jti] if refresh.access_jti else []
 
