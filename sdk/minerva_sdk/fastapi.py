@@ -14,6 +14,7 @@ import time
 import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from httpx import AsyncClient
 from jose import JWTError, jwt
 
 from minerva_sdk.config import settings
@@ -52,7 +53,7 @@ async def _get_jwks(kid: str | None = None) -> dict:
         _jwks_cache["retry_after"] = now + settings.jwks_refresh_cooldown
 
     url = f"{settings.issuer_url.rstrip('/')}/.well-known/jwks.json"
-    async with httpx.AsyncClient(timeout=settings.request_timeout) as cli:
+    async with AsyncClient(timeout=settings.request_timeout) as cli:
         resp = await cli.get(url)
         resp.raise_for_status()
     jwks = resp.json()
@@ -167,7 +168,7 @@ async def _fetch_permissions(token: str, claims: dict, application_code: str) ->
 
     url = f"{settings.issuer_url.rstrip('/')}/api/v1/me/permissions"
     try:
-        async with httpx.AsyncClient(timeout=settings.request_timeout) as cli:
+        async with AsyncClient(timeout=settings.request_timeout) as cli:
             resp = await cli.get(
                 url,
                 params={"application": application_code},

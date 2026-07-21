@@ -1,7 +1,7 @@
 """Utilidades compartidas de los tests del SDK: claves RS256 y un doble de red.
 
-El doble reemplaza `httpx.AsyncClient` para que ninguna prueba salga a la red y para
-poder contar cuántas veces el SDK llamó a Minerva (clave para probar cachés y cooldowns).
+El doble reemplaza el `AsyncClient` que usa el SDK para que ninguna prueba salga a la red
+y para poder contar cuántas veces llamó a Minerva (clave para probar cachés y cooldowns).
 """
 
 import time
@@ -114,7 +114,10 @@ def fake_http(monkeypatch) -> FakeHTTP:
         async def get(self, url, params=None, headers=None):
             return await recorder._get(url, params=params, headers=headers)
 
-    monkeypatch.setattr("minerva_sdk.fastapi.httpx.AsyncClient", _FakeClient)
+    # Se sustituye el nombre importado en el módulo del SDK, no `httpx.AsyncClient`
+    # global: así un test puede seguir usando httpx de verdad (p. ej. con ASGITransport
+    # contra una app FastAPI) sin recibir el doble.
+    monkeypatch.setattr("minerva_sdk.fastapi.AsyncClient", _FakeClient)
     return recorder
 
 
@@ -126,7 +129,7 @@ def clean_state():
     config.settings.application_code = APP_CODE
     config.settings.issuer_url = ISSUER
     config.settings.expected_issuer = ""
-    config.settings.permissions_cache_ttl = 300
+    config.settings.permissions_cache_ttl = 0  # el default: sin caché
     config.settings.jwks_cache_ttl = 3600
     config.settings.jwks_refresh_cooldown = 30
     yield
