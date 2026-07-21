@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import jwk
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.crypto import decrypt_secret, encrypt_secret
@@ -113,12 +114,18 @@ class OIDCService:
     def stage_key(self) -> SigningKey:
         """Fase 1: publica una clave nueva en el JWKS sin firmar con ella.
 
-"""
+        La comprobación previa da un mensaje claro en el caso normal; el índice único
+        parcial (migración 009) es lo que de verdad cierra la carrera entre dos
+        `stage_key` concurrentes, que pasarían ambos la comprobación."""
         if self.repo.get_pending() is not None:
             raise ConflictError(
                 detail="Ya hay una clave pendiente de promover; promuévela o descártala antes de publicar otra"
             )
-        return self.generate_signing_key(status="pending")
+        try:
+            return self.generate_signing_key(status="pending")
+        except IntegrityError:
+            self.session.rollback()
+            raise ConflictError(detail="Otra operación publicó una clave pendiente al mismo tiempo; reintente")
 
     def promote_key(self, force: bool = False) -> SigningKey:
         """Fase 2: activa la clave pendiente, retira la anterior y purga las vencidas.

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime
+from sqlalchemy import Column, DateTime, Index, text
 from sqlmodel import Field, SQLModel
 
 
@@ -22,6 +22,27 @@ class SigningKey(SQLModel, table=True):
     """
 
     __tablename__ = "signing_keys"
+
+    # Invariante de datos, no solo de código (migración 009): a lo sumo una clave
+    # `active` y una `pending`. Un índice único parcial hace que la BD rechace la
+    # segunda, así que ni un INSERT directo ni una restauración a medias pueden dejar
+    # ambiguo con qué clave se firma.
+    __table_args__ = (
+        Index(
+            "ux_signing_keys_single_active",
+            "status",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+        Index(
+            "ux_signing_keys_single_pending",
+            "status",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     kid: str = Field(unique=True, index=True)  # key ID — va en el header del JWT

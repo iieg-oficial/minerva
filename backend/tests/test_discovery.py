@@ -7,8 +7,10 @@ from tests.conftest import test_engine
 
 
 def _seed_signing_key() -> str:
+    """Kid de la clave activa. Es idempotente a propósito: la fixture `client` ya sembró
+    una, y desde la migración 009 no puede haber dos claves `active` a la vez."""
     with Session(test_engine) as session:
-        return OIDCService(session).generate_signing_key().kid
+        return OIDCService(session).ensure_active_signing_key().kid
 
 
 def test_discovery_document_shape(client):
