@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
+from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 from app.core.security import (
     create_access_token_rs256,
     create_id_token,
@@ -16,7 +16,7 @@ from app.core.security import (
 )
 from app.modules.applications.repository import ApplicationRepository
 from app.modules.applications.service import ApplicationService
-from app.modules.auth.repository import AuthCodeRepository, RefreshTokenRepository
+from app.modules.auth.repository import AuthCodeRepository, RefreshTokenRepository, RefreshTokenRowLocked
 from app.modules.auth.schemas import AuthRegister
 from app.modules.authorization.service import AuthorizationService
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
@@ -36,6 +36,16 @@ class RefreshReuseError(BadRequestError):
     def __init__(self, blacklist_jtis: list[str], detail: str):
         super().__init__(detail=detail)
         self.blacklist_jtis = blacklist_jtis
+
+
+class RefreshRotationInProgressError(ConflictError):
+    """Contención concurrente real: otro request ya está rotando este MISMO refresh
+    token en este instante (`FOR UPDATE NOWAIT` no consiguió el lock). No es reúso:
+    NO revoca la familia, el ganador de la carrera sigue siendo válido. El cliente
+    debe reintentar (p. ej. con backoff), no tratar esto como sesión revocada."""
+
+    def __init__(self, detail: str = "El refresh token ya está siendo procesado por otra solicitud; reintente"):
+        super().__init__(detail=detail)
 
 
 class AuthService:
@@ -377,15 +387,23 @@ class AuthService:
             if not client_secret or not verify_secret(client_secret, app.client_secret_hash):
                 raise ForbiddenError(detail="client_secret inválido")
 
-        refresh = self.refresh_repo.get_by_hash(hash_token(refresh_token_raw))
+        # FOR UPDATE NOWAIT (no-op en SQLite): si otra rotación de ESTE MISMO token está
+        # en curso ahora mismo, falla rápido en vez de esperar su commit. Eso es
+        # contención concurrente, no reúso, así que NO revoca la familia (issue #38).
+        try:
+            refresh = self.refresh_repo.get_by_hash_for_update(hash_token(refresh_token_raw))
+        except RefreshTokenRowLocked:
+            raise RefreshRotationInProgressError()
         if not refresh:
             raise BadRequestError(detail="refresh token inválido")
         if refresh.client_id != client_id:
             raise BadRequestError(detail="El refresh token no pertenece a esta aplicación")
 
         if refresh.status != "active":
-            # Reúso de un token ya rotado/revocado → posible robo: revoca la familia y
-            # entrega sus access_jti para que el router los blacklistee antes de confirmar.
+            # Con el lock ya adquirido arriba, esto no es una carrera en curso: es un
+            # reúso genuino de un token que quedó rotado/revocado en el pasado (posible
+            # robo). Revoca la familia y entrega sus access_jti para que el router los
+            # blacklistee antes de confirmar.
             jtis = self.refresh_repo.revoke_family(refresh.family_id, commit=commit)
             raise RefreshReuseError(jtis, detail="refresh token ya utilizado; la sesión fue revocada por seguridad")
 
@@ -401,8 +419,9 @@ class AuthService:
             raise ForbiddenError(detail="Usuario inválido o inactivo")
 
         if not self.refresh_repo.mark_rotated(refresh, commit=False):
-            # Perdió la carrera contra una rotación concurrente: mismo tratamiento que el
-            # reúso (posible robo), revoca la familia entera.
+            # Inalcanzable en la práctica: ya tenemos el lock de fila desde
+            # get_by_hash_for_update, nadie más puede haber cambiado el status entre medio.
+            # Se conserva como red de seguridad si algún día el lock deja de cubrir esta ruta.
             jtis = self.refresh_repo.revoke_family(refresh.family_id, commit=commit)
             raise RefreshReuseError(jtis, detail="refresh token ya utilizado; la sesión fue revocada por seguridad")
 
