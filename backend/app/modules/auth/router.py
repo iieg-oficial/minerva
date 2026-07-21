@@ -30,7 +30,7 @@ from app.modules.auth.schemas import (
     SessionView,
     SetActiveRequest,
 )
-from app.modules.auth.service import AuthService, RefreshReuseError
+from app.modules.auth.service import AuthService, RefreshReuseError, build_callback_url
 from app.modules.authorization.service import AuthorizationService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -322,7 +322,7 @@ async def authorize(
 
     if current_user is None:
         if prompt == "none":
-            return RedirectResponse(f"{redirect_uri}?error=login_required&state={state}")
+            return RedirectResponse(build_callback_url(redirect_uri, error="login_required", state=state))
         return RedirectResponse(_login_redirect_url(request))
 
     redirect_url, reauth_reason = service.authorize(
@@ -338,10 +338,10 @@ async def authorize(
         max_age=max_age,
     )
     if reauth_reason == "access_denied":
-        return RedirectResponse(f"{redirect_uri}?error=access_denied&state={state}")
+        return RedirectResponse(build_callback_url(redirect_uri, error="access_denied", state=state))
     if reauth_reason is not None:
         if prompt == "none":
-            return RedirectResponse(f"{redirect_uri}?error=login_required&state={state}")
+            return RedirectResponse(build_callback_url(redirect_uri, error="login_required", state=state))
         return RedirectResponse(_login_redirect_url(request))
     assert redirect_url is not None  # garantizado: solo es None junto con reauth_reason
     return RedirectResponse(redirect_url)
@@ -394,10 +394,10 @@ async def authorize_url(
         max_age=max_age,
     )
     if reauth_reason == "access_denied":
-        return {"redirect_url": f"{redirect_uri}?error=access_denied&state={state}"}
+        return {"redirect_url": build_callback_url(redirect_uri, error="access_denied", state=state)}
     if reauth_reason is not None:
         if prompt == "none":
-            return {"redirect_url": f"{redirect_uri}?error=login_required&state={state}"}
+            return {"redirect_url": build_callback_url(redirect_uri, error="login_required", state=state)}
         # La SPA sigue esta URL igual que ya hace con la del code: reusa el mismo
         # contrato de respuesta ({"redirect_url": ...}), sin cambios en el frontend.
         return {"redirect_url": _login_redirect_url(request)}

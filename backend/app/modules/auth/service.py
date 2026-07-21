@@ -2,6 +2,7 @@ import logging
 import secrets
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlmodel import Session
 
@@ -27,6 +28,20 @@ from app.modules.users.service import UserService
 from app.shared.datetime_utils import as_utc
 
 logger = logging.getLogger(__name__)
+
+
+def build_callback_url(redirect_uri: str, **params: str | None) -> str:
+    """URL de vuelta al consumidor: preserva la query que la `redirect_uri` registrada
+    ya traiga y codifica los valores (los `None` se omiten).
+
+    Concatenar `?code=...` a mano rompía una `redirect_uri` que ya tuviera query (dos
+    `?`) y alteraba cualquier `state` con caracteres reservados. El `state` debe volver
+    exactamente igual (RFC 6749 §4.1.2): el cliente lo compara para detectar CSRF, así
+    que alterarlo rompe su defensa."""
+    parts = urlsplit(redirect_uri)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    query += [(key, value) for key, value in params.items() if value is not None]
+    return urlunsplit(parts._replace(query=urlencode(query)))
 
 
 class RefreshReuseError(BadRequestError):
@@ -227,7 +242,7 @@ class AuthService:
             nonce=nonce,
             auth_time=auth_time,
         )
-        return redirect_uri + f"?code={auth_code.code}&state={state}", None
+        return build_callback_url(redirect_uri, code=auth_code.code, state=state), None
 
     def exchange_token(
         self,
