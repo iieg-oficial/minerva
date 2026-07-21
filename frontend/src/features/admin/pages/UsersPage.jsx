@@ -234,15 +234,7 @@ export default function UsersPage() {
                                 <Input />
                             </Form.Item>
                             <Form.Item name="password" label="Contraseña">
-                                <Input.Password placeholder="Opcional si es Google" />
-                            </Form.Item>
-                            <Form.Item name="auth_provider" label="Proveedor" initialValue="local">
-                                <Select
-                                    options={[
-                                        { label: 'Local', value: 'local' },
-                                        { label: 'Google', value: 'google' },
-                                    ]}
-                                />
+                                <Input.Password />
                             </Form.Item>
 
                             <Divider style={{ margin: '8px 0 16px' }}>
