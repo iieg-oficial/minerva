@@ -85,6 +85,10 @@ class AuthService:
 
         user_data = UserCreate(email=data.email, full_name=data.full_name, password=data.password)
         user = self.user_service.create_user(user_data)
+        # El alta es un evento de autenticación (deja sesión abierta), así que fija
+        # `last_login_at` igual que el login: es la fuente de `auth_time` y de `max_age`.
+        # `create_user` devuelve el schema de lectura, no el modelo, así que se recarga.
+        self._touch_last_login(self.user_repo.get_by_id(user.id))
         token = self.oidc_service.issue_session_token(user.id, user.email, user.full_name)
         return {
             "access_token": token,
@@ -109,11 +113,16 @@ class AuthService:
             "expires_in": settings.effective_token_expire_minutes * 60,
         }
 
-    def login(self, email: str, password: str) -> dict:
-        token = self.user_service.authenticate(email, password)
-        user = self.user_repo.get_by_email(email)
+    def _touch_last_login(self, user) -> None:
+        """Marca el instante de autenticación. Único punto de escritura de
+        `last_login_at`, que es lo que `/authorize` reporta como `auth_time` y lo que
+        `_requires_reauth` compara contra `max_age`."""
         user.last_login_at = datetime.now(timezone.utc)
         self.user_repo.update(user)
+
+    def login(self, email: str, password: str) -> dict:
+        token = self.user_service.authenticate(email, password)
+        self._touch_last_login(self.user_repo.get_by_email(email))
         return {"access_token": token, "token_type": "bearer", "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60}
 
     def get_me(self, user_id: str) -> dict:
@@ -231,7 +240,12 @@ class AuthService:
         if self._requires_reauth(user, prompt, max_age):
             return None, ("login" if prompt == "login" else "max_age")
 
-        auth_time = int(datetime.now(timezone.utc).timestamp())
+        # Instante de la autenticación real, no el de la emisión del código: un SSO
+        # silencioso 6 h después NO refresca este valor. Misma fuente que
+        # `_requires_reauth`, para que lo que Minerva reporta y lo que enforcea con
+        # `max_age` coincidan. Si es None, `create_id_token` omite el claim: solo es
+        # obligatorio con `max_age`, y ahí `_requires_reauth` ya forzó re-login antes.
+        auth_time = int(as_utc(user.last_login_at).timestamp()) if user.last_login_at else None
         auth_code = self.auth_code_repo.create_code(
             client_id,
             user_id,
