@@ -17,7 +17,12 @@ class MinervaSettings:
     # descubre el JWKS (p. ej. red docker vs. dominio público), fíjalo aquí; si se deja
     # vacío se usa `issuer_url`. La validación de `iss` NO se puede desactivar.
     expected_issuer: str = os.getenv("MINERVA_EXPECTED_ISSUER", "")
-    permissions_cache_ttl: int = int(os.getenv("MINERVA_PERMISSIONS_CACHE_TTL", "300"))
+    # Caché de permisos DESACTIVADA por defecto (0 = sin caché).
+    # Con caché, una decisión positiva se sirve de memoria sin consultar a Minerva, así
+    # que un token revocado sigue autorizando hasta que la entrada expire: la revocación
+    # deja de ser inmediata. Activarla es una decisión explícita del consumidor, que
+    # acepta esa ventana a cambio de menos tráfico (ver sdk/README.md).
+    permissions_cache_ttl: int = int(os.getenv("MINERVA_PERMISSIONS_CACHE_TTL", "0"))
     jwks_cache_ttl: int = int(os.getenv("MINERVA_JWKS_CACHE_TTL", "3600"))
     # Mínimo entre dos refrescos del JWKS disparados por un `kid` desconocido. Acota el
     # coste de tokens con un `kid` inventado sin retrasar una rotación legítima.

@@ -141,8 +141,13 @@ def clear_caches() -> None:
 
 
 def _prune_permissions_cache(now: float) -> None:
-    """Barrido perezoso de entradas vencidas: el dict es global del proceso y sin esto
-    crece sin cota en un servicio de larga vida."""
+    """Mantiene la caché acotada: el dict es global del proceso y sin esto crece sin
+    cota en un servicio de larga vida.
+
+    Primero descarta las entradas vencidas. Si con eso no basta —muchos tokens vigentes
+    a la vez—, expulsa las más próximas a vencer hasta volver al límite: son las que
+    menos valor tienen guardadas. Sin este segundo paso el límite no existía.
+    """
     if len(_permissions_cache) <= _PERMISSIONS_CACHE_MAX:
         return
     for key in [k for k, (expires_at, _) in _permissions_cache.items() if expires_at <= now]:
@@ -150,16 +155,22 @@ def _prune_permissions_cache(now: float) -> None:
 
 
 async def _fetch_permissions(token: str, claims: dict, application_code: str) -> set[str]:
-    """Permisos del usuario en la aplicación, con caché ligada al TOKEN.
+    """Permisos del usuario en la aplicación, consultados a Minerva.
 
-    La caché se indexa por `jti`, no por `sub`: dos tokens del mismo usuario nunca
-    comparten una decisión de autorización, así que revocar uno no deja al otro
-    heredando permisos (ni al revés). Además la entrada nunca sobrevive al `exp` del
-    token que la produjo. Un token sin `jti` no se cachea: se pregunta siempre.
+    **Sin caché por defecto** (`MINERVA_PERMISSIONS_CACHE_TTL=0`): cada chequeo pregunta
+    a Minerva, que es quien aplica la revocación, así que revocar un token surte efecto
+    de inmediato. Servir una decisión positiva desde memoria significa, por definición,
+    no enterarse de una revocación hasta que la entrada expire.
+
+    Si el consumidor activa la caché, se indexa por `jti` (no por `sub`: dos tokens del
+    mismo usuario nunca comparten decisión) y la entrada nunca sobrevive al `exp` del
+    token. Un token sin `jti` tampoco se cachea. La ventana de propagación de una
+    revocación pasa a ser el TTL configurado.
     """
     jti = claims.get("jti")
     now = time.time()
-    cache_key = (jti, application_code) if jti else None
+    cache_enabled = settings.permissions_cache_ttl > 0
+    cache_key = (jti, application_code) if (cache_enabled and jti) else None
 
     if cache_key is not None:
         cached = _permissions_cache.get(cache_key)
