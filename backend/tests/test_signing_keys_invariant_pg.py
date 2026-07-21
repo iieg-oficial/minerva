@@ -99,6 +99,41 @@ def test_dos_stage_key_concurrentes_dejan_una_sola_pendiente(migrated_engine):
         assert OIDCService(session).repo.get_pending().kid == winner_kid
 
 
+def test_dos_ensure_active_concurrentes_convergen_a_la_misma_clave(migrated_engine):
+    """Con varios workers, todos siembran a la vez sobre una tabla vacía al arrancar.
+    Ninguno debe fallar: el perdedor del índice se queda con la clave del ganador, así
+    que ambos terminan bien y con el mismo `kid`."""
+    barrier = threading.Barrier(2)
+    results: queue.Queue = queue.Queue()
+
+    def _ensure():
+        with Session(migrated_engine) as session:
+            service = OIDCService(session)
+            service.repo.get_active()  # ambos ven la tabla vacía
+            barrier.wait(timeout=10)
+            try:
+                results.put(("ok", service.ensure_active_signing_key().kid))
+            except Exception as exc:  # noqa: BLE001 - el test reporta el fallo
+                results.put(("error", f"{type(exc).__name__}: {exc}"))
+
+    threads = [threading.Thread(target=_ensure) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+        assert not thread.is_alive(), "un ensure_active_signing_key se quedó bloqueado"
+
+    outcomes = [results.get() for _ in range(2)]
+    errors = [value for kind, value in outcomes if kind == "error"]
+    assert not errors, f"ningún caller debía fallar, pero: {errors}"
+
+    kids = {value for _, value in outcomes}
+    assert len(kids) == 1, f"ambos debían devolver el mismo kid, devolvieron {kids}"
+    assert _count(migrated_engine, "active") == 1
+    with Session(migrated_engine) as session:
+        assert OIDCService(session).repo.get_active().kid == kids.pop()
+
+
 def test_la_base_rechaza_una_segunda_pendiente(migrated_engine):
     """El índice, no el service: un INSERT directo con otra `pending` falla."""
     with Session(migrated_engine) as session:

@@ -89,9 +89,25 @@ class OIDCService:
         return key.kid, decrypt_secret(key.private_key_pem)
 
     def ensure_active_signing_key(self) -> SigningKey:
-        """Idempotente: usado en el seeding del arranque. Genera la clave si no existe."""
+        """Idempotente, también entre procesos: lo usa el seeding del arranque, y con
+        varios workers todos lo ejecutan a la vez sobre una tabla vacía.
+
+        La comprobación previa no cierra esa carrera (los dos ven la tabla vacía), pero
+        no hace falta un lock: el índice único parcial ya elige al ganador. Al perdedor
+        le basta con deshacer su INSERT y quedarse con la clave del ganador, que es tan
+        válida como la suya. Solo propaga el error si tras el rollback sigue sin haber
+        activa, porque entonces el fallo no fue la carrera."""
         existing = self.repo.get_active()
-        return existing or self.generate_signing_key()
+        if existing is not None:
+            return existing
+        try:
+            return self.generate_signing_key()
+        except IntegrityError:
+            self.session.rollback()
+            winner = self.repo.get_active()
+            if winner is None:
+                raise
+            return winner
 
     def build_jwks(self) -> dict:
         """Construye el JWKS (RFC 7517) con las claves publicables (activa + retiradas)."""
