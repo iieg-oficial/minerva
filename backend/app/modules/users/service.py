@@ -85,9 +85,15 @@ class UserService:
         blacklistear. La invalidación de los bearer/sesión (por `iat`) la resuelve
         el marcador en Redis desde el router. commit=False deja la revocación pendiente
         para confirmarla junto con el cambio, tras escribir las invalidaciones en Redis."""
-        from app.modules.auth.repository import RefreshTokenRepository
+        from app.modules.auth.repository import RefreshTokenRepository, RefreshTokenRowLocked
 
-        return RefreshTokenRepository(self.session).revoke_all_for_user(user_id, commit=commit)
+        try:
+            return RefreshTokenRepository(self.session).revoke_all_for_user(user_id, commit=commit)
+        except RefreshTokenRowLocked:
+            # Contención real: uno de los refresh tokens del usuario se está rotando
+            # ahora mismo (lock de fila tomado por esa transacción). No es un error de
+            # negocio, es un conflicto temporal: el caller (router) debe reintentar.
+            raise ConflictError(detail="Hay una rotación de token en curso para este usuario; reintente")
 
     def authenticate(self, email: str, password: str) -> str:
         user = self.repo.get_by_email(email)

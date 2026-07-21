@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, quote
 
@@ -417,14 +418,19 @@ async def _read_token_request(request: Request) -> dict:
 async def _blacklist_jtis_then_commit(service: AuthService, redis: Redis, jtis: list[str]) -> None:
     """Fail-closed para los flujos que revocan/rotan tokens: blacklistea los access_jti en
     Redis y solo entonces confirma PostgreSQL. Si Redis falla, rollback (PG intacto) y
-    propaga; si PG falla después, quedan jtis blacklisteados de más (fallo seguro)."""
+    propaga; si PG falla después, quedan jtis blacklisteados de más (fallo seguro).
+
+    commit/rollback van a threadpool: son E/S síncrona de PostgreSQL y esta función se
+    ejecuta en un endpoint async, con el lock de fila de la rotación aún abierto durante
+    el await a Redis. Bloquear el event loop aquí impediría que otra request concurrente
+    (bloqueada esperando ese mismo lock) libere el loop para completarse."""
     try:
         for jti in jtis:
             await revoke_jti(redis, jti, settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60)
     except Exception:
-        service.session.rollback()
+        await asyncio.to_thread(service.session.rollback)
         raise
-    service.session.commit()
+    await asyncio.to_thread(service.session.commit)
 
 
 @router.post("/token", response_model=AuthTokenResponse)
@@ -447,9 +453,16 @@ async def token_exchange(
         # en PG; se blacklistea el access_jti viejo en Redis y solo entonces se confirma. Si
         # Redis falla, rollback → el refresh original NO queda rotado a medias (el cliente
         # reintenta limpio). En reúso, se blacklistean los jtis de la familia antes de confirmar.
+        # A threadpool: el reclamo (FOR UPDATE NOWAIT + UPDATE) toma un lock de fila en PG que
+        # queda abierto hasta el commit posterior a Redis; ejecutarlo síncrono sobre el event
+        # loop bloquearía TODO el loop mientras espera ese lock, impidiendo que la request que
+        # ya lo tiene (esperando en el await a Redis de arriba) pueda avanzar a comitear. NOWAIT
+        # hace además que un contendiente concurrente falle al instante (RefreshRotationInProgressError,
+        # 409, sin tocar la familia) en vez de bloquear su propio hilo del threadpool esperando
+        # el lock; solo un reúso genuino de un token ya rotado revoca la familia (RefreshReuseError).
         try:
-            result, revoked_jtis = service.rotate_refresh_token(
-                client_id, refresh_token, client_secret=client_secret, commit=False
+            result, revoked_jtis = await asyncio.to_thread(
+                service.rotate_refresh_token, client_id, refresh_token, client_secret=client_secret, commit=False
             )
         except RefreshReuseError as reuse:
             await _blacklist_jtis_then_commit(service, redis, reuse.blacklist_jtis)

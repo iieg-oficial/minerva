@@ -29,6 +29,20 @@ TEST_DATABASE_URL = "sqlite:///./test.db"
 test_engine = create_engine(TEST_DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
 
 
+def require_test_database_url(url: str) -> None:
+    """Guarda fail-closed antes de dropear/crear esquemas contra PostgreSQL real (issue
+    #38): que exista MINERVA_TEST_POSTGRES_URL nunca es suficiente por sí solo, exige
+    además que el nombre de la base termine en `_test` para no apuntar por error a una
+    base de desarrollo/producción real."""
+    db_name = url.rsplit("/", 1)[-1].split("?", 1)[0]
+    if not db_name.endswith("_test"):
+        raise RuntimeError(
+            f"MINERVA_TEST_POSTGRES_URL apunta a la base {db_name!r}, que no termina en "
+            "'_test'. Abortando para no dropear/crear esquemas sobre una base que podría "
+            "ser real; usa una base dedicada a pruebas (p. ej. 'minerva_test')."
+        )
+
+
 def grant_role(session: Session, application_id: str, user_id: str, slug: str = "member") -> None:
     """Asigna un rol al usuario en la aplicación indicada. Helper de fixtures:
     desde el issue #11 /authorize exige al menos un rol en la app del client_id."""
