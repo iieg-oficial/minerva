@@ -26,6 +26,21 @@ jobs:
       - run: ruff format --check app alembic tests
       - run: pytest tests/ -v # SQLite + fakeredis, sin servicios externos
 
+  sdk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest tests/ -v # doble de httpx, sin red
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
