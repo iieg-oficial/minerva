@@ -29,10 +29,9 @@ Al arrancar (`lifespan` en `backend/app/main.py`), el backend:
 ### ⚠️ Gotcha de puertos: 8000 vs 9000
 
 El backend se sirve en **9000** (Dockerfile, docker-compose, entrypoint). Algunos
-valores legacy en `.env`/`config.py` (`GOOGLE_REDIRECT_URI`, comentarios viejos)
-todavía mencionan **8000**. Si tocas configuración de red/proxy/redirects, verifica el
-puerto extremo a extremo (`MINERVA_ISSUER`, `GOOGLE_REDIRECT_URI`, `vite.config.js`)
-antes de asumir que un solo lado está mal.
+valores legacy en `.env`/`config.py` (comentarios viejos) todavía mencionan **8000**.
+Si tocas configuración de red/proxy/redirects, verifica el puerto extremo a extremo
+(`MINERVA_ISSUER`, `vite.config.js`) antes de asumir que un solo lado está mal.
 
 ### Correr el backend sin Docker (conda)
 
