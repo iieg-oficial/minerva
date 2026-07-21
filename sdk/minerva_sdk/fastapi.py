@@ -1,7 +1,8 @@
 """Helpers de integración con FastAPI para validar identidad y permisos
 emitidos por Minerva.
 
-El flujo recomendado (ver `docs/integracion.md`) es validar **permisos**, no roles. La firma de los access tokens se verifica con
+El flujo recomendado (ver `docs/integracion.md`) es validar **permisos**, no roles.
+La firma de los access tokens se verifica con
 RS256 contra el JWKS público de Minerva (sin secreto compartido). Los permisos
 finos se consultan en tiempo real a `GET /api/v1/me/permissions`, con caché en
 memoria; ese endpoint también aplica la revocación del lado de Minerva, así que
@@ -70,9 +71,7 @@ async def _decode(token: str) -> dict:
     # El algoritmo se fija a RS256 (único soportado) para evitar ataques de
     # confusión de algoritmo. No hay validación HS256.
     if alg != "RS256":
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, f"Algoritmo de token no soportado: {alg}"
-        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Algoritmo de token no soportado: {alg}")
 
     # La audiencia es obligatoria (= código de esta app): sin ella no se puede
     # verificar que el token fue emitido para este consumidor. No hay switch para
@@ -95,9 +94,7 @@ async def _decode(token: str) -> dict:
     except JWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Token inválido: {exc}")
     except httpx.HTTPError as exc:
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, f"No se pudo obtener el JWKS de Minerva: {exc}"
-        )
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"No se pudo obtener el JWKS de Minerva: {exc}")
 
     # El `iss` se valida SIEMPRE: contra MINERVA_EXPECTED_ISSUER o, por defecto, el
     # issuer_url del que se descubre el JWKS. No se puede desactivar.
@@ -108,9 +105,7 @@ async def _decode(token: str) -> dict:
     # Un consumidor solo acepta access tokens (typ=access). Una sesión de panel, un
     # dev token o un id token no cruzan aquí aunque su firma sea válida (RFC 8725).
     if payload.get("typ") != "access":
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "Tipo de token no válido para un consumidor"
-        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Tipo de token no válido para un consumidor")
     return payload
 
 
@@ -185,9 +180,7 @@ async def _fetch_permissions(token: str, claims: dict, application_code: str) ->
             # reintento dentro del TTL siga viendo permisos cacheados.
             if cache_key is not None:
                 _permissions_cache.pop(cache_key, None)
-            raise HTTPException(
-                status.HTTP_401_UNAUTHORIZED, "Token inválido o revocado"
-            )
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido o revocado")
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
             f"No se pudo consultar permisos en Minerva: {exc}",
@@ -233,9 +226,7 @@ def require_permission(permission: str, application_code: str | None = None):
         assert credentials is not None
         perms = await _fetch_permissions(credentials.credentials, user, app_code)
         if permission not in perms:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, f"Requiere permiso: {permission}"
-            )
+            raise HTTPException(status.HTTP_403_FORBIDDEN, f"Requiere permiso: {permission}")
         return user
 
     return dependency
