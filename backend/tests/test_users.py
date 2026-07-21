@@ -37,6 +37,17 @@ def test_create_user_rechaza_password_vacio_o_corto(client, admin_token):
         assert resp.status_code == 422, f"contraseña {password!r} debería rechazarse: {resp.text}"
 
 
+def test_update_user_rechaza_password_corto(client, admin_token, admin_user):
+    """El mismo piso aplica al PATCH: cambiar la contraseña a una menor a 8 caracteres
+    se rechaza con 422, para no debilitar una cuenta ya existente."""
+    resp = client.patch(
+        f"/users/{admin_user['id']}",
+        json={"password": "corta7"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 422, resp.text
+
+
 def _make_user_with_token(client, admin_token, email, make_session_token):
     """Crea un usuario y devuelve (user_id, su_token_de_sesión). Acuña el token
     directamente (el panel es cookie-only: /auth/login ya no devuelve el JWT)."""

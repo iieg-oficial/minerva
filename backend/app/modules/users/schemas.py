@@ -16,7 +16,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     full_name: str | None = None
     email: str | None = None
-    password: str | None = None
+    password: str | None = Field(default=None, min_length=8)
     status: str | None = None
     domain: str | None = None
 
