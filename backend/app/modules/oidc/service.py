@@ -93,23 +93,23 @@ class OIDCService:
             keys.append(jwk_dict)
         return {"keys": keys}
 
-    def rotate_key(self, purge_overlap_window: bool = True) -> SigningKey:
-        """Retira la clave activa actual y genera una nueva activa.
-
-        Por defecto también purga claves ya retiradas más viejas que la ventana de
-        solapamiento (`MINERVA_ACCESS_TOKEN_TTL_MINUTES`, la vida máxima de un
-        access/id token ya emitido): pasada esa ventana ningún token vigente puede
-        seguir firmado con ellas, así que mantenerlas publicadas en el JWKS solo
-        agrega ruido."""
+    def purge_expired_keys(self) -> int:
+        """Borra las claves retiradas que ya no pueden estar firmando ningún token
+        vigente (`key_retirement_overlap_minutes`: la vida máxima de token firmado +
+        skew). Pasada esa ventana solo agregan ruido al JWKS."""
         from app.core.config import settings
 
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.key_retirement_overlap_minutes)
+        return self.repo.purge_retired_before(cutoff)
+
+    def rotate_key(self, purge_overlap_window: bool = True) -> SigningKey:
+        """Retira la clave activa actual y genera una nueva activa."""
         current = self.repo.get_active()
         if current is not None:
             self.repo.mark_retired(current)
         new_key = self.generate_signing_key()
         if purge_overlap_window:
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES)
-            self.repo.purge_retired_before(cutoff)
+            self.purge_expired_keys()
         return new_key
 
     # --- Emisión de tokens de sesión interna -------------------------------

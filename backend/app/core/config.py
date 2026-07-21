@@ -71,6 +71,14 @@ class Settings(BaseSettings):
     # valida un token. Con TTL corto, un caché stale nunca rechaza un JWKS válido
     # dentro de la ventana (build_jwks() ya incluye claves retiradas).
     MINERVA_JWKS_CACHE_TTL_SECONDS: int = 300
+    # Cuánto puede tardar un verificador externo en ver una clave nueva en su JWKS
+    # cacheado. Gobierna cuándo una clave `pending` puede promoverse a `active`
+    # (publish-before-use). Default 60 min: cubre el default del SDK, que cachea el
+    # JWKS una hora (MINERVA_JWKS_CACHE_TTL=3600).
+    MINERVA_KEY_PROPAGATION_MINUTES: int = 60
+    # Margen de reloj entre Minerva y los verificadores, para no purgar una clave
+    # justo cuando a otro le queda un segundo de token válido.
+    MINERVA_CLOCK_SKEW_MINUTES: int = 5
 
     # --- Redis -------------------------------------------------------------
     # Redis es control de seguridad: rate limiting, blacklist de tokens, cortes de
@@ -98,6 +106,21 @@ class Settings(BaseSettings):
     @property
     def effective_token_expire_minutes(self) -> int:
         return self.MINERVA_ACCESS_TOKEN_EXPIRE_MINUTES or self.ACCESS_TOKEN_EXPIRE_MINUTES
+
+    @property
+    def key_retirement_overlap_minutes(self) -> int:
+        """Cuánto debe seguir publicada en el JWKS una clave ya retirada: la vida
+        máxima de CUALQUIER token firmado con ella, más el margen de reloj. Purgarla
+        antes invalida tokens todavía vigentes.
+
+        Se deriva (no es una variable de entorno aparte) para que no pueda quedar
+        desincronizada del TTL de sesión. El máximo real es la sesión del panel
+        (`effective_token_expire_minutes`, 480 min), NO el access token OIDC
+        (`MINERVA_ACCESS_TOKEN_TTL_MINUTES`, 15 min) que se usaba antes. Los refresh
+        tokens no entran: son opacos y hasheados en BD, nadie los firma.
+        """
+        max_signed_token_minutes = max(self.MINERVA_ACCESS_TOKEN_TTL_MINUTES, self.effective_token_expire_minutes)
+        return max_signed_token_minutes + self.MINERVA_CLOCK_SKEW_MINUTES
 
     @property
     def is_dev_mode(self) -> bool:
