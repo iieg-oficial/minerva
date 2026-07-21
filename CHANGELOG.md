@@ -9,6 +9,12 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Changed
 
+- **BREAKING · SDK 0.2.0: la caché de permisos queda desactivada por defecto.**
+  `MINERVA_PERMISSIONS_CACHE_TTL` pasa de `300` a `0`. Con caché, una decisión positiva se
+  servía de memoria sin consultar a Minerva, así que un token revocado seguía autorizando
+  hasta 5 minutos: la revocación no era inmediata. Ahora cada chequeo pregunta a Minerva,
+  que es quien la aplica. Activar la caché es una decisión explícita del consumidor, que
+  acepta esa ventana a cambio de menos tráfico.
 - **BREAKING · SDK 0.2.0: el bearer sale del objeto de usuario.** `get_current_user` ya no agrega
   `user["_token"]` con la credencial cruda; el dict son **solo** los claims del token, así que es
   seguro serializarlo en una respuesta o registrarlo en un log. `require_permission` obtiene el
@@ -37,13 +43,20 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Security
 
-- **Una revocación ya no queda cacheada en el SDK bajo otro token.** La caché de permisos se
-  indexaba por `(usuario, aplicación)`: dos tokens distintos del mismo usuario compartían la
-  decisión de autorización, así que un token revocado podía seguir pasando con los permisos que
-  otro había cacheado. Ahora se indexa por el `jti` del token y su TTL nunca pasa del `exp`, un
-  token sin `jti` no se cachea (se pregunta siempre), y un `401` de Minerva purga la entrada de
-  inmediato. Se añaden `invalidate_token(jti)` y `clear_caches()` para engancharlas al logout del
-  consumidor.
+- **Una revocación deja de autorizar de inmediato en el SDK.** La caché de permisos servía
+  decisiones positivas sin consultar a Minerva, así que un token revocado seguía pasando hasta
+  5 minutos; además se indexaba por `(usuario, aplicación)`, de modo que dos tokens distintos del
+  mismo usuario compartían la decisión. La caché queda **apagada por defecto**; si se activa, se
+  indexa por el `jti` del token, nunca sobrevive a su `exp`, un token sin `jti` no se cachea, un
+  `401` de Minerva purga la entrada, y el número de entradas está acotado (se descartan las
+  vencidas y, si aún sobra, las más próximas a vencer). Se añaden `invalidate_token(jti)` y
+  `clear_caches()` para engancharlas al logout del consumidor.
+
+- **La base garantiza una sola clave de firma `active` y una sola `pending`.** El invariante lo
+  sostenía solo el código, así que un INSERT directo o una restauración a medias podían dejar dos
+  activas y volver no determinista con qué clave se firma. La migración 009 repara los duplicados
+  que existan (conserva la más reciente; retira las otras activas y borra las pendientes sobrantes,
+  que nunca firmaron nada) y añade índices únicos parciales que lo impiden a futuro.
 
 - **Rotar una clave ya no invalida sesiones vigentes.** La purga de claves retiradas usaba
   `MINERVA_ACCESS_TOKEN_TTL_MINUTES` (15 min) como ventana de solapamiento, pero los tokens

@@ -172,6 +172,9 @@ python -m app.cli rotate-key     # fase 1: publica la clave nueva como `pending`
 python -m app.cli promote-key    # fase 2: la clave nueva empieza a firmar
 ```
 
+`promote-key --force` salta la espera; úsalo solo si sabes que ningún verificador tiene
+todavía el JWKS anterior cacheado.
+
 **Fase 1 — `rotate-key`.** Crea un par RSA 2048 con `status=pending`: ya aparece en
 `/.well-known/jwks.json`, pero **no firma nada todavía**. Invalida el caché JWKS de Redis
 para que el propio backend la vea de inmediato.
@@ -191,10 +194,14 @@ Las dos ventanas que gobiernan el proceso:
 La retención es **derivada, no configurable**, para que no pueda quedar desfasada del TTL
 de sesión. Los refresh tokens no cuentan: son opacos, nadie los firma.
 
-**Clave comprometida.** `python -m app.cli rotate-key --emergency` publica y activa en un
-solo paso. Deja de firmar con la clave vieja de inmediato, a cambio de aceptar que los
-verificadores con el JWKS cacheado rechacen tokens hasta refrescarlo. Minerva se auto-sana
-(reconstruye su JWKS al ver un `kid` desconocido); un consumidor con SDK ≥ 0.2.0 también.
+A lo sumo puede existir **una** clave `active` y **una** `pending` a la vez: lo garantizan
+índices únicos parciales en `signing_keys` (migración 009), no solo el código, así que ni
+un INSERT manual ni una restauración a medias pueden dejar ambiguo con qué clave se firma.
+
+> **Clave comprometida.** Este flujo **no** cubre ese caso. Rotar solo deja de *emitir* con
+> la clave vieja; la comprometida sigue publicada en el JWKS toda la ventana de retención,
+> así que los tokens firmados con ella se siguen aceptando. Retirarla de verdad exige
+> borrarla del JWKS y revocar los tokens vivos, que hoy es un procedimiento manual.
 
 **Recomendación operativa:** colgar la rotación de un cron periódico (p. ej. mensual),
 recordando que son **dos** ejecuciones separadas por la ventana de propagación.

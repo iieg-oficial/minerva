@@ -20,7 +20,7 @@ pip install -e ./sdk          # desde la raíz del repo Minerva
 | `MINERVA_ISSUER_URL` | URL base de Minerva | `http://localhost:9000` |
 | `MINERVA_APPLICATION_CODE` | Código de tu aplicación (slug). **Obligatorio**: es el `aud` que se exige siempre | `` |
 | `MINERVA_EXPECTED_ISSUER` | Issuer esperado del `iss`; si se deja vacío se usa `MINERVA_ISSUER_URL`. La validación NO se puede desactivar | `` |
-| `MINERVA_PERMISSIONS_CACHE_TTL` | TTL de caché de permisos (segundos). Acota cuánto tarda una revocación en notarse | `300` |
+| `MINERVA_PERMISSIONS_CACHE_TTL` | TTL de caché de permisos (segundos). **`0` = sin caché** (default): cada chequeo consulta a Minerva y la revocación es inmediata. Un valor > 0 activa la caché y esa cifra pasa a ser lo que tarda una revocación en notarse | `0` |
 | `MINERVA_JWKS_CACHE_TTL` | TTL de caché del JWKS (segundos) | `3600` |
 | `MINERVA_JWKS_REFRESH_COOLDOWN` | Mínimo entre dos refrescos del JWKS disparados por un `kid` desconocido (segundos) | `30` |
 | `MINERVA_REQUEST_TIMEOUT` | Timeout de las llamadas a Minerva (segundos) | `10` |
@@ -59,10 +59,15 @@ así que es seguro serializarlo en una respuesta o registrarlo en un log.
 
 ### Cachés y revocación
 
-- **Permisos:** la caché se indexa por el `jti` del token, no por usuario, y su TTL
-  nunca pasa del `exp` del token. Dos tokens del mismo usuario no comparten decisión de
-  autorización. Una revocación tarda como máximo `MINERVA_PERMISSIONS_CACHE_TTL` en
-  notarse; un `401` de Minerva purga la entrada de inmediato.
+- **Permisos: sin caché por defecto.** Cada `require_permission` consulta a Minerva, que
+  es quien aplica la revocación, así que revocar un token deja de autorizar en el acto.
+  Servir una decisión positiva desde memoria significa, por definición, no enterarse de
+  una revocación hasta que la entrada expire; por eso la caché es **opt-in**.
+- **Si la activas** (`MINERVA_PERMISSIONS_CACHE_TTL > 0`), aceptas esa ventana: un token
+  revocado sigue autorizando hasta ese TTL. La caché se indexa por el `jti` del token
+  (dos tokens del mismo usuario no comparten decisión), nunca sobrevive al `exp` del
+  token, un token sin `jti` no se cachea, y un `401` de Minerva purga la entrada. El
+  número de entradas está acotado.
 - **JWKS:** si llega un token con un `kid` que no está en la caché, el SDK la refresca
   aunque no haya expirado, así que una rotación de clave en Minerva **no** provoca 401.
 - Para forzarlo desde tu propio logout: `invalidate_token(jti)` y `clear_caches()`.

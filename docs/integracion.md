@@ -212,7 +212,7 @@ tokens — trátalo como de un solo uso.
 > cuando tu backend vuelve a tocar a Minerva. `get_current_user` del SDK valida el JWT
 > localmente (JWKS) y **no** se entera hasta que expira; `require_permission` sí consulta
 > `GET /api/v1/me/permissions` en tiempo real (sujeto a su caché corta,
-> `MINERVA_PERMISSIONS_CACHE_TTL`, default 300s) y por tanto responde `401` antes.
+> `MINERVA_PERMISSIONS_CACHE_TTL`, desactivada por defecto) y por tanto responde `401` antes.
 
 ### 3.4 Cerrar sesión / revocar (RFC 7009)
 
@@ -323,7 +323,7 @@ Variables de entorno del SDK (`minerva_sdk/config.py`):
 | `MINERVA_EXPECTED_ISSUER` | issuer esperado del `iss`; si se deja vacío se usa `MINERVA_ISSUER_URL`. La validación de `iss` no se puede desactivar |
 | `MINERVA_JWKS_CACHE_TTL` | segundos de caché del JWKS (default 3600) |
 | `MINERVA_JWKS_REFRESH_COOLDOWN` | segundos mínimos entre refrescos del JWKS por `kid` desconocido (default 30) |
-| `MINERVA_PERMISSIONS_CACHE_TTL` | segundos de caché de permisos, por token (default 300) |
+| `MINERVA_PERMISSIONS_CACHE_TTL` | segundos de caché de permisos (default **0 = sin caché**) |
 | `MINERVA_REQUEST_TIMEOUT` | segundos de timeout de las llamadas a Minerva (default 10) |
 
 > **El objeto de usuario son solo claims.** El dict que devuelven `get_current_user` y
@@ -331,10 +331,13 @@ Variables de entorno del SDK (`minerva_sdk/config.py`):
 > registrarlo. Si vienes del SDK 0.1.0, ver «Migración desde 0.1.0» en `sdk/README.md`:
 > `user["_token"]` ya no existe.
 
-> **Rotación de claves y revocación.** La caché de permisos va ligada al `jti` del token
-> (nunca sobrevive a su `exp`), así que una revocación tarda a lo sumo
-> `MINERVA_PERMISSIONS_CACHE_TTL` en notarse. Y si Minerva rota su clave de firma, el SDK
-> refresca el JWKS al ver un `kid` desconocido: la rotación **no** produce 401 espurios.
+> **Revocación inmediata por defecto.** El SDK **no cachea permisos** salvo que lo actives:
+> cada chequeo consulta a Minerva, que es quien aplica la revocación, así que revocar un
+> token deja de autorizar en el acto. Si pones `MINERVA_PERMISSIONS_CACHE_TTL > 0` ganas
+> menos tráfico a cambio de que una revocación tarde hasta ese TTL en notarse.
+
+> **Rotación de claves.** Si Minerva rota su clave de firma, el SDK refresca el JWKS al ver
+> un `kid` desconocido: la rotación **no** produce 401 espurios.
 
 ```python
 from fastapi import Depends, FastAPI
