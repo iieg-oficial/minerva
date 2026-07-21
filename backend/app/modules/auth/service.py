@@ -404,7 +404,7 @@ class AuthService:
             # reúso genuino de un token que quedó rotado/revocado en el pasado (posible
             # robo). Revoca la familia y entrega sus access_jti para que el router los
             # blacklistee antes de confirmar.
-            jtis = self.refresh_repo.revoke_family(refresh.family_id, commit=commit)
+            jtis = self._revoke_family_or_conflict(refresh.family_id, commit)
             raise RefreshReuseError(jtis, detail="refresh token ya utilizado; la sesión fue revocada por seguridad")
 
         expires_at = refresh.expires_at
@@ -422,7 +422,7 @@ class AuthService:
             # Inalcanzable en la práctica: ya tenemos el lock de fila desde
             # get_by_hash_for_update, nadie más puede haber cambiado el status entre medio.
             # Se conserva como red de seguridad si algún día el lock deja de cubrir esta ruta.
-            jtis = self.refresh_repo.revoke_family(refresh.family_id, commit=commit)
+            jtis = self._revoke_family_or_conflict(refresh.family_id, commit)
             raise RefreshReuseError(jtis, detail="refresh token ya utilizado; la sesión fue revocada por seguridad")
 
         perms, role_slugs = self._get_user_permissions(user.id, app.slug)
@@ -454,7 +454,16 @@ class AuthService:
         refresh = self.refresh_repo.get_by_hash(hash_token(refresh_token_raw))
         if not refresh or refresh.client_id != client_id:
             return []
-        return self.refresh_repo.revoke_family(refresh.family_id, commit=commit)
+        return self._revoke_family_or_conflict(refresh.family_id, commit)
+
+    def _revoke_family_or_conflict(self, family_id: str, commit: bool) -> list[str]:
+        """Revoca la familia traduciendo un lock contendido (otro miembro se está
+        rotando ahora mismo) a un conflicto explícito de reintento, en vez de dejar
+        que el caller se tope con `RefreshTokenRowLocked` crudo."""
+        try:
+            return self.refresh_repo.revoke_family(family_id, commit=commit)
+        except RefreshTokenRowLocked:
+            raise RefreshRotationInProgressError()
 
     def _get_user_permissions(self, user_id: str, app_slug: str) -> tuple[list[str], list[str]]:
         direct_roles = self.user_role_repo.list_roles_for_user(user_id)
