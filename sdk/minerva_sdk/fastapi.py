@@ -25,15 +25,30 @@ _permissions_cache: dict[tuple[str, str], tuple[float, frozenset[str]]] = {}
 # Cota del dict antes de barrer las entradas vencidas (ver _prune_permissions_cache).
 _PERMISSIONS_CACHE_MAX = 1000
 # Caché del JWKS: las claves públicas cambian poco (rotación), no hace falta
-# pedirlas en cada request.
-_jwks_cache: dict[str, object] = {"exp": 0.0, "jwks": None}
+# pedirlas en cada request. `retry_after` acota los refrescos por `kid` desconocido.
+_jwks_cache: dict[str, object] = {"exp": 0.0, "jwks": None, "retry_after": 0.0}
 
 
-async def _get_jwks() -> dict:
+def _has_kid(jwks: dict, kid: str) -> bool:
+    return any(key.get("kid") == kid for key in jwks.get("keys", []))
+
+
+async def _get_jwks(kid: str | None = None) -> dict:
+    """JWKS de Minerva, cacheado. Si el `kid` del token no está en el caché, lo
+    refresca aunque no haya expirado: es lo que evita rechazar tokens válidos durante
+    una hora tras una rotación de clave en Minerva.
+
+    El refresco se limita a uno por `MINERVA_JWKS_REFRESH_COOLDOWN`, para que tokens
+    con un `kid` inventado no conviertan cada request en una llamada a Minerva.
+    """
     now = time.time()
     cached = _jwks_cache["jwks"]
     if cached is not None and float(_jwks_cache["exp"]) > now:
-        return cached  # type: ignore[return-value]
+        if kid is None or _has_kid(cached, kid):  # type: ignore[arg-type]
+            return cached  # type: ignore[return-value]
+        if now < float(_jwks_cache["retry_after"]):
+            return cached  # type: ignore[return-value]
+        _jwks_cache["retry_after"] = now + settings.jwks_refresh_cooldown
 
     url = f"{settings.issuer_url.rstrip('/')}/.well-known/jwks.json"
     async with httpx.AsyncClient(timeout=settings.request_timeout) as cli:
@@ -47,9 +62,10 @@ async def _get_jwks() -> dict:
 
 async def _decode(token: str) -> dict:
     try:
-        alg = jwt.get_unverified_header(token).get("alg")
+        header = jwt.get_unverified_header(token)
     except JWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Token inválido: {exc}")
+    alg = header.get("alg")
 
     # El algoritmo se fija a RS256 (único soportado) para evitar ataques de
     # confusión de algoritmo. No hay validación HS256.
@@ -68,7 +84,7 @@ async def _decode(token: str) -> dict:
         )
 
     try:
-        jwks = await _get_jwks()
+        jwks = await _get_jwks(kid=header.get("kid"))
         payload = jwt.decode(
             token,
             jwks,

@@ -19,6 +19,9 @@ class MinervaSettings:
     expected_issuer: str = os.getenv("MINERVA_EXPECTED_ISSUER", "")
     permissions_cache_ttl: int = int(os.getenv("MINERVA_PERMISSIONS_CACHE_TTL", "300"))
     jwks_cache_ttl: int = int(os.getenv("MINERVA_JWKS_CACHE_TTL", "3600"))
+    # Mínimo entre dos refrescos del JWKS disparados por un `kid` desconocido. Acota el
+    # coste de tokens con un `kid` inventado sin retrasar una rotación legítima.
+    jwks_refresh_cooldown: int = int(os.getenv("MINERVA_JWKS_REFRESH_COOLDOWN", "30"))
     request_timeout: float = float(os.getenv("MINERVA_REQUEST_TIMEOUT", "10"))
 
 
