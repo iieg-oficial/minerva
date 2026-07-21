@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import Column, DateTime
 from sqlmodel import Field, SQLModel
 
 
@@ -28,5 +29,16 @@ class SigningKey(SQLModel, table=True):
     private_key_pem: str  # cifrado en reposo (NUNCA en texto plano)
     public_key_pem: str
     status: str = Field(default="active")  # pending | active | retired
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    rotated_at: datetime | None = Field(default=None)
+    # `timezone=True` para que el modelo declare lo mismo que la BD (migración 008):
+    # si no, SQLAlchemy castea los INSERT a `timestamp without time zone` y la
+    # conversión depende del `TimeZone` de la sesión de PostgreSQL. Las ventanas de
+    # propagación y de purga se calculan sobre estos campos, así que la ambigüedad
+    # importa. En SQLite no hay tipo con zona: se leen naive y `_as_utc` los normaliza.
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+    rotated_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
