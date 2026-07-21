@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
 from sqlmodel import Session
 
@@ -205,7 +205,7 @@ async def logout(
     audit: AuditService = Depends(get_audit_service),
     redis: Redis = Depends(get_redis),
 ):
-    """Logout suave (estilo Google): sale de la cuenta activa pero conserva las cuentas
+    """Logout suave: sale de la cuenta activa pero conserva las cuentas
     del navegador y sus tokens (para volver a entrar sin re-teclear). NO revoca el jti:
     para invalidar de verdad están "quitar cuenta" y "cerrar todas las sesiones"."""
     container = ps["container"]
@@ -258,31 +258,6 @@ def me(
     current_user: dict = Depends(get_current_panel_user),
 ):
     return service.get_me(current_user["sub"])
-
-
-@router.get("/google/login")
-def google_login():
-    if not settings.GOOGLE_CLIENT_ID:
-        return JSONResponse(
-            {"detail": "Google OAuth no configurado. Configure GOOGLE_CLIENT_ID en .env"}, status_code=501
-        )
-    authorize_url = (
-        f"https://accounts.google.com/o/oauth2/v2/auth"
-        f"?client_id={settings.GOOGLE_CLIENT_ID}"
-        f"&redirect_uri={settings.GOOGLE_REDIRECT_URI}"
-        f"&response_type=code"
-        f"&scope=openid%20profile%20email"
-        f"&hd={settings.ALLOWED_GOOGLE_DOMAIN}"
-    )
-    return RedirectResponse(authorize_url)
-
-
-@router.get("/google/callback")
-def google_callback(code: str):
-    return JSONResponse(
-        {"detail": "Google callback pendiente de implementación. TODO: integrar authlib para intercambio de tokens."},
-        status_code=501,
-    )
 
 
 @router.get("/authorize")

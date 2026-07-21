@@ -29,11 +29,6 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = "admin@iieg.gob.mx"
     ADMIN_PASSWORD: str = "changeme123"
 
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:9000/auth/google/callback"
-    ALLOWED_GOOGLE_DOMAIN: str = "iieg.gob.mx"
-
     MINERVA_ISSUER: str = "http://localhost:9000"
     FRONTEND_URL: str = "http://localhost:3000"
 

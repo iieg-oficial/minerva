@@ -140,9 +140,6 @@ export default function DashboardPage() {
                         >
                             <Descriptions.Item label="Nombre">{user.full_name}</Descriptions.Item>
                             <Descriptions.Item label="Email">{user.email}</Descriptions.Item>
-                            <Descriptions.Item label="Proveedor">
-                                <Tag>{user.auth_provider}</Tag>
-                            </Descriptions.Item>
                             <Descriptions.Item label="Estado">
                                 <Tag color={statusInfo.color}>{statusInfo.text}</Tag>
                             </Descriptions.Item>

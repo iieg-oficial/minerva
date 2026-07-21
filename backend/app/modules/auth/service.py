@@ -187,7 +187,6 @@ class AuthService:
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
-                "auth_provider": user.auth_provider,
                 "status": user.status,
             },
             "roles": [
@@ -399,7 +398,7 @@ class AuthService:
             roles=roles,
             permissions=permissions,
             scope=scope,
-            email_verified=user.auth_provider == "google",
+            email_verified=False,
             jti=jti,
             expires_minutes=access_ttl,
             typ="access",

@@ -110,9 +110,7 @@ def ctx(pg_engine, pg_client):
         session.add(app_row)
         session.flush()
         session.add(RedirectURI(application_id=app_row.id, uri=REDIRECT_URI, environment="production"))
-        user = User(
-            email="race-endpoint@iieg.gob.mx", full_name="Race Endpoint", auth_provider="local", status="active"
-        )
+        user = User(email="race-endpoint@iieg.gob.mx", full_name="Race Endpoint", status="active")
         session.add(user)
         session.flush()
         _grant_role(session, app_row.id, user.id)
@@ -181,9 +179,7 @@ def _make_admin(pg_engine, application_id: str) -> str:
     (Bearer, `typ=session`) — el mismo mecanismo que `tests.conftest._mint_session_token`
     pero contra el engine de PostgreSQL en vez del `test_engine` de SQLite."""
     with Session(pg_engine) as session:
-        admin_user = User(
-            email="race-admin@iieg.gob.mx", full_name="Race Admin", auth_provider="local", status="active"
-        )
+        admin_user = User(email="race-admin@iieg.gob.mx", full_name="Race Admin", status="active")
         session.add(admin_user)
         session.flush()
         admin_role = Role(application_id=application_id, name="Admin", slug="minerva.admin")

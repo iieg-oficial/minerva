@@ -60,7 +60,7 @@ export async function removeSession(sub) {
     return fetchSession();
 }
 
-// Logout suave (estilo Google): cierra la cuenta activa sin revocar su token; las
+// Logout suave: cierra la cuenta activa sin revocar su token; las
 // cuentas siguen en el contenedor para reingresar rápido.
 export async function deactivate() {
     await client.post('/auth/logout');

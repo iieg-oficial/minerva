@@ -18,7 +18,6 @@ dependencies = [
     "python-jose[cryptography]>=3.3",
     "bcrypt>=4.0",
     "email-validator>=2.3",
-    "authlib>=1.7",
     "httpx>=0.28",
     "orjson>=3.11",
     "python-multipart>=0.0.32",

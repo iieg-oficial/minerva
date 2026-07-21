@@ -52,7 +52,6 @@ class DevKitService:
             user = User(
                 email=data.email,
                 full_name=data.full_name or data.email.split("@")[0],
-                auth_provider="dev",
                 status="active",
             )
             user = self.user_repo.create(user)

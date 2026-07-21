@@ -42,7 +42,7 @@ def seeded():
         session.add(app_row)
         session.flush()
         session.add(RedirectURI(application_id=app_row.id, uri=REDIRECT_URI, environment="production"))
-        user = User(email="pkce@iieg.gob.mx", full_name="PKCE User", auth_provider="local", status="active")
+        user = User(email="pkce@iieg.gob.mx", full_name="PKCE User", status="active")
         session.add(user)
         grant_role(session, app_row.id, user.id)
         session.commit()

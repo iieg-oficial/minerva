@@ -26,7 +26,7 @@ def claims_for_scopes(user: User, scope: str) -> dict:
         claims["preferred_username"] = user.email
     if "email" in scopes:
         claims["email"] = user.email
-        claims["email_verified"] = user.auth_provider == "google"
+        claims["email_verified"] = False
     return claims
 
 

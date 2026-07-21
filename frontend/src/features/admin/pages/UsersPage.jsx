@@ -120,7 +120,6 @@ export default function UsersPage() {
     const columns = [
         { title: 'Nombre', dataIndex: 'full_name', key: 'full_name' },
         { title: 'Email', dataIndex: 'email', key: 'email' },
-        { title: 'Proveedor', dataIndex: 'auth_provider', key: 'auth_provider', width: 100 },
         {
             title: 'Estado',
             dataIndex: 'status',
@@ -233,16 +232,8 @@ export default function UsersPage() {
                             >
                                 <Input />
                             </Form.Item>
-                            <Form.Item name="password" label="Contraseña">
-                                <Input.Password placeholder="Opcional si es Google" />
-                            </Form.Item>
-                            <Form.Item name="auth_provider" label="Proveedor" initialValue="local">
-                                <Select
-                                    options={[
-                                        { label: 'Local', value: 'local' },
-                                        { label: 'Google', value: 'google' },
-                                    ]}
-                                />
+                            <Form.Item name="password" label="Contraseña" rules={[{ required: true }]}>
+                                <Input.Password />
                             </Form.Item>
 
                             <Divider style={{ margin: '8px 0 16px' }}>
