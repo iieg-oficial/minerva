@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlmodel import Session, select, update
+from sqlmodel import Session, col, select, update
 
 from app.modules.oidc.models import SigningKey
 
@@ -15,12 +15,12 @@ class SigningKeyRepository:
         """La clave que firma. El `ORDER BY` es determinismo defensivo: la promoción
         es atómica y nunca debe dejar dos activas, pero si alguna vez las hubiera,
         firmar con la más nueva es preferible a que dependa del plan del query."""
-        statement = select(SigningKey).where(SigningKey.status == "active").order_by(SigningKey.created_at.desc())
+        statement = select(SigningKey).where(SigningKey.status == "active").order_by(col(SigningKey.created_at).desc())
         return self.session.exec(statement).first()
 
     def get_pending(self) -> SigningKey | None:
         """La clave publicada pero que aún no firma (publish-before-use)."""
-        statement = select(SigningKey).where(SigningKey.status == "pending").order_by(SigningKey.created_at.desc())
+        statement = select(SigningKey).where(SigningKey.status == "pending").order_by(col(SigningKey.created_at).desc())
         return self.session.exec(statement).first()
 
     def get_by_kid(self, kid: str) -> SigningKey | None:
@@ -34,7 +34,7 @@ class SigningKeyRepository:
         se mantienen mientras puedan existir tokens vigentes firmados con ellas; su purga
         definitiva es responsabilidad de la rotación.
         """
-        statement = select(SigningKey).where(SigningKey.status.in_(["pending", "active", "retired"]))
+        statement = select(SigningKey).where(col(SigningKey.status).in_(["pending", "active", "retired"]))
         return list(self.session.exec(statement).all())
 
     def create(self, key: SigningKey) -> SigningKey:
@@ -62,12 +62,12 @@ class SigningKeyRepository:
         """
         self.session.execute(
             update(SigningKey)
-            .where(SigningKey.status == "active")
+            .where(col(SigningKey.status) == "active")
             .values(status="retired", rotated_at=datetime.now(timezone.utc))
         )
         claimed = self.session.execute(
             update(SigningKey)
-            .where(SigningKey.id == pending.id, SigningKey.status == "pending")
+            .where(col(SigningKey.id) == pending.id, col(SigningKey.status) == "pending")
             .values(status="active")
         )
         if claimed.rowcount != 1:
@@ -81,7 +81,7 @@ class SigningKeyRepository:
         deben purgar una vez pasada la ventana de solapamiento (vida máxima de un
         access/id token firmado con esa clave) para no invalidar tokens vigentes."""
         keys = self.session.exec(
-            select(SigningKey).where(SigningKey.status == "retired", SigningKey.rotated_at < cutoff)
+            select(SigningKey).where(col(SigningKey.status) == "retired", col(SigningKey.rotated_at) < cutoff)
         ).all()
         for key in keys:
             self.session.delete(key)
