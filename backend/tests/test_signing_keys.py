@@ -74,7 +74,8 @@ def test_unknown_kid_is_rejected(service):
 
 def test_rotate_key_retires_previous_and_publishes_both(service):
     first = service.generate_signing_key()
-    second = service.rotate_key()
+    service.stage_key()
+    second = service.promote_key(force=True)
 
     assert second.kid != first.kid
     assert service.get_active_signing_key().kid == second.kid
@@ -102,14 +103,16 @@ def test_purge_retired_before_only_purges_older_than_cutoff(service):
     assert service.repo.get_by_kid(recent_key.kid) is not None
 
 
-def test_rotate_key_purges_retired_keys_past_overlap_window(service):
+def test_promote_key_purges_retired_keys_past_overlap_window(service):
     stale = service.generate_signing_key()
     service.repo.mark_retired(stale)
     stale.rotated_at = datetime.now(timezone.utc) - timedelta(days=1)
     service.session.add(stale)
     service.session.commit()
 
-    new_active = service.rotate_key()
+    service.generate_signing_key()
+    service.stage_key()
+    new_active = service.promote_key(force=True)
 
     assert service.repo.get_by_kid(stale.kid) is None
     assert service.get_active_signing_key().kid == new_active.kid

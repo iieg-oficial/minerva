@@ -18,6 +18,13 @@ bearer_scheme = HTTPBearer(auto_error=False)
 JWKS_CACHE_KEY = "minerva:jwks:current"
 
 
+async def invalidate_jwks_cache(redis: Redis) -> None:
+    """Borra el JWKS cacheado. Lo llama el CLI tras publicar o promover una clave:
+    sin esto el backend seguiría sirviendo el JWKS viejo hasta que expire el TTL y
+    rechazaría tokens que él mismo acaba de firmar."""
+    await redis.delete(JWKS_CACHE_KEY)
+
+
 async def _get_jwks_cached(session: Session, redis: Redis) -> dict:
     """Cachea el JWKS en Redis con TTL corto para no reconstruirlo desde BD en
     cada request. `OIDCService` es puramente síncrona (sobre `Session`); el caché
