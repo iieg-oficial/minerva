@@ -45,21 +45,11 @@ def _drop_jwks_cache() -> None:
         print("El backend lo reconstruira solo al ver el kid nuevo; no hace falta reintentar.")
 
 
-def rotate_key(emergency: bool = False) -> None:
+def rotate_key() -> None:
     import_models()
     with Session(engine) as session:
-        service = OIDCService(session)
-        if emergency:
-            key = service.rotate_key_now()
-        else:
-            key = service.stage_key()
+        key = OIDCService(session).stage_key()
     _drop_jwks_cache()
-
-    if emergency:
-        logger.info("Rotacion de emergencia. Nuevo kid activo: %s", key.kid)
-        print(f"Rotacion de emergencia: la clave {key.kid} ya esta firmando.")
-        print("Los verificadores con el JWKS cacheado pueden rechazar tokens hasta refrescarlo.")
-        return
 
     logger.info("Clave de firma publicada como pendiente: %s", key.kid)
     print(f"Clave {key.kid} publicada en el JWKS (aun no firma nada).")
@@ -80,12 +70,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Comandos de mantenimiento de Minerva")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    rotate = subparsers.add_parser("rotate-key", help="Publica una clave de firma nueva en el JWKS (fase 1)")
-    rotate.add_argument(
-        "--emergency",
-        action="store_true",
-        help="Clave comprometida: publica y activa en un solo paso, asumiendo el corte",
-    )
+    subparsers.add_parser("rotate-key", help="Publica una clave de firma nueva en el JWKS (fase 1)")
 
     promote = subparsers.add_parser("promote-key", help="Empieza a firmar con la clave pendiente (fase 2)")
     promote.add_argument(
@@ -96,7 +81,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "rotate-key":
-        rotate_key(emergency=args.emergency)
+        rotate_key()
     elif args.command == "promote-key":
         promote_key(force=args.force)
 

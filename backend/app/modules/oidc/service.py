@@ -111,7 +111,9 @@ class OIDCService:
     # propagación, cuando ya está en las cachés de todos.
 
     def stage_key(self) -> SigningKey:
-        """Fase 1: publica una clave nueva en el JWKS sin firmar con ella."""
+        """Fase 1: publica una clave nueva en el JWKS sin firmar con ella.
+
+"""
         if self.repo.get_pending() is not None:
             raise ConflictError(
                 detail="Ya hay una clave pendiente de promover; promuévela o descártala antes de publicar otra"
@@ -157,17 +159,6 @@ class OIDCService:
 
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.key_retirement_overlap_minutes)
         return self.repo.purge_retired_before(cutoff)
-
-    def rotate_key_now(self) -> SigningKey:
-        """Rotación de emergencia: publica y promueve en un solo paso, saltando la
-        ventana de propagación.
-
-        Solo para clave comprometida, donde dejar de firmar con ella YA importa más que
-        el corte. Asume que los verificadores con el JWKS cacheado rechazarán los tokens
-        nuevos hasta refrescarlo (el backend se auto-sana por `kid` desconocido; un
-        consumidor con SDK viejo puede tardar hasta su TTL de caché)."""
-        self.stage_key()
-        return self.promote_key(force=True)
 
     # --- Emisión de tokens de sesión interna -------------------------------
     # Tokens del panel/login y del Dev Kit. Se firman con la clave activa (RS256),
