@@ -1,9 +1,17 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import psycopg
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, select, update
 
 from app.modules.auth.models import AuthCode, RefreshToken
+
+
+class RefreshTokenRowLocked(Exception):
+    """Otra transacción tiene el lock de fila de este refresh token en este instante
+    (`SELECT ... FOR UPDATE NOWAIT` no lo consiguió): contención concurrente real, no
+    reúso. En SQLite no se levanta nunca (no soporta locking real, ver get_by_hash_for_update)."""
 
 
 class AuthCodeRepository:
@@ -87,6 +95,19 @@ class RefreshTokenRepository:
 
     def get_by_hash(self, token_hash: str) -> RefreshToken | None:
         return self.session.exec(select(RefreshToken).where(RefreshToken.token_hash == token_hash)).first()
+
+    def get_by_hash_for_update(self, token_hash: str) -> RefreshToken | None:
+        """Igual que `get_by_hash` pero toma el lock de fila sin esperar (`FOR UPDATE
+        NOWAIT` en PostgreSQL; SQLAlchemy lo compila como no-op en SQLite, que no
+        soporta locking real). Si otra rotación concurrente ya tiene el lock, falla
+        rápido con `RefreshTokenRowLocked` en vez de bloquear el hilo indefinidamente."""
+        stmt = select(RefreshToken).where(RefreshToken.token_hash == token_hash).with_for_update(nowait=True)
+        try:
+            return self.session.exec(stmt).first()
+        except OperationalError as exc:
+            if isinstance(exc.orig, psycopg.errors.LockNotAvailable):
+                raise RefreshTokenRowLocked from exc
+            raise
 
     def mark_rotated(self, refresh: RefreshToken, commit: bool = True) -> bool:
         """Reclama la rotación de forma atómica. False si ya fue rotado/revocado (reúso)."""
