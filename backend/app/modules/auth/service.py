@@ -7,7 +7,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 from app.core.security import (
     create_access_token_rs256,
     create_id_token,
@@ -36,12 +36,18 @@ _PARAMS_RESPUESTA = frozenset({"code", "state", "error", "error_description", "e
 
 
 def session_auth_time(claims: dict) -> int | None:
-    """`auth_time` de la sesión del panel que trae el token.
+    """`auth_time` de la sesión del panel que trae el token, o `None` si no lo acredita.
 
     Es por sesión, no por usuario: dos navegadores del mismo usuario tienen cada uno el
-    suyo, así que iniciar sesión en uno no rejuvenece al otro. Los tokens emitidos antes
-    de que el claim existiera caen a `iat`, que para ellos es cuando se creó la sesión."""
-    value = claims.get("auth_time", claims.get("iat"))
+    suyo, así que iniciar sesión en uno no rejuvenece al otro.
+
+    **No cae a `iat`.** Un token emitido antes de que el claim existiera no trae prueba
+    de cuándo se autenticó: `/auth/refresh` regeneraba `iat` sin re-autenticar a nadie,
+    así que una sesión vieja recién refrescada exhibiría un `iat` reciente y pasaría un
+    `max_age` que no cumple. Sin evidencia, se re-autentica (ver `_requires_reauth` y
+    `reissue_session_token`); es un solo re-login y solo para sesiones previas al
+    cambio, que además caducan solas dentro del TTL de sesión."""
+    value = claims.get("auth_time")
     return int(value) if value is not None else None
 
 
@@ -125,7 +131,13 @@ class AuthService:
 
         Conserva el `auth_time` original: refrescar el token alarga la sesión, no
         vuelve a autenticar al usuario. Si se renovara, un `max_age` nunca se
-        cumpliría en una sesión que se refresca sola."""
+        cumpliría en una sesión que se refresca sola.
+
+        Por eso mismo una sesión sin `auth_time` (emitida antes del claim) no se puede
+        refrescar: `issue_session_token` le pondría uno de "ahora", convirtiendo en
+        evidencia de autenticación algo que nunca lo fue. Se exige re-login."""
+        if session_auth_time(current_user) is None:
+            raise UnauthorizedError(detail="La sesión no acredita cuándo se autenticó; inicia sesión de nuevo")
         token = self.oidc_service.issue_session_token(
             user_id=current_user["sub"],
             email=current_user["email"],

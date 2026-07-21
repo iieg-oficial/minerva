@@ -182,16 +182,15 @@ def test_auth_time_reportado_es_coherente_con_lo_que_exige_max_age(client, app_c
     assert claims["auth_time"] == esperado
 
 
-def test_una_sesion_sin_auth_time_no_acredita_frescura(client, app_ctx):
-    """Tokens emitidos antes de que el claim existiera: caen a `iat`, que para ellos es
-    cuando se creó la sesión, así que un `max_age` vencido sigue exigiendo re-login."""
-    with Session(test_engine) as session:
-        from app.core.security import create_access_token_rs256
+def _sesion_legacy(ctx: dict) -> str:
+    """Token de sesión como los que se emitían antes del claim `auth_time`. Su `iat` es
+    de ahora mismo, igual que el de una sesión vieja recién refrescada."""
+    from app.core.security import create_access_token_rs256
 
-        oidc = OIDCService(session)
-        kid, pem = oidc.get_active_private_pem()
-        antiguo = create_access_token_rs256(
-            user_id=app_ctx["user_id"],
+    with Session(test_engine) as session:
+        kid, pem = OIDCService(session).get_active_private_pem()
+        return create_access_token_rs256(
+            user_id=ctx["user_id"],
             email=EMAIL,
             name="Auth Time",
             kid=kid,
@@ -200,6 +199,36 @@ def test_una_sesion_sin_auth_time_no_acredita_frescura(client, app_ctx):
             typ="session",
         )
 
-    assert "auth_time" not in _claims_sesion(antiguo)
-    # `iat` es de ahora, así que un max_age holgado pasa y uno de 0 s no.
-    assert _id_token_claims(client, app_ctx, antiguo, max_age=3600)["auth_time"] == _claims_sesion(antiguo)["iat"]
+
+def test_un_token_legacy_con_iat_reciente_no_satisface_max_age(client, app_ctx):
+    """`iat` NO es prueba de autenticación: antes de este cambio `/auth/refresh` lo
+    regeneraba sin re-autenticar a nadie, así que una sesión de hace días recién
+    refrescada exhibiría un `iat` de hace segundos. Sin `auth_time` no hay evidencia,
+    y sin evidencia se re-autentica por más fresco que luzca el token."""
+    legacy = _sesion_legacy(app_ctx)
+    claims = _claims_sesion(legacy)
+    assert "auth_time" not in claims
+    assert datetime.now(timezone.utc).timestamp() - claims["iat"] < 60, "el iat es reciente a propósito"
+
+    resp = _authorize(client, app_ctx, legacy, max_age=3600)
+
+    assert "/login?next=" in resp.headers["location"], "el iat se está aceptando como auth_time"
+
+
+def test_un_token_legacy_no_se_puede_refrescar(client, app_ctx):
+    """El refresh convertiría ese `iat` en un `auth_time` con apariencia legítima, que
+    ya nadie podría distinguir de una autenticación real. Se corta ahí: un re-login."""
+    legacy = _sesion_legacy(app_ctx)
+
+    resp = client.post("/auth/refresh", headers={"Authorization": f"Bearer {legacy}"})
+
+    assert resp.status_code == 401, resp.text
+
+
+def test_un_token_legacy_sigue_sirviendo_para_sso_sin_max_age(client, app_ctx):
+    """La exigencia es proporcional: sin `max_age` el consumidor no pidió frescura, así
+    que la sesión sigue valiendo — solo que su id_token omite `auth_time`, en vez de
+    inventar uno. El claim únicamente es obligatorio cuando se pidió `max_age`."""
+    claims = _id_token_claims(client, app_ctx, _sesion_legacy(app_ctx))
+
+    assert "auth_time" not in claims
