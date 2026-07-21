@@ -19,6 +19,7 @@ from sqlmodel import Session, select
 from app.core.exceptions import ConflictError
 from app.core.models import import_models
 from app.modules.oidc.models import SigningKey
+from app.modules.oidc.repository import SigningKeyRepository
 from app.modules.oidc.service import OIDCService
 from tests.conftest import require_test_database_url
 
@@ -99,18 +100,45 @@ def test_dos_stage_key_concurrentes_dejan_una_sola_pendiente(migrated_engine):
         assert OIDCService(session).repo.get_pending().kid == winner_kid
 
 
-def test_dos_ensure_active_concurrentes_convergen_a_la_misma_clave(migrated_engine):
+def test_dos_ensure_active_concurrentes_convergen_a_la_misma_clave(migrated_engine, monkeypatch):
     """Con varios workers, todos siembran a la vez sobre una tabla vacía al arrancar.
     Ninguno debe fallar: el perdedor del índice se queda con la clave del ganador, así
-    que ambos terminan bien y con el mismo `kid`."""
+    que ambos terminan bien y con el mismo `kid`.
+
+    La barrera se mete DENTRO de `ensure_active_signing_key`, justo después del
+    `get_active()` con el que decide si hay que crear la clave: sincronizar antes de
+    llamarlo no sirve, porque el ganador podría comitear antes de que el otro haga esa
+    consulta y entonces se saldría por el camino fácil sin tocar el INSERT. Así el
+    camino de `IntegrityError` se ejercita siempre, no cuando lo quiera el planificador.
+    """
     barrier = threading.Barrier(2)
     results: queue.Queue = queue.Queue()
+    local = threading.local()
+    insert_attempts = queue.Queue()
+
+    original_get_active = SigningKeyRepository.get_active
+    original_generate = OIDCService.generate_signing_key
+
+    def get_active_sincronizado(self):
+        result = original_get_active(self)
+        # Solo la PRIMERA consulta de cada hilo participante espera: la del camino de
+        # recuperación tras el rollback no debe bloquearse, ni las del hilo principal.
+        if getattr(local, "sync_pending", False):
+            local.sync_pending = False
+            barrier.wait(timeout=10)
+        return result
+
+    def generate_contado(self, status="active"):
+        insert_attempts.put(status)
+        return original_generate(self, status)
+
+    monkeypatch.setattr(SigningKeyRepository, "get_active", get_active_sincronizado)
+    monkeypatch.setattr(OIDCService, "generate_signing_key", generate_contado)
 
     def _ensure():
         with Session(migrated_engine) as session:
             service = OIDCService(session)
-            service.repo.get_active()  # ambos ven la tabla vacía
-            barrier.wait(timeout=10)
+            local.sync_pending = True
             try:
                 results.put(("ok", service.ensure_active_signing_key().kid))
             except Exception as exc:  # noqa: BLE001 - el test reporta el fallo
@@ -126,6 +154,10 @@ def test_dos_ensure_active_concurrentes_convergen_a_la_misma_clave(migrated_engi
     outcomes = [results.get() for _ in range(2)]
     errors = [value for kind, value in outcomes if kind == "error"]
     assert not errors, f"ningún caller debía fallar, pero: {errors}"
+
+    # Ambos vieron la tabla vacía y ambos intentaron insertar: si solo hubiera un
+    # intento, el perdedor se habría salido antes y el IntegrityError nunca se probaría.
+    assert insert_attempts.qsize() == 2, "los dos hilos debían llegar al INSERT"
 
     kids = {value for _, value in outcomes}
     assert len(kids) == 1, f"ambos debían devolver el mismo kid, devolvieron {kids}"
