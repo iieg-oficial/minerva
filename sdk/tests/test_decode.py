@@ -24,9 +24,7 @@ def _make_keypair() -> tuple[str, str]:
     ).decode()
     public_pem = (
         priv.public_key()
-        .public_bytes(
-            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
-        )
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
         .decode()
     )
     return private_pem, public_pem
@@ -116,9 +114,7 @@ def test_missing_application_code_is_config_error(setup):
 
 def test_hs256_rejected(setup):
     # Solo RS256: un token HS256 se rechaza (anti-confusión de algoritmo).
-    token = jwt.encode(
-        {"sub": "u1", "aud": "godin"}, "secreto-cualquiera", algorithm="HS256"
-    )
+    token = jwt.encode({"sub": "u1", "aud": "godin"}, "secreto-cualquiera", algorithm="HS256")
     with pytest.raises(HTTPException) as exc:
         asyncio.run(_decode(token))
     assert exc.value.status_code == 401

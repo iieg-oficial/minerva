@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minerva-sdk"
-version = "0.1.0"
+version = "0.2.0"
 description = "SDK mínimo de Minerva para sistemas consumidores (FastAPI)"
 requires-python = ">=3.10"
 dependencies = [
@@ -14,7 +14,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+# `cryptography` entra transitivamente por python-jose, pero los tests la importan
+# directo para generar pares RSA: se declara para no depender de esa transitividad.
+dev = ["pytest>=8.0", "cryptography>=42.0", "ruff>=0.6"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["minerva_sdk"]
+
+[tool.ruff]
+# Mismo ancho que el backend (ver backend/pyproject.toml): el default de ruff son 88.
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

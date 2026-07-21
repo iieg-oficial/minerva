@@ -46,7 +46,8 @@ MINERVA_ISSUER_URL=http://localhost:9000
 MINERVA_APPLICATION_CODE=godin
 MINERVA_EXPECTED_ISSUER=http://localhost:9000
 MINERVA_JWKS_CACHE_TTL=3600
-MINERVA_PERMISSIONS_CACHE_TTL=300
+MINERVA_JWKS_REFRESH_COOLDOWN=30
+MINERVA_PERMISSIONS_CACHE_TTL=0   # 0 = sin cache (default): revocacion inmediata
 MINERVA_REQUEST_TIMEOUT=10
 ```
 
@@ -75,7 +76,7 @@ Do not add `MINERVA_JWT_SECRET` to a consumer. The access token is RS256-signed 
 - Revocation latency differs by dependency: `get_current_user` verifies the JWT locally against
   JWKS and never calls Minerva, so it does not notice a server-side revocation until the token's
   own `exp` (≤15 min). `require_permission` calls Minerva's `/api/v1/me/permissions` in real time
-  (subject to its own short cache, `MINERVA_PERMISSIONS_CACHE_TTL`, default 300s) and returns
+  (subject to `MINERVA_PERMISSIONS_CACHE_TTL`, caching off by default) and returns
   `401` sooner. Prefer `require_permission` on routes where fast revocation matters.
 
 ## FastAPI Protection Pattern
@@ -100,6 +101,8 @@ async def create_oficio(user: dict = Depends(require_permission("godin.oficios.c
 ```
 
 `require_permission` validates the token and then calls Minerva's `GET /api/v1/me/permissions?application=<code>` with the user's Bearer token. Missing permission returns `403`; invalid, missing, or revoked token returns `401`; inability to reach Minerva returns `502`.
+
+The user dict holds **only token claims** — never the bearer, so it is safe to serialize or log. (SDK 0.1.0 attached the raw bearer as `user["_token"]`; 0.2.0 removed it. Get the credential from an `HTTPBearer` dependency if you need it.) Permission caching is **off by default** (`MINERVA_PERMISSIONS_CACHE_TTL=0`): every check queries Minerva, which is what enforces revocation, so revoking a token stops authorizing immediately. Setting a TTL > 0 opts into caching and accepts that a revoked token keeps authorizing for that long; the cache is then keyed by the token's `jti`, never outlives its `exp`, and is size-bounded. Call `invalidate_token(jti)` or `clear_caches()` to drop entries sooner. On an unknown `kid` the SDK refreshes the JWKS once, so a key rotation in Minerva does not cause spurious 401s.
 
 If a route needs a permission for a different application code, pass it explicitly:
 

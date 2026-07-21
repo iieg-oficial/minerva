@@ -2,6 +2,7 @@ import json
 
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
 from redis.asyncio import Redis
 from sqlmodel import Session
 
@@ -16,21 +17,55 @@ from app.core.token_blacklist import is_revoked, user_tokens_invalid_before
 bearer_scheme = HTTPBearer(auto_error=False)
 
 JWKS_CACHE_KEY = "minerva:jwks:current"
+JWKS_REFRESH_COOLDOWN_KEY = "minerva:jwks:refresh"
+JWKS_REFRESH_COOLDOWN_SECONDS = 10
 
 
-async def _get_jwks_cached(session: Session, redis: Redis) -> dict:
+async def invalidate_jwks_cache(redis: Redis) -> None:
+    """Borra el JWKS cacheado. Lo llama el CLI tras publicar o promover una clave:
+    sin esto el backend seguiría sirviendo el JWKS viejo hasta que expire el TTL y
+    rechazaría tokens que él mismo acaba de firmar."""
+    await redis.delete(JWKS_CACHE_KEY)
+
+
+async def _refresh_allowed(redis: Redis) -> bool:
+    """Cooldown del refresco por `kid` desconocido. El JWKS se sirve en endpoints sin
+    autenticar: sin esto, tokens con un `kid` inventado reconstruirían el JWKS desde BD
+    en cada request. `SET NX` deja pasar el primero de cada ventana y bloquea el resto."""
+    return bool(await redis.set(JWKS_REFRESH_COOLDOWN_KEY, "1", ex=JWKS_REFRESH_COOLDOWN_SECONDS, nx=True))
+
+
+async def _get_jwks_cached(session: Session, redis: Redis, kid: str | None = None) -> dict:
     """Cachea el JWKS en Redis con TTL corto para no reconstruirlo desde BD en
     cada request. `OIDCService` es puramente síncrona (sobre `Session`); el caché
-    vive aquí, no ahí, para no mezclarla con Redis async."""
+    vive aquí, no ahí, para no mezclarla con Redis async.
+
+    Si el `kid` del token no está en el JWKS cacheado, lo reconstruye desde BD: un
+    caché viejo tras una rotación haría rechazar tokens que el propio backend acaba de
+    firmar. Es la red de seguridad de la invalidación explícita del CLI — con esto, un
+    caché stale nunca produce un 401 espurio, aunque Redis no se haya podido limpiar."""
     # Import diferido para no acoplar la capa core con el módulo oidc.
     from app.modules.oidc.service import OIDCService
 
     cached = await redis.get(JWKS_CACHE_KEY)
     if cached is not None:
-        return json.loads(cached)
+        jwks = json.loads(cached)
+        if kid is None or any(key.get("kid") == kid for key in jwks.get("keys", [])):
+            return jwks
+        if not await _refresh_allowed(redis):
+            return jwks
     jwks = OIDCService(session).build_jwks()
     await redis.set(JWKS_CACHE_KEY, json.dumps(jwks), ex=settings.MINERVA_JWKS_CACHE_TTL_SECONDS)
     return jwks
+
+
+def _unverified_kid(token: str) -> str | None:
+    """`kid` del header, sin verificar firma: solo sirve para elegir con qué JWKS
+    intentar la validación. Un token ilegible devuelve None y falla en el decode real."""
+    try:
+        return jwt.get_unverified_header(token).get("kid")
+    except JWTError:
+        return None
 
 
 async def _resolve_token(
@@ -48,7 +83,7 @@ async def _resolve_token(
     restringe la clase de token (`typ`) aceptada por el endpoint: sin esto, un
     access de consumidor (15 min) valía en cualquier endpoint del panel (R2).
     `audience` activa la verificación de `aud` cuando el endpoint la conoce."""
-    jwks = await _get_jwks_cached(session, redis)
+    jwks = await _get_jwks_cached(session, redis, kid=_unverified_kid(token))
     payload = decode_token_rs256(token, jwks, audience=audience, issuer=settings.effective_jwt_issuer)
     if expected_types is not None and payload.get("typ") not in expected_types:
         raise ValueError("Tipo de token no válido para esta operación")

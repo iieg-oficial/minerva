@@ -10,7 +10,7 @@ cada una mantiene su propia política de CORS sin contaminar a la otra.
 La sub-app se monta en `app/main.py` con `app.mount("/.well-known", wellknown_app)`.
 """
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
@@ -70,8 +70,13 @@ def openid_configuration() -> OpenIDConfiguration:
 
 
 @wellknown_app.get("/jwks.json", response_model=JWKS)
-def jwks(service: OIDCService = Depends(get_oidc_service)) -> JWKS:
-    """JWKS: claves públicas para que los consumidores verifiquen la firma RS256."""
+def jwks(response: Response, service: OIDCService = Depends(get_oidc_service)) -> JWKS:
+    """JWKS: claves públicas para que los consumidores verifiquen la firma RS256.
+
+    El `max-age` declara a los verificadores la misma ventana de propagación que
+    Minerva asume al promover una clave pendiente: si respetan la cabecera, para
+    cuando la clave nueva empiece a firmar ya la tienen cacheada."""
+    response.headers["Cache-Control"] = f"public, max-age={settings.MINERVA_KEY_PROPAGATION_MINUTES * 60}"
     return JWKS(**service.build_jwks())
 
 

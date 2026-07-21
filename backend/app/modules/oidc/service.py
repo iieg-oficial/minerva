@@ -4,10 +4,11 @@ from datetime import datetime, timedelta, timezone
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import jwk
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.crypto import decrypt_secret, encrypt_secret
-from app.core.exceptions import AppException
+from app.core.exceptions import AppException, ConflictError
 from app.core.security import create_access_token_rs256, create_dev_token_rs256
 from app.modules.oidc.models import SigningKey
 from app.modules.oidc.repository import SigningKeyRepository
@@ -26,6 +27,13 @@ def claims_for_scopes(user: User, scope: str) -> dict:
         claims["email"] = user.email
         claims["email_verified"] = user.auth_provider == "google"
     return claims
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Normaliza a UTC un timestamp leído de la BD. SQLite (y PostgreSQL con columnas
+    sin timezone) devuelve `datetime` naive; el proyecto siempre los guarda en UTC, así
+    que asumir UTC al leerlos evita comparar naive contra aware."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 def _generate_rsa_keypair() -> tuple[str, str]:
@@ -54,15 +62,18 @@ class OIDCService:
         self.session = session
         self.repo = SigningKeyRepository(session)
 
-    def generate_signing_key(self) -> SigningKey:
-        """Genera un par RSA nuevo, cifra la clave privada y lo persiste como activo."""
+    def generate_signing_key(self, status: str = "active") -> SigningKey:
+        """Genera un par RSA nuevo, cifra la clave privada y lo persiste.
+
+        `status="pending"` lo publica en el JWKS sin que firme nada todavía
+        (publish-before-use, ver `stage_key`)."""
         private_pem, public_pem = _generate_rsa_keypair()
         key = SigningKey(
             kid=uuid.uuid4().hex,
             algorithm="RS256",
             private_key_pem=encrypt_secret(private_pem),
             public_key_pem=public_pem,
-            status="active",
+            status=status,
         )
         return self.repo.create(key)
 
@@ -78,9 +89,25 @@ class OIDCService:
         return key.kid, decrypt_secret(key.private_key_pem)
 
     def ensure_active_signing_key(self) -> SigningKey:
-        """Idempotente: usado en el seeding del arranque. Genera la clave si no existe."""
+        """Idempotente, también entre procesos: lo usa el seeding del arranque, y con
+        varios workers todos lo ejecutan a la vez sobre una tabla vacía.
+
+        La comprobación previa no cierra esa carrera (los dos ven la tabla vacía), pero
+        no hace falta un lock: el índice único parcial ya elige al ganador. Al perdedor
+        le basta con deshacer su INSERT y quedarse con la clave del ganador, que es tan
+        válida como la suya. Solo propaga el error si tras el rollback sigue sin haber
+        activa, porque entonces el fallo no fue la carrera."""
         existing = self.repo.get_active()
-        return existing or self.generate_signing_key()
+        if existing is not None:
+            return existing
+        try:
+            return self.generate_signing_key()
+        except IntegrityError:
+            self.session.rollback()
+            winner = self.repo.get_active()
+            if winner is None:
+                raise
+            return winner
 
     def build_jwks(self) -> dict:
         """Construye el JWKS (RFC 7517) con las claves publicables (activa + retiradas)."""
@@ -93,24 +120,68 @@ class OIDCService:
             keys.append(jwk_dict)
         return {"keys": keys}
 
-    def rotate_key(self, purge_overlap_window: bool = True) -> SigningKey:
-        """Retira la clave activa actual y genera una nueva activa.
+    # --- Rotación en dos fases (publish-before-use) ------------------------
+    # Firmar de inmediato con una clave recién creada corta el servicio: los
+    # verificadores (el propio backend vía Redis, el SDK vía su caché de 1 h, y
+    # cualquier consumidor OIDC estándar) todavía no la tienen. Por eso la clave se
+    # publica primero como `pending` y solo se promueve pasada la ventana de
+    # propagación, cuando ya está en las cachés de todos.
 
-        Por defecto también purga claves ya retiradas más viejas que la ventana de
-        solapamiento (`MINERVA_ACCESS_TOKEN_TTL_MINUTES`, la vida máxima de un
-        access/id token ya emitido): pasada esa ventana ningún token vigente puede
-        seguir firmado con ellas, así que mantenerlas publicadas en el JWKS solo
-        agrega ruido."""
+    def stage_key(self) -> SigningKey:
+        """Fase 1: publica una clave nueva en el JWKS sin firmar con ella.
+
+        La comprobación previa da un mensaje claro en el caso normal; el índice único
+        parcial (migración 009) es lo que de verdad cierra la carrera entre dos
+        `stage_key` concurrentes, que pasarían ambos la comprobación."""
+        if self.repo.get_pending() is not None:
+            raise ConflictError(
+                detail="Ya hay una clave pendiente de promover; promuévela o descártala antes de publicar otra"
+            )
+        try:
+            return self.generate_signing_key(status="pending")
+        except IntegrityError:
+            self.session.rollback()
+            raise ConflictError(detail="Otra operación publicó una clave pendiente al mismo tiempo; reintente")
+
+    def promote_key(self, force: bool = False) -> SigningKey:
+        """Fase 2: activa la clave pendiente, retira la anterior y purga las vencidas.
+
+        Rechaza la promoción si no ha pasado la ventana de propagación, porque en ese
+        momento todavía hay verificadores con un JWKS cacheado sin la clave nueva:
+        promover ahí es exactamente el corte de servicio que este flujo evita. `force`
+        la salta a propósito (clave comprometida)."""
         from app.core.config import settings
 
-        current = self.repo.get_active()
-        if current is not None:
-            self.repo.mark_retired(current)
-        new_key = self.generate_signing_key()
-        if purge_overlap_window:
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES)
-            self.repo.purge_retired_before(cutoff)
-        return new_key
+        pending = self.repo.get_pending()
+        if pending is None:
+            raise ConflictError(detail="No hay ninguna clave pendiente de promover; publica una primero")
+
+        ready_at = _as_utc(pending.created_at) + timedelta(minutes=settings.MINERVA_KEY_PROPAGATION_MINUTES)
+        now = datetime.now(timezone.utc)
+        if not force and now < ready_at:
+            remaining = int((ready_at - now).total_seconds() // 60) + 1
+            raise ConflictError(
+                detail=(
+                    f"La clave pendiente aún no completa su ventana de propagación: faltan {remaining} min. "
+                    "Los verificadores con el JWKS cacheado todavía no la tienen."
+                )
+            )
+
+        if not self.repo.promote(pending):
+            # Otra promoción concurrente ya la reclamó (el UPDATE condicional afectó 0 filas).
+            raise ConflictError(detail="La clave pendiente ya fue promovida por otra operación")
+        self.purge_expired_keys()
+        self.session.refresh(pending)
+        return pending
+
+    def purge_expired_keys(self) -> int:
+        """Borra las claves retiradas que ya no pueden estar firmando ningún token
+        vigente (`key_retirement_overlap_minutes`: la vida máxima de token firmado +
+        skew). Pasada esa ventana solo agregan ruido al JWKS."""
+        from app.core.config import settings
+
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.key_retirement_overlap_minutes)
+        return self.repo.purge_retired_before(cutoff)
 
     # --- Emisión de tokens de sesión interna -------------------------------
     # Tokens del panel/login y del Dev Kit. Se firman con la clave activa (RS256),
