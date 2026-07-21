@@ -160,23 +160,44 @@ real**, no algo que el backend resuelva por sí mismo:
 
 ### 3.1 Rotación de claves de firma RS256
 
+La rotación es de **dos fases** (*publish-before-use*): la clave nueva se publica en el
+JWKS antes de empezar a firmar con ella, para que los verificadores la tengan cacheada
+cuando llegue el primer token firmado. Firmar de inmediato con una clave recién creada
+es lo que corta el servicio.
+
 ```bash
 # Dentro del contenedor backend, o con el entorno conda `minerva` activo:
-python -m app.cli rotate-key
+python -m app.cli rotate-key     # fase 1: publica la clave nueva como `pending`
+# ...esperar la ventana de propagación (ver abajo)...
+python -m app.cli promote-key    # fase 2: la clave nueva empieza a firmar
 ```
 
-Qué hace (`OIDCService.rotate_key`, `backend/app/modules/oidc/service.py`):
-1. Retira la clave activa actual (`status=retired`).
-2. Genera un nuevo par RSA 2048 y lo marca como activa.
-3. Purga claves retiradas más viejas que `MINERVA_ACCESS_TOKEN_TTL_MINUTES` — pasada esa
-   ventana, ningún token vigente puede seguir firmado con ellas.
+**Fase 1 — `rotate-key`.** Crea un par RSA 2048 con `status=pending`: ya aparece en
+`/.well-known/jwks.json`, pero **no firma nada todavía**. Invalida el caché JWKS de Redis
+para que el propio backend la vea de inmediato.
 
-El JWKS público (`/.well-known/jwks.json`) sirve simultáneamente la clave activa y las
-retiradas todavía dentro de la ventana, así que un token emitido segundos antes de la
-rotación sigue verificando.
+**Fase 2 — `promote-key`.** La pendiente pasa a `active` y la anterior a `retired`, en una
+sola transacción (nunca hay dos claves activas ni ninguna). Después purga las retiradas
+que ya no puedan estar firmando nada vigente. El comando **rechaza** la promoción si no
+ha pasado la ventana de propagación; `--force` la salta a propósito.
 
-**Recomendación operativa:** colgar `rotate-key` de un cron periódico (p. ej. diario o
-semanal) en el servidor o como Job programado del orquestador.
+Las dos ventanas que gobiernan el proceso:
+
+| Ventana | Variable | Default | Qué significa |
+|---|---|---|---|
+| Propagación | `MINERVA_KEY_PROPAGATION_MINUTES` | 60 min | Cuánto puede tardar un verificador en ver la clave nueva en su JWKS cacheado. Cubre el default del SDK (`MINERVA_JWKS_CACHE_TTL=3600`). Es lo que hay que esperar entre fase 1 y fase 2. |
+| Retención | derivada (`key_retirement_overlap_minutes`) | 485 min | Cuánto sigue publicada una clave ya retirada: la vida máxima de token firmado (la sesión del panel, 480 min) + `MINERVA_CLOCK_SKEW_MINUTES`. Purgar antes invalidaría sesiones vigentes. |
+
+La retención es **derivada, no configurable**, para que no pueda quedar desfasada del TTL
+de sesión. Los refresh tokens no cuentan: son opacos, nadie los firma.
+
+**Clave comprometida.** `python -m app.cli rotate-key --emergency` publica y activa en un
+solo paso. Deja de firmar con la clave vieja de inmediato, a cambio de aceptar que los
+verificadores con el JWKS cacheado rechacen tokens hasta refrescarlo. Minerva se auto-sana
+(reconstruye su JWKS al ver un `kid` desconocido); un consumidor con SDK ≥ 0.2.0 también.
+
+**Recomendación operativa:** colgar la rotación de un cron periódico (p. ej. mensual),
+recordando que son **dos** ejecuciones separadas por la ventana de propagación.
 
 ### 3.2 Backups de PostgreSQL
 

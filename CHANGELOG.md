@@ -9,6 +9,19 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Changed
 
+- **BREAKING · SDK 0.2.0: el bearer sale del objeto de usuario.** `get_current_user` ya no agrega
+  `user["_token"]` con la credencial cruda; el dict son **solo** los claims del token, así que es
+  seguro serializarlo en una respuesta o registrarlo en un log. `require_permission` obtiene el
+  bearer de su propia dependencia `HTTPBearer`. Guía de migración en `sdk/README.md`; el resto del
+  contrato del SDK no cambia.
+- **BREAKING · La rotación de claves de firma pasa a dos fases (publish-before-use).**
+  `python -m app.cli rotate-key` ya no activa la clave nueva: la publica en el JWKS como `pending`
+  (aún no firma). El segundo paso, `python -m app.cli promote-key`, la activa y retira la anterior
+  en una sola transacción, y rechaza hacerlo antes de `MINERVA_KEY_PROPAGATION_MINUTES` (60 min por
+  defecto), que es el tiempo que un verificador puede tardar en ver la clave nueva en su JWKS
+  cacheado. Para clave comprometida, `rotate-key --emergency` hace ambos pasos de golpe asumiendo
+  el corte. Detalle operativo en `docs/despliegue.md` §3.1.
+
 - **BREAKING · Sesión del panel migrada a cookie opaca HttpOnly (patrón BFF).** El panel admin ya
   no guarda JWT ni credenciales en `localStorage`: el navegador solo conserva una cookie opaca
   `__Host-minerva_sid` (`HttpOnly`, `Secure`, `SameSite=Lax`; en dev HTTP `minerva_sid` sin
@@ -23,6 +36,20 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   Nuevos endpoints: `GET /auth/session`, `POST /auth/session/active`.
 
 ### Security
+
+- **Una revocación ya no queda cacheada en el SDK bajo otro token.** La caché de permisos se
+  indexaba por `(usuario, aplicación)`: dos tokens distintos del mismo usuario compartían la
+  decisión de autorización, así que un token revocado podía seguir pasando con los permisos que
+  otro había cacheado. Ahora se indexa por el `jti` del token y su TTL nunca pasa del `exp`, un
+  token sin `jti` no se cachea (se pregunta siempre), y un `401` de Minerva purga la entrada de
+  inmediato. Se añaden `invalidate_token(jti)` y `clear_caches()` para engancharlas al logout del
+  consumidor.
+
+- **Rotar una clave ya no invalida sesiones vigentes.** La purga de claves retiradas usaba
+  `MINERVA_ACCESS_TOKEN_TTL_MINUTES` (15 min) como ventana de solapamiento, pero los tokens
+  `typ=session` y `typ=dev` viven 480 min: rotar borraba del JWKS una clave que todavía firmaba
+  sesiones de panel activas. La ventana ahora se **deriva** de la vida máxima de token firmado más
+  `MINERVA_CLOCK_SKEW_MINUTES`, para que no pueda quedar desfasada del TTL de sesión.
 
 - **Sesión del panel fuera del alcance de JavaScript.** Un XSS ya no puede exfiltrar los tokens del
   panel (antes vivían legibles en `localStorage`). Se añade protección **CSRF** (synchronizer token
@@ -47,6 +74,23 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   terminador, sin `preload` por defecto.
 
 ### Fixed
+
+- **Tras rotar, el backend rechazaba durante 5 min los tokens que él mismo acababa de firmar.** El
+  caché del JWKS en Redis (`minerva:jwks:current`, 300 s) no se invalidaba nunca. Ahora el CLI lo
+  borra al publicar o promover una clave, y además `_resolve_token` reconstruye el JWKS desde la BD
+  al toparse con un `kid` que no conoce (una vez cada 10 s, para que un `kid` inventado no dispare
+  una consulta por request). Con esa red de seguridad, un caché viejo ya no puede producir un 401
+  espurio aunque Redis no se haya podido limpiar.
+
+- **El SDK rechazaba tokens válidos hasta una hora tras una rotación de clave.** Solo refrescaba el
+  JWKS al expirar su caché (`MINERVA_JWKS_CACHE_TTL`, 3600 s). Ahora lo refresca al ver un `kid`
+  desconocido, limitado a uno cada `MINERVA_JWKS_REFRESH_COOLDOWN` (30 s por defecto).
+
+- **La promoción de la clave nueva ya no deja el sistema sin clave activa.** El flujo anterior
+  confirmaba el retiro de la clave activa antes de crear la siguiente, dejando una ventana en la
+  que firmar respondía «No hay clave de firma activa». Retiro y activación ahora ocurren en la
+  misma transacción, con `UPDATE` condicional: dos promociones concurrentes dejan exactamente una
+  clave activa.
 
 - **Borrar una aplicación ya usada dejaba huérfanos o violaba la FK.** `ApplicationRepository.delete`
   cascadeaba roles, permisos, redirect URIs, vínculos e importaciones de manifiesto, pero omitía los

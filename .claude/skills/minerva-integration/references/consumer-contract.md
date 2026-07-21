@@ -46,6 +46,7 @@ MINERVA_ISSUER_URL=http://localhost:9000
 MINERVA_APPLICATION_CODE=godin
 MINERVA_EXPECTED_ISSUER=http://localhost:9000
 MINERVA_JWKS_CACHE_TTL=3600
+MINERVA_JWKS_REFRESH_COOLDOWN=30
 MINERVA_PERMISSIONS_CACHE_TTL=300
 MINERVA_REQUEST_TIMEOUT=10
 ```
@@ -100,6 +101,8 @@ async def create_oficio(user: dict = Depends(require_permission("godin.oficios.c
 ```
 
 `require_permission` validates the token and then calls Minerva's `GET /api/v1/me/permissions?application=<code>` with the user's Bearer token. Missing permission returns `403`; invalid, missing, or revoked token returns `401`; inability to reach Minerva returns `502`.
+
+The user dict holds **only token claims** — never the bearer, so it is safe to serialize or log. (SDK 0.1.0 attached the raw bearer as `user["_token"]`; 0.2.0 removed it. Get the credential from an `HTTPBearer` dependency if you need it.) The permission cache is keyed by the token's `jti` and never outlives its `exp`, so a revocation propagates within `MINERVA_PERMISSIONS_CACHE_TTL` at worst; call `invalidate_token(jti)` or `clear_caches()` to drop it sooner. On an unknown `kid` the SDK refreshes the JWKS once, so a key rotation in Minerva does not cause spurious 401s.
 
 If a route needs a permission for a different application code, pass it explicitly:
 
