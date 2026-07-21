@@ -150,7 +150,15 @@ def _prune_permissions_cache(now: float) -> None:
     """
     if len(_permissions_cache) <= _PERMISSIONS_CACHE_MAX:
         return
+
     for key in [k for k, (expires_at, _) in _permissions_cache.items() if expires_at <= now]:
+        _permissions_cache.pop(key, None)
+
+    excess = len(_permissions_cache) - _PERMISSIONS_CACHE_MAX
+    if excess <= 0:
+        return
+    oldest = sorted(_permissions_cache.items(), key=lambda item: item[1][0])[:excess]
+    for key, _ in oldest:
         _permissions_cache.pop(key, None)
 
 

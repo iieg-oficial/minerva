@@ -12,6 +12,7 @@ from fastapi import HTTPException
 
 from minerva_sdk import config
 from minerva_sdk.fastapi import (
+    _PERMISSIONS_CACHE_MAX,
     _fetch_permissions,
     _permissions_cache,
     clear_caches,
@@ -159,6 +160,40 @@ def test_invalidate_token_olvida_solo_ese_token(fake_http):
 
     assert ("jti-1", APP_CODE) not in _permissions_cache
     assert ("jti-2", APP_CODE) in _permissions_cache
+
+
+def test_la_cache_no_crece_sin_cota_con_tokens_vigentes(fake_http):
+    """El límite tiene que aguantar el caso incómodo: más de 1000 tokens VIGENTES a la
+    vez, donde barrer las vencidas no libera nada. Antes solo se barrían las vencidas,
+    así que el tope no existía."""
+    config.settings.permissions_cache_ttl = 3600
+    fake_http.set_permissions(["godin.oficios.create"])
+
+    total = _PERMISSIONS_CACHE_MAX + 200
+    base = int(time.time()) + 3600
+    for i in range(total):
+        # `exp` creciente: las primeras son las más próximas a vencer.
+        _fetch(_claims(jti=f"jti-{i}", exp=base + i))
+
+    assert len(_permissions_cache) <= _PERMISSIONS_CACHE_MAX
+    # Se expulsan las más próximas a vencer, no las recién guardadas.
+    assert (f"jti-{total - 1}", APP_CODE) in _permissions_cache
+    assert ("jti-0", APP_CODE) not in _permissions_cache
+
+
+def test_las_vencidas_se_barren_antes_de_expulsar_vigentes(fake_http):
+    config.settings.permissions_cache_ttl = 3600
+    fake_http.set_permissions(["godin.oficios.create"])
+
+    # Llena de entradas ya vencidas, insertadas directo para poder fijar el `exp`.
+    for i in range(_PERMISSIONS_CACHE_MAX):
+        _permissions_cache[(f"vencida-{i}", APP_CODE)] = (time.time() - 1, frozenset())
+
+    _fetch(_claims(jti="vigente"))
+
+    assert len(_permissions_cache) <= _PERMISSIONS_CACHE_MAX
+    assert ("vigente", APP_CODE) in _permissions_cache
+    assert not [k for k in _permissions_cache if k[0].startswith("vencida-")]
 
 
 def test_clear_caches_vacia_todo(fake_http):
