@@ -54,7 +54,7 @@ class SigningKey(SQLModel, table=True):
     # si no, SQLAlchemy castea los INSERT a `timestamp without time zone` y la
     # conversión depende del `TimeZone` de la sesión de PostgreSQL. Las ventanas de
     # propagación y de purga se calculan sobre estos campos, así que la ambigüedad
-    # importa. En SQLite no hay tipo con zona: se leen naive y `_as_utc` los normaliza.
+    # importa. En SQLite no hay tipo con zona: se leen naive y `as_utc` los normaliza.
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), nullable=False),

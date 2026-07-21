@@ -24,6 +24,7 @@ from app.modules.oidc.service import OIDCService, claims_for_scopes
 from app.modules.permissions.repository import RolePermissionRepository
 from app.modules.users.repository import UserRepository
 from app.modules.users.service import UserService
+from app.shared.datetime_utils import as_utc
 
 logger = logging.getLogger(__name__)
 
@@ -155,9 +156,7 @@ class AuthService:
             last = user.last_login_at
             if last is None:
                 return True
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=timezone.utc)
-            return (datetime.now(timezone.utc) - last).total_seconds() > max_age
+            return (datetime.now(timezone.utc) - as_utc(last)).total_seconds() > max_age
         return False
 
     def _has_app_access(self, user_id: str, app_slug: str) -> bool:
@@ -262,12 +261,7 @@ class AuthService:
         if auth_code.redirect_uri != redirect_uri:
             raise BadRequestError(detail="redirect_uri no coincide con el del código")
 
-        # expires_at se guarda en una columna sin timezone, por lo que vuelve naive;
-        # lo normalizamos a UTC para poder compararlo con un datetime aware.
-        expires_at = auth_code.expires_at
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > expires_at:
+        if datetime.now(timezone.utc) > as_utc(auth_code.expires_at):
             raise BadRequestError(detail="Código de autorización expirado")
 
         # PKCE: si el código se emitió con challenge, exige un verifier válido.
@@ -407,10 +401,7 @@ class AuthService:
             jtis = self._revoke_family_or_conflict(refresh.family_id, commit)
             raise RefreshReuseError(jtis, detail="refresh token ya utilizado; la sesión fue revocada por seguridad")
 
-        expires_at = refresh.expires_at
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > expires_at:
+        if datetime.now(timezone.utc) > as_utc(refresh.expires_at):
             self.refresh_repo.revoke(refresh)
             raise BadRequestError(detail="refresh token expirado")
 
