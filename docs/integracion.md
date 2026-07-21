@@ -166,11 +166,14 @@ Sobre la respuesta de `/authorize`:
 - **Tu `state` vuelve byte-for-byte**, aunque contenga espacios, `&`, `=` o `#`. Compáralo tal cual
   con el que generaste: es tu defensa anti-CSRF.
 - **Tu `redirect_uri` puede traer query propia** (`https://tu-app/callback?tenant=jal`): Minerva la
-  preserva y agrega `code`/`state` a esa misma query. Regístrala completa, tal cual.
-- **`auth_time` del `id_token` es el momento en que el usuario realmente se autenticó**, no el de la
-  emisión del código: un SSO silencioso 6 h después sigue reportando ese login de hace 6 h. Es la
-  misma referencia que Minerva usa para decidir `max_age`, así que lo que exige y lo que reporta
-  coinciden.
+  preserva y agrega `code`/`state` a esa misma query. Regístrala completa, tal cual. Si registras un
+  `code`, `state` o `error` fijo en esa query, Minerva lo **reemplaza** por el suyo en vez de
+  duplicar la clave.
+- **`auth_time` del `id_token` es el momento en que el usuario se autenticó en *esa sesión***, no el
+  de la emisión del código: un SSO silencioso 6 h después sigue reportando ese login de hace 6 h.
+  Es por sesión de navegador, así que si el usuario inicia sesión en otro equipo, esta sesión no
+  "rejuvenece"; y refrescar el token del panel no cuenta como re-autenticación. Es la misma
+  referencia con la que Minerva evalúa `max_age`, así que lo que exige y lo que reporta coinciden.
 
 > **Logout de Minerva.** `POST /auth/logout` (con el `access_token` en el header) revoca el token
 > del lado del servidor: a partir de ese momento Minerva ya no lo acepta, así que un `/authorize`
