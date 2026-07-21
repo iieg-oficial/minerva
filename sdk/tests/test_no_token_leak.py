@@ -6,8 +6,9 @@ Antes `get_current_user` colgaba la credencial cruda en `user["_token"]`: un
 
 import asyncio
 
+import httpx
 from fastapi import Depends, FastAPI
-from fastapi.testclient import TestClient
+from httpx import ASGITransport
 
 from minerva_sdk.fastapi import _decode, get_current_user, require_permission
 from tests.conftest import APP_CODE, jwks_for, make_keypair, sign
@@ -57,7 +58,15 @@ def test_endpoint_protegido_no_filtra_el_bearer_al_serializar(fake_http):
     async def protegido(user: dict = Depends(require_permission("godin.oficios.create", APP_CODE))):
         return user  # exactamente lo que un consumidor descuidado haría
 
-    body = TestClient(api).get("/protegido", headers={"Authorization": f"Bearer {token}"})
+    async def _call():
+        # ASGITransport en vez de TestClient: el doble de red reemplaza
+        # `httpx.AsyncClient`, y TestClient monta el suyo por dentro. Hablar con la app
+        # por ASGI deja esa sustitución limpia y no depende de TestClient.
+        transport = ASGITransport(app=api)
+        async with httpx.AsyncClient(transport=transport, base_url="http://consumidor") as cli:
+            return await cli.get("/protegido", headers={"Authorization": f"Bearer {token}"})
+
+    body = asyncio.run(_call())
 
     assert body.status_code == 200
     assert token not in body.text
