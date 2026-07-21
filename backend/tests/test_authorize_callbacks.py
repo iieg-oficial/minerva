@@ -44,8 +44,8 @@ def app_ctx():
         for uri in (REDIRECT_PLAIN, REDIRECT_QUERY, REDIRECT_CHOQUE):
             session.add(RedirectURI(application_id=app_row.id, uri=uri, environment="production"))
 
-        con_rol = User(email="con-rol@iieg.gob.mx", full_name="Con Rol", auth_provider="local", status="active")
-        sin_rol = User(email="sin-rol@iieg.gob.mx", full_name="Sin Rol", auth_provider="local", status="active")
+        con_rol = User(email="con-rol@iieg.gob.mx", full_name="Con Rol", status="active")
+        sin_rol = User(email="sin-rol@iieg.gob.mx", full_name="Sin Rol", status="active")
         session.add(con_rol)
         session.add(sin_rol)
         session.flush()

@@ -30,7 +30,6 @@ def app_ctx():
         user = User(
             email="prompt@iieg.gob.mx",
             full_name="Prompt User",
-            auth_provider="local",
             status="active",
             last_login_at=datetime.now(timezone.utc),
         )

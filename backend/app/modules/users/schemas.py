@@ -9,8 +9,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str | None = None
-    auth_provider: str = "local"
+    password: str
     domain: str | None = None
 
 
@@ -32,7 +31,6 @@ class UserRead(BaseModel):
     id: str
     email: str
     full_name: str
-    auth_provider: str
     status: str
     domain: str | None = None
     created_at: datetime

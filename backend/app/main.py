@@ -43,7 +43,6 @@ def _seed_data() -> None:
             email=settings.ADMIN_EMAIL,
             full_name="Administrador Minerva",
             hashed_password=hash_password(settings.ADMIN_PASSWORD),
-            auth_provider="local",
             status="active",
             domain="iieg.gob.mx",
         )

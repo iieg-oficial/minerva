@@ -34,7 +34,7 @@ def app_ctx():
 
 def _create_user(email: str) -> str:
     with Session(test_engine) as session:
-        user = User(email=email, full_name="Sin Rol", auth_provider="local", status="active")
+        user = User(email=email, full_name="Sin Rol", status="active")
         session.add(user)
         session.commit()
         session.refresh(user)

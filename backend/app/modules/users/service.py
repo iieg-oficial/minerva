@@ -39,11 +39,9 @@ class UserService:
         user = User(
             email=data.email,
             full_name=data.full_name,
-            auth_provider=data.auth_provider,
+            hashed_password=hash_password(data.password),
             domain=data.domain,
         )
-        if data.password:
-            user.hashed_password = hash_password(data.password)
 
         user = self.repo.create(user)
         return UserRead.model_validate(user)

@@ -152,7 +152,7 @@ def test_purga_borra_las_retiradas_fuera_de_la_ventana(service):
 def panel_user(client):
     """Usuario real con clave de firma activa: `/auth/me` resuelve el `sub` en BD."""
     with Session(test_engine) as session:
-        user = User(email="rotacion@iieg.gob.mx", full_name="Usuario Rotacion", auth_provider="local", status="active")
+        user = User(email="rotacion@iieg.gob.mx", full_name="Usuario Rotacion", status="active")
         session.add(user)
         session.commit()
         session.refresh(user)
