@@ -46,8 +46,36 @@ def upgrade() -> None:
         FOR EACH ROW EXECUTE FUNCTION check_role_permission_same_app();
     """)
 
+    # El trigger anterior protege role_permissions, pero no evita que un UPDATE directo
+    # mueva un rol o un permiso a otra aplicacion y deje un vinculo cruzado ya existente
+    # sin que nadie lo valide. application_id es inmutable por diseno (la app duena de un
+    # rol/permiso no cambia); bloquearlo en la base es el cambio minimo que cierra esa via.
+    op.execute("""
+        CREATE OR REPLACE FUNCTION forbid_application_id_change() RETURNS trigger AS $$
+        BEGIN
+            IF NEW.application_id <> OLD.application_id THEN
+                RAISE EXCEPTION '%: application_id es inmutable', TG_TABLE_NAME;
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+    """)
+    op.execute("""
+        CREATE TRIGGER roles_application_id_immutable
+        BEFORE UPDATE ON roles
+        FOR EACH ROW EXECUTE FUNCTION forbid_application_id_change();
+    """)
+    op.execute("""
+        CREATE TRIGGER permissions_application_id_immutable
+        BEFORE UPDATE ON permissions
+        FOR EACH ROW EXECUTE FUNCTION forbid_application_id_change();
+    """)
+
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS permissions_application_id_immutable ON permissions")
+    op.execute("DROP TRIGGER IF EXISTS roles_application_id_immutable ON roles")
+    op.execute("DROP FUNCTION IF EXISTS forbid_application_id_change()")
     op.execute("DROP TRIGGER IF EXISTS role_permissions_same_app ON role_permissions")
     op.execute("DROP FUNCTION IF EXISTS check_role_permission_same_app()")
     # Los vinculos cruzados borrados en el upgrade no se pueden restaurar.
