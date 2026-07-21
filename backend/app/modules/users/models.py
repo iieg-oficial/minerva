@@ -12,7 +12,6 @@ class User(SQLModel, table=True):
     full_name: str = Field(max_length=255)
     hashed_password: str | None = Field(default=None)
     auth_provider: str = Field(default="local", max_length=20)
-    provider_subject: str | None = Field(default=None, max_length=255)
     status: str = Field(default="active", max_length=20)
     domain: str | None = Field(default=None, max_length=255)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

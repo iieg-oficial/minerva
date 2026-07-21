@@ -33,7 +33,6 @@ class UserRead(BaseModel):
     email: str
     full_name: str
     auth_provider: str
-    provider_subject: str | None = None
     status: str
     domain: str | None = None
     created_at: datetime

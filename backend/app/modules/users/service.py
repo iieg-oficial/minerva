@@ -109,22 +109,3 @@ class UserService:
         from app.modules.oidc.service import OIDCService
 
         return OIDCService(self.session).issue_session_token(user.id, user.email, user.full_name)
-
-    def get_or_create_google_user(self, email: str, name: str, provider_subject: str) -> User:
-        user = self.repo.get_by_email(email)
-        if user:
-            if user.auth_provider != "google":
-                raise BadRequestError(detail="El usuario ya existe con otro proveedor")
-            user.full_name = name
-            user.provider_subject = provider_subject
-            user = self.repo.update(user)
-        else:
-            user = User(
-                email=email,
-                full_name=name,
-                auth_provider="google",
-                provider_subject=provider_subject,
-                hashed_password=None,
-            )
-            user = self.repo.create(user)
-        return user

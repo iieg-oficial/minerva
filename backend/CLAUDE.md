@@ -7,7 +7,7 @@ y las reglas globales. Este archivo cubre las reglas específicas del backend.
 
 - Python **3.12+** (`>=3.12,<3.14`)
 - FastAPI · Uvicorn · **SQLModel** (ORM + schemas) · **Alembic** (migraciones)
-- PostgreSQL vía **psycopg v3** · pydantic-settings · python-jose (**JWT RS256/JWKS**) · bcrypt · authlib
+- PostgreSQL vía **psycopg v3** · pydantic-settings · python-jose (**JWT RS256/JWKS**) · bcrypt
   · Redis async (rate limiting, blacklist de `jti`, caché JWKS)
 - Build con **hatchling**. Lint/format con **Ruff**. Tests con **pytest** (`asyncio_mode=auto`).
 

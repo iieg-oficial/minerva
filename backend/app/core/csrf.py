@@ -22,7 +22,7 @@ _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 # Rutas que NO exigen token CSRF aunque lleguen con cookie: crean/renuevan la sesión
 # (su autenticación son credenciales, no la sesión previa) o son OAuth de consumidor.
-_CSRF_EXEMPT_PREFIXES = ("/auth/login", "/auth/register", "/auth/token", "/auth/revoke", "/auth/google")
+_CSRF_EXEMPT_PREFIXES = ("/auth/login", "/auth/register", "/auth/token", "/auth/revoke")
 
 
 async def panel_csrf_middleware(request: Request, call_next):

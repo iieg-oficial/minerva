@@ -399,7 +399,7 @@ class AuthService:
             roles=roles,
             permissions=permissions,
             scope=scope,
-            email_verified=user.auth_provider == "google",
+            email_verified=False,
             jti=jti,
             expires_minutes=access_ttl,
             typ="access",
