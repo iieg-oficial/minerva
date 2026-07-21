@@ -30,7 +30,7 @@ from app.modules.auth.schemas import (
     SessionView,
     SetActiveRequest,
 )
-from app.modules.auth.service import AuthService, RefreshReuseError
+from app.modules.auth.service import AuthService, RefreshReuseError, build_callback_url, session_auth_time
 from app.modules.authorization.service import AuthorizationService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -320,9 +320,14 @@ async def authorize(
     # sesión): nunca se redirige a un destino no confiable (evita open redirect).
     service.validate_client_and_redirect(client_id, redirect_uri)
 
+    # Solo se soporta el flujo de código (lo que ya declara el discovery). El error
+    # vuelve al cliente por redirect, no como 400: para eso el destino se validó arriba.
+    if response_type != "code":
+        return RedirectResponse(build_callback_url(redirect_uri, error="unsupported_response_type", state=state))
+
     if current_user is None:
         if prompt == "none":
-            return RedirectResponse(f"{redirect_uri}?error=login_required&state={state}")
+            return RedirectResponse(build_callback_url(redirect_uri, error="login_required", state=state))
         return RedirectResponse(_login_redirect_url(request))
 
     redirect_url, reauth_reason = service.authorize(
@@ -336,12 +341,13 @@ async def authorize(
         nonce=nonce,
         prompt=prompt,
         max_age=max_age,
+        auth_time=session_auth_time(current_user),
     )
     if reauth_reason == "access_denied":
-        return RedirectResponse(f"{redirect_uri}?error=access_denied&state={state}")
+        return RedirectResponse(build_callback_url(redirect_uri, error="access_denied", state=state))
     if reauth_reason is not None:
         if prompt == "none":
-            return RedirectResponse(f"{redirect_uri}?error=login_required&state={state}")
+            return RedirectResponse(build_callback_url(redirect_uri, error="login_required", state=state))
         return RedirectResponse(_login_redirect_url(request))
     assert redirect_url is not None  # garantizado: solo es None junto con reauth_reason
     return RedirectResponse(redirect_url)
@@ -381,6 +387,12 @@ async def authorize_url(
         request,
         "authorize_url",
     )
+    # Mismo contrato que /authorize: valida el destino antes de devolver una URL de
+    # error hacia él. `service.authorize` lo revalida, pero corre demasiado tarde.
+    service.validate_client_and_redirect(client_id, redirect_uri)
+    if response_type != "code":
+        return {"redirect_url": build_callback_url(redirect_uri, error="unsupported_response_type", state=state)}
+
     redirect_url, reauth_reason = service.authorize(
         client_id,
         redirect_uri,
@@ -392,12 +404,13 @@ async def authorize_url(
         nonce=nonce,
         prompt=prompt,
         max_age=max_age,
+        auth_time=session_auth_time(current_user),
     )
     if reauth_reason == "access_denied":
-        return {"redirect_url": f"{redirect_uri}?error=access_denied&state={state}"}
+        return {"redirect_url": build_callback_url(redirect_uri, error="access_denied", state=state)}
     if reauth_reason is not None:
         if prompt == "none":
-            return {"redirect_url": f"{redirect_uri}?error=login_required&state={state}"}
+            return {"redirect_url": build_callback_url(redirect_uri, error="login_required", state=state)}
         # La SPA sigue esta URL igual que ya hace con la del code: reusa el mismo
         # contrato de respuesta ({"redirect_url": ...}), sin cambios en el frontend.
         return {"redirect_url": _login_redirect_url(request)}

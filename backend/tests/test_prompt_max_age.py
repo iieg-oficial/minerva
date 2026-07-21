@@ -95,14 +95,14 @@ def test_prompt_none_without_session_returns_login_required_error(client, app_ct
 
 
 def test_max_age_exceeded_forces_redirect_to_login(client, app_ctx):
+    """`max_age` se mide contra el `auth_time` de la sesión que hace la solicitud, que
+    viaja en su token: esta se autenticó hace una hora."""
     from app.modules.users.repository import UserRepository
 
     with Session(test_engine) as session:
         user = UserRepository(session).get_by_id(app_ctx["user_id"])
-        user.last_login_at = datetime.now(timezone.utc) - timedelta(seconds=3600)
-        session.add(user)
-        session.commit()
-        token = OIDCService(session).issue_session_token(user.id, user.email, user.full_name)
+        hace_una_hora = int((datetime.now(timezone.utc) - timedelta(seconds=3600)).timestamp())
+        token = OIDCService(session).issue_session_token(user.id, user.email, user.full_name, auth_time=hace_una_hora)
 
     resp = client.get(
         "/auth/authorize",

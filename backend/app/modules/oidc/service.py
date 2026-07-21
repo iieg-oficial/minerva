@@ -13,6 +13,7 @@ from app.core.security import create_access_token_rs256, create_dev_token_rs256
 from app.modules.oidc.models import SigningKey
 from app.modules.oidc.repository import SigningKeyRepository
 from app.modules.users.models import User
+from app.shared.datetime_utils import as_utc
 
 
 def claims_for_scopes(user: User, scope: str) -> dict:
@@ -27,13 +28,6 @@ def claims_for_scopes(user: User, scope: str) -> dict:
         claims["email"] = user.email
         claims["email_verified"] = user.auth_provider == "google"
     return claims
-
-
-def _as_utc(value: datetime) -> datetime:
-    """Normaliza a UTC un timestamp leído de la BD. SQLite (y PostgreSQL con columnas
-    sin timezone) devuelve `datetime` naive; el proyecto siempre los guarda en UTC, así
-    que asumir UTC al leerlos evita comparar naive contra aware."""
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 def _generate_rsa_keypair() -> tuple[str, str]:
@@ -156,7 +150,7 @@ class OIDCService:
         if pending is None:
             raise ConflictError(detail="No hay ninguna clave pendiente de promover; publica una primero")
 
-        ready_at = _as_utc(pending.created_at) + timedelta(minutes=settings.MINERVA_KEY_PROPAGATION_MINUTES)
+        ready_at = as_utc(pending.created_at) + timedelta(minutes=settings.MINERVA_KEY_PROPAGATION_MINUTES)
         now = datetime.now(timezone.utc)
         if not force and now < ready_at:
             remaining = int((ready_at - now).total_seconds() // 60) + 1
@@ -195,9 +189,14 @@ class OIDCService:
         application_slug: str = "minerva",
         roles: list[str] | None = None,
         permissions: list[str] | None = None,
+        auth_time: int | None = None,
     ) -> str:
+        """Un token de sesión nuevo nace de una autenticación, así que `auth_time` cae
+        a "ahora" por defecto. El caller lo pasa explícito solo al reemitir la MISMA
+        sesión (`/auth/refresh`), donde el usuario no volvió a autenticarse."""
         kid, private_pem = self.get_active_private_pem()
         return create_access_token_rs256(
+            auth_time=auth_time if auth_time is not None else int(datetime.now(timezone.utc).timestamp()),
             user_id=user_id,
             email=email,
             name=name,

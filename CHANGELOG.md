@@ -88,6 +88,30 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **La URL de vuelta al consumidor se armaba concatenando strings.** Una `redirect_uri` registrada
+  con query propia (`https://app/callback?tenant=jal`) quedaba malformada con dos `?`, y un `state`
+  con caracteres reservados (espacio, `&`, `=`, `#`) llegaba alterado —justo el valor que el cliente
+  compara para detectar CSRF. Ahora se construye con `urlencode`, preservando la query existente y
+  devolviendo el `state` byte-for-byte (RFC 6749 §4.1.2). Aplica también a los callbacks de error
+  (`access_denied`, `login_required`) y a la variante JSON `/auth/authorize/url`. Si la
+  `redirect_uri` registrada trae un `code`/`state`/`error` propio, se reemplaza en vez de duplicar
+  la clave: de cuál se quedaba el consumidor dependía de su parser, y un callback de error podía
+  llegar con un `code`.
+- **`response_type` se recibía y se ignoraba.** Un cliente que pedía `token` o `id_token` recibía un
+  `code`, contradiciendo el propio discovery (`response_types_supported: ["code"]`). Ahora se rechaza
+  con `error=unsupported_response_type` de vuelta al cliente, antes de emitir código alguno y sin
+  hacer autenticar al usuario primero.
+- **`auth_time` del `id_token` informaba una frescura falsa.** Se fijaba al instante de creación del
+  código, así que un SSO silencioso 6 h después declaraba una autenticación reciente. Ahora es un
+  claim inmutable del token `typ=session`, fijado al autenticarse y conservado al refrescarlo, y es
+  la misma referencia contra la que se evalúa `max_age` (antes se enforceaba contra un valor y se
+  reportaba otro). Es **por sesión de navegador**, no por usuario: iniciar sesión en otro equipo ya
+  no rejuvenece las sesiones abiertas ni les deja pasar un `max_age` que no cumplen.
+  `User.last_login_at` queda como dato informativo y deja de gobernar decisiones de autenticación.
+  **Al desplegar, las sesiones abiertas exigen un re-login único**: no traen el claim, y `iat` no
+  sirve como sustituto porque `/auth/refresh` lo regeneraba sin re-autenticar a nadie (una sesión
+  vieja recién refrescada luciría fresca). Esas sesiones siguen sirviendo para SSO sin `max_age`,
+  pero no pueden refrescarse ni acreditar frescura; se extinguen solas dentro del TTL de sesión.
 - **Tras rotar, el backend rechazaba durante 5 min los tokens que él mismo acababa de firmar.** El
   caché del JWKS en Redis (`minerva:jwks:current`, 300 s) no se invalidaba nunca. Ahora el CLI lo
   borra al publicar o promover una clave, y además `_resolve_token` reconstruye el JWKS desde la BD

@@ -139,6 +139,17 @@ Implement this in the consumer only if users log in through that system.
    - `prompt=none` — return `error=login_required` instead of showing login (silent renew in iframes).
    - `max_age={seconds}` — force re-auth if the Minerva session is older than that.
 
+   Response contract:
+   - `response_type` accepts **only** `code`. Anything else comes back as
+     `error=unsupported_response_type`, not as a `code`.
+   - `state` is returned byte-for-byte, even with spaces, `&`, `=` or `#`. Compare it verbatim.
+   - A `redirect_uri` registered **with its own query** (`https://app/callback?tenant=jal`) keeps
+     that query; `code`/`state` are appended to it. Register it in full. A `code`/`state`/`error`
+     baked into that query is replaced by Minerva's, never duplicated.
+   - `auth_time` in the `id_token` is when the user authenticated **in that browser session**, not
+     when the code was issued. Signing in elsewhere does not rejuvenate this session, and refreshing
+     the panel token is not re-authentication. Same reference Minerva uses to enforce `max_age`.
+
    Minerva-side logout: `POST /auth/logout` with the user's `access_token` revokes it server-side
    (blacklist by `jti`); a later `/authorize` will not silently reuse that session. This is separate
    from your own app's logout.
