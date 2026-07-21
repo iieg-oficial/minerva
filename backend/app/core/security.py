@@ -63,6 +63,7 @@ def create_access_token_rs256(
     scope: str = "",
     email_verified: bool = False,
     typ: str = "access",
+    auth_time: int | None = None,
 ) -> str:
     """Access token firmado con RS256. Incluye `jti` para revocación (blacklist).
 
@@ -73,6 +74,9 @@ def create_access_token_rs256(
     pueda filtrar los claims de identidad por scope sin volver a consultar la BD.
     `typ` marca la clase de token (`session` para el panel, `access` para el canje
     OIDC de consumidores) para que cada endpoint rechace tokens de otra clase (R2).
+    `auth_time` fija el instante de autenticación DE ESTA sesión: viaja en el token
+    (no en la fila del usuario) porque es propio de cada navegador, y se conserva al
+    reemitirlo en `/auth/refresh`.
     """
     now = datetime.now(timezone.utc)
     minutes = expires_minutes if expires_minutes is not None else settings.effective_token_expire_minutes
@@ -91,6 +95,8 @@ def create_access_token_rs256(
         "iat": int(now.timestamp()),
         "exp": int(now.timestamp()) + (minutes * 60),
     }
+    if auth_time is not None:
+        payload["auth_time"] = auth_time
     return jwt.encode(payload, private_key_pem, algorithm="RS256", headers={"kid": kid})
 
 

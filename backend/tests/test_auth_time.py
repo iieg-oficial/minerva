@@ -1,9 +1,9 @@
-"""`auth_time` del id_token debe ser el instante de la autenticación real, no el de la
-emisión del código.
+"""`auth_time` es el instante de autenticación **de cada sesión**, no del usuario.
 
 Antes se fijaba a `now` al crear el código, así que un SSO silencioso reportaba una
-frescura falsa y —peor— Minerva se contradecía: `_requires_reauth` evalúa `max_age`
-contra `user.last_login_at`, o sea enforceaba contra un valor y reportaba otro.
+frescura falsa. Tomarlo de `user.last_login_at` tampoco sirve: ese valor es global por
+usuario, así que iniciar sesión en otro navegador rejuvenecería esta sesión y le dejaría
+pasar un `max_age` que ya no cumple. Por eso viaja dentro del token `typ=session`.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -17,7 +17,6 @@ from app.modules.applications.models import Application, RedirectURI
 from app.modules.auth.service import AuthService
 from app.modules.oidc.service import OIDCService
 from app.modules.users.models import User
-from app.shared.datetime_utils import as_utc
 from tests.conftest import grant_role, test_engine
 
 CLIENT_SECRET = "auth-time-secret"
@@ -29,7 +28,7 @@ PASSWORD = "authtime-pass-123"
 @pytest.fixture
 def app_ctx(client):
     # Se registra por HTTP para que el usuario quede con contraseña utilizable en
-    # /auth/login (uno de los casos comprueba que un login real sí mueve auth_time).
+    # /auth/login (varios casos necesitan un login real, no un token acuñado).
     resp = client.post("/auth/register", json={"email": EMAIL, "full_name": "Auth Time", "password": PASSWORD})
     assert resp.status_code == 201, resp.text
     client.cookies.clear()
@@ -57,98 +56,150 @@ def _jwks() -> dict:
         return OIDCService(session).build_jwks()
 
 
-def _last_login() -> datetime | None:
+def _sesion(ctx: dict, autenticada_hace: timedelta = timedelta(0)) -> str:
+    """Token de una sesión de panel que se autenticó en un momento dado."""
+    momento = int((datetime.now(timezone.utc) - autenticada_hace).timestamp())
     with Session(test_engine) as session:
-        user = session.exec(select(User).where(User.email == EMAIL)).first()
-        return as_utc(user.last_login_at) if user.last_login_at else None
+        return OIDCService(session).issue_session_token(ctx["user_id"], EMAIL, "Auth Time", auth_time=momento)
 
 
-def _set_last_login(hace: timedelta) -> datetime:
-    """Mueve el último login al pasado, simulando una sesión que ya lleva rato abierta."""
-    momento = datetime.now(timezone.utc) - hace
-    with Session(test_engine) as session:
-        user = session.exec(select(User).where(User.email == EMAIL)).first()
-        user.last_login_at = momento
-        session.add(user)
-        session.commit()
-    return momento
+def _claims_sesion(token: str) -> dict:
+    return decode_token_rs256(token, _jwks(), audience="minerva")
 
 
-def _authorize(ctx: dict, **kwargs) -> tuple[str | None, str | None]:
-    with Session(test_engine) as session:
-        return AuthService(session).authorize(ctx["client_id"], REDIRECT_URI, ctx["user_id"], "s", "openid", **kwargs)
+def _authorize(client, ctx: dict, token: str, **params):
+    return client.get(
+        "/auth/authorize",
+        params={
+            "client_id": ctx["client_id"],
+            "redirect_uri": REDIRECT_URI,
+            "state": "s",
+            "scope": "openid",
+            **params,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+        follow_redirects=False,
+    )
 
 
-def _id_token_claims(client, ctx: dict, **kwargs) -> dict:
+def _id_token_claims(client, ctx: dict, token: str, **params) -> dict:
     """Recorrido completo: /authorize emite el código y /token entrega el id_token."""
-    url, reason = _authorize(ctx, **kwargs)
-    assert reason is None, f"no debía pedir re-autenticación: {reason}"
-    code = parse_qs(urlsplit(url).query)["code"][0]
+    resp = _authorize(client, ctx, token, **params)
+    assert resp.status_code in (302, 307), resp.text
+    query = parse_qs(urlsplit(resp.headers["location"]).query)
+    assert "code" in query, f"esperaba un código, llegó {query}"
 
-    resp = client.post(
+    canje = client.post(
         "/auth/token",
         data={
             "grant_type": "authorization_code",
             "client_id": ctx["client_id"],
             "client_secret": CLIENT_SECRET,
-            "code": code,
+            "code": query["code"][0],
             "redirect_uri": REDIRECT_URI,
         },
     )
-    assert resp.status_code == 200, resp.text
-    return decode_token_rs256(resp.json()["id_token"], _jwks(), audience=ctx["client_id"])
+    assert canje.status_code == 200, canje.text
+    return decode_token_rs256(canje.json()["id_token"], _jwks(), audience=ctx["client_id"])
 
 
-def test_auth_time_es_el_login_real_no_el_instante_del_codigo(client, app_ctx):
-    """Regresión directa: con el login 6 h atrás, el id_token debe reportar esas 6 h."""
-    momento = _set_last_login(timedelta(hours=6))
+def test_auth_time_es_la_autenticacion_real_no_el_instante_del_codigo(client, app_ctx):
+    """Regresión directa: con la sesión autenticada 6 h atrás, el id_token debe
+    reportar esas 6 h, no el momento en que se pidió el código."""
+    token = _sesion(app_ctx, autenticada_hace=timedelta(hours=6))
 
-    claims = _id_token_claims(client, app_ctx)
+    claims = _id_token_claims(client, app_ctx, token)
 
-    assert claims["auth_time"] == int(momento.timestamp())
+    assert claims["auth_time"] == _claims_sesion(token)["auth_time"]
     antiguedad = datetime.now(timezone.utc).timestamp() - claims["auth_time"]
     assert antiguedad > 5.5 * 3600, "auth_time se está fijando al instante del código"
 
 
 def test_sso_repetido_no_refresca_auth_time(client, app_ctx):
-    """Dos autorizaciones seguidas sin login nuevo: la autenticación es la misma, así
-    que el valor reportado no puede moverse."""
-    _set_last_login(timedelta(hours=6))
+    """Dos autorizaciones con la misma sesión: la autenticación es la misma, así que
+    el valor reportado no puede moverse."""
+    token = _sesion(app_ctx, autenticada_hace=timedelta(hours=6))
 
-    primera = _id_token_claims(client, app_ctx)
-    segunda = _id_token_claims(client, app_ctx)
+    primera = _id_token_claims(client, app_ctx, token)
+    segunda = _id_token_claims(client, app_ctx, token)
 
     assert primera["auth_time"] == segunda["auth_time"]
 
 
-def test_un_login_real_si_mueve_auth_time(client, app_ctx):
-    _set_last_login(timedelta(hours=6))
-    antes = _id_token_claims(client, app_ctx)["auth_time"]
+def test_iniciar_sesion_en_otro_navegador_no_rejuvenece_esta_sesion(client, app_ctx):
+    """El caso que un `auth_time` global por usuario resolvía mal.
 
-    resp = client.post("/auth/login", json={"email": EMAIL, "password": PASSWORD})
-    assert resp.status_code == 200, resp.text
+    La sesión A se autenticó hace 6 h. El mismo usuario inicia sesión en otro navegador
+    (sesión B, fresca). A no debe verse afectada: ni en lo que reporta ni en lo que se
+    le exige — si `max_age` mirara el último login del usuario, A pasaría un `max_age`
+    de 1 h que en realidad no cumple."""
+    sesion_a = _sesion(app_ctx, autenticada_hace=timedelta(hours=6))
+    antes = _id_token_claims(client, app_ctx, sesion_a)["auth_time"]
+
+    login_b = client.post("/auth/login", json={"email": EMAIL, "password": PASSWORD})
+    assert login_b.status_code == 200, login_b.text
     client.cookies.clear()
 
-    despues = _id_token_claims(client, app_ctx)["auth_time"]
-    assert despues > antes
-    assert datetime.now(timezone.utc).timestamp() - despues < 60
+    assert _id_token_claims(client, app_ctx, sesion_a)["auth_time"] == antes
+    # Y sigue sin acreditar frescura: A no se autenticó, se autenticó B.
+    resp = _authorize(client, app_ctx, sesion_a, max_age=3600)
+    assert "/login?next=" in resp.headers["location"], "el login del otro navegador rejuveneció esta sesión"
 
 
-def test_el_registro_marca_el_ultimo_login(client, app_ctx):
-    """El alta deja sesión abierta, así que es un evento de autenticación: sin esto un
-    recién registrado no podría reportar `auth_time` ni pasar ningún `max_age`."""
-    assert _last_login() is not None
+def test_una_sesion_nueva_si_trae_auth_time_fresco(client, app_ctx):
+    reciente = _sesion(app_ctx)
+    vieja = _sesion(app_ctx, autenticada_hace=timedelta(hours=6))
+
+    fresco = _id_token_claims(client, app_ctx, reciente)["auth_time"]
+
+    assert fresco > _id_token_claims(client, app_ctx, vieja)["auth_time"]
+    assert datetime.now(timezone.utc).timestamp() - fresco < 60
+
+
+def test_refrescar_el_token_no_cuenta_como_reautenticacion(client, app_ctx):
+    """`/auth/refresh` alarga la sesión, no vuelve a autenticar. Si renovara el
+    `auth_time`, un `max_age` nunca se cumpliría en una sesión que se refresca sola."""
+    token = _sesion(app_ctx, autenticada_hace=timedelta(hours=6))
+    original = _claims_sesion(token)["auth_time"]
+
+    with Session(test_engine) as session:
+        reemitido = AuthService(session).reissue_session_token(_claims_sesion(token))["access_token"]
+
+    assert _claims_sesion(reemitido)["auth_time"] == original
 
 
 def test_auth_time_reportado_es_coherente_con_lo_que_exige_max_age(client, app_ctx):
-    """Lo que Minerva enforcea y lo que reporta salen de la misma fuente: un `max_age`
-    más corto que la antigüedad del login exige re-autenticar, y uno más largo pasa
+    """Lo que Minerva enforcea y lo que reporta salen del mismo valor: un `max_age`
+    más corto que la antigüedad de la sesión exige re-autenticar, y uno más largo pasa
     reportando exactamente esa antigüedad."""
-    momento = _set_last_login(timedelta(hours=6))
+    token = _sesion(app_ctx, autenticada_hace=timedelta(hours=6))
+    esperado = _claims_sesion(token)["auth_time"]
 
-    url, reason = _authorize(app_ctx, max_age=3600)
-    assert url is None
-    assert reason == "max_age"
+    resp = _authorize(client, app_ctx, token, max_age=3600)
+    assert "/login?next=" in resp.headers["location"]
 
-    claims = _id_token_claims(client, app_ctx, max_age=10 * 3600)
-    assert claims["auth_time"] == int(momento.timestamp())
+    claims = _id_token_claims(client, app_ctx, token, max_age=10 * 3600)
+    assert claims["auth_time"] == esperado
+
+
+def test_una_sesion_sin_auth_time_no_acredita_frescura(client, app_ctx):
+    """Tokens emitidos antes de que el claim existiera: caen a `iat`, que para ellos es
+    cuando se creó la sesión, así que un `max_age` vencido sigue exigiendo re-login."""
+    with Session(test_engine) as session:
+        from app.core.security import create_access_token_rs256
+
+        oidc = OIDCService(session)
+        kid, pem = oidc.get_active_private_pem()
+        antiguo = create_access_token_rs256(
+            user_id=app_ctx["user_id"],
+            email=EMAIL,
+            name="Auth Time",
+            kid=kid,
+            private_key_pem=pem,
+            application_slug="minerva",
+            typ="session",
+        )
+
+    assert "auth_time" not in _claims_sesion(antiguo)
+    # `iat` es de ahora, así que un max_age holgado pasa y uno de 0 s no.
+    assert _id_token_claims(client, app_ctx, antiguo, max_age=3600)["auth_time"] == _claims_sesion(antiguo)["iat"]

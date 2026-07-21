@@ -189,9 +189,14 @@ class OIDCService:
         application_slug: str = "minerva",
         roles: list[str] | None = None,
         permissions: list[str] | None = None,
+        auth_time: int | None = None,
     ) -> str:
+        """Un token de sesión nuevo nace de una autenticación, así que `auth_time` cae
+        a "ahora" por defecto. El caller lo pasa explícito solo al reemitir la MISMA
+        sesión (`/auth/refresh`), donde el usuario no volvió a autenticarse."""
         kid, private_pem = self.get_active_private_pem()
         return create_access_token_rs256(
+            auth_time=auth_time if auth_time is not None else int(datetime.now(timezone.utc).timestamp()),
             user_id=user_id,
             email=email,
             name=name,

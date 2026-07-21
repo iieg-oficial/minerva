@@ -30,7 +30,7 @@ from app.modules.auth.schemas import (
     SessionView,
     SetActiveRequest,
 )
-from app.modules.auth.service import AuthService, RefreshReuseError, build_callback_url
+from app.modules.auth.service import AuthService, RefreshReuseError, build_callback_url, session_auth_time
 from app.modules.authorization.service import AuthorizationService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -341,6 +341,7 @@ async def authorize(
         nonce=nonce,
         prompt=prompt,
         max_age=max_age,
+        auth_time=session_auth_time(current_user),
     )
     if reauth_reason == "access_denied":
         return RedirectResponse(build_callback_url(redirect_uri, error="access_denied", state=state))
@@ -403,6 +404,7 @@ async def authorize_url(
         nonce=nonce,
         prompt=prompt,
         max_age=max_age,
+        auth_time=session_auth_time(current_user),
     )
     if reauth_reason == "access_denied":
         return {"redirect_url": build_callback_url(redirect_uri, error="access_denied", state=state)}
