@@ -205,7 +205,7 @@ async def logout(
     audit: AuditService = Depends(get_audit_service),
     redis: Redis = Depends(get_redis),
 ):
-    """Logout suave (estilo Google): sale de la cuenta activa pero conserva las cuentas
+    """Logout suave: sale de la cuenta activa pero conserva las cuentas
     del navegador y sus tokens (para volver a entrar sin re-teclear). NO revoca el jti:
     para invalidar de verdad están "quitar cuenta" y "cerrar todas las sesiones"."""
     container = ps["container"]

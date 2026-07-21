@@ -238,7 +238,7 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - **Rate limit de login por cliente real.** Con `FORWARDED_ALLOW_IPS` en el backend y
   `X-Forwarded-For` de nginx, `request.client.host` es la IP real del cliente y no la de nginx, así
   el límite `5/15min` deja de ser global (un cliente ruidoso ya no bloquea a todos).
-- **Logout suave estilo Google.** "Cerrar sesión" en el panel ya no invalida el token ni marca
+- **Logout suave.** "Cerrar sesión" en el panel ya no invalida el token ni marca
   la cuenta como vencida: solo sale localmente y la cuenta queda listada como activa mientras su
   token dure, para volver a entrar sin re-teclear credenciales. Para invalidar de verdad el token
   está "Cerrar todas las sesiones" (blacklist server-side); para olvidar la cuenta del dispositivo,
@@ -264,7 +264,7 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Added
 
-- **Selector de cuentas / multi-sesión (estilo Google/GitHub).** Minerva ahora puede mantener
+- **Selector de cuentas / multi-sesión.** Minerva ahora puede mantener
   varias cuentas iniciadas en un mismo navegador y mostrar un selector al autorizar.
   - Un consumidor puede mandar `prompt=select_account` en `/auth/authorize` para que, en lugar de
     hacer SSO silencioso con la última cuenta activa, aparezca un selector con las cuentas ya

@@ -6,9 +6,9 @@ técnicos en inglés (bilingüe, igual que el código del proyecto).
 ## Qué es Minerva
 
 Minerva es el **sistema institucional de identidad, autenticación y autorización del IIEG**
-(Instituto de Información Estadística y Geográfica de Jalisco). Funciona como un "Iniciar sesión
-con Google" interno: las plataformas del instituto redirigen el login hacia Minerva, que autentica
-al usuario, valida sus permisos y devuelve un **JWT**.
+(Instituto de Información Estadística y Geográfica de Jalisco). Funciona como un inicio de sesión
+único (SSO) institucional interno: las plataformas del instituto redirigen el login hacia Minerva,
+que autentica al usuario, valida sus permisos y devuelve un **JWT**.
 
 **Principio rector (no negociable):**
 
@@ -130,7 +130,7 @@ Minerva firma **todo con RS256/JWKS** (no HS256). Dos modelos de sesión, delibe
 
 ### Selector de cuentas / multi-sesión (v0.3.0)
 
-Patrón "cambiar de cuenta" de Google/GitHub. La **fuente de verdad del multi-cuenta es el backend**
+Patrón "cambiar de cuenta" multi-sesión. La **fuente de verdad del multi-cuenta es el backend**
 (contenedor en Redis); la SPA solo cachea descriptores no sensibles para pintar el selector.
 
 - **Fuente de verdad:** el contenedor de sesión en Redis (`backend/app/core/panel_session.py`).

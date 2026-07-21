@@ -13,7 +13,7 @@
 ## 🎯 Qué es Minerva
 
 Minerva es el proveedor de identidad del **Instituto de Información Estadística y Geográfica de
-Jalisco (IIEG)**. Funciona como un "Iniciar sesión con Google" interno: las plataformas del
+Jalisco (IIEG)**. Funciona como un inicio de sesión único (SSO) institucional interno: las plataformas del
 instituto redirigen su login hacia Minerva, que autentica al usuario, revisa sus permisos y
 devuelve un token firmado — nadie más vuelve a implementar login ni a guardar contraseñas.
 
@@ -22,7 +22,7 @@ devuelve un token firmado — nadie más vuelve a implementar login ni a guardar
 - 🔐 **OIDC / OAuth 2.0 completo** — Authorization Code + PKCE, discovery, JWKS, refresh con rotación y revocación.
 - 🔑 **Firma RS256 con rotación de claves** — sin secretos compartidos entre sistemas.
 - 🧩 **Permisos declarativos por manifiesto** — `{app}.{recurso}.{acción}`, nunca roles hardcodeados en el consumidor.
-- 👥 **Selector de cuentas multi-sesión** — estilo Google, cambia de cuenta sin volver a teclear credenciales.
+- 👥 **Selector de cuentas multi-sesión** — cambia de cuenta sin volver a teclear credenciales.
 - 🧰 **SDK oficial para FastAPI** — `get_current_user` / `require_permission`, sin reimplementar validación de JWT.
 - 🐳 **Docker-first** — un `docker compose up`, o consume las imágenes ya publicadas en `ghcr.io`.
 

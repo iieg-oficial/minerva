@@ -83,7 +83,7 @@ function AccountRow({ session, brandColor, onClick, extra, dim }) {
     );
 }
 
-// Selector de cuentas ya iniciadas en este navegador (estilo Google/GitHub), con
+// Selector de cuentas ya iniciadas en este navegador, con
 // el mismo shell visual que el login. Estados:
 //  - list   → cuenta activa + dropdown de otras cuentas (login_again / login_select_account)
 //  - manage → gestor con borrar por cuenta (login_account_manager)
