@@ -158,6 +158,20 @@ Parámetros adicionales soportados (OIDC Core 3.1.2.1):
   hace SSO silencioso con la última cuenta activa).
 - `max_age={segundos}` → fuerza re-autenticación si la sesión es más vieja que ese valor.
 
+Sobre la respuesta de `/authorize`:
+
+- **`response_type` solo acepta `code`** (es lo que declara el discovery). Cualquier otro valor
+  (`token`, `id_token`, ...) se rechaza con `error=unsupported_response_type` de vuelta a tu
+  `redirect_uri`, no con un `code` como si nada.
+- **Tu `state` vuelve byte-for-byte**, aunque contenga espacios, `&`, `=` o `#`. Compáralo tal cual
+  con el que generaste: es tu defensa anti-CSRF.
+- **Tu `redirect_uri` puede traer query propia** (`https://tu-app/callback?tenant=jal`): Minerva la
+  preserva y agrega `code`/`state` a esa misma query. Regístrala completa, tal cual.
+- **`auth_time` del `id_token` es el momento en que el usuario realmente se autenticó**, no el de la
+  emisión del código: un SSO silencioso 6 h después sigue reportando ese login de hace 6 h. Es la
+  misma referencia que Minerva usa para decidir `max_age`, así que lo que exige y lo que reporta
+  coinciden.
+
 > **Logout de Minerva.** `POST /auth/logout` (con el `access_token` en el header) revoca el token
 > del lado del servidor: a partir de ese momento Minerva ya no lo acepta, así que un `/authorize`
 > posterior no re-autentica en silencio con esa sesión. Es independiente del logout de tu propia app.
