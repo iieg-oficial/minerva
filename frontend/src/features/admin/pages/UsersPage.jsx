@@ -120,7 +120,6 @@ export default function UsersPage() {
     const columns = [
         { title: 'Nombre', dataIndex: 'full_name', key: 'full_name' },
         { title: 'Email', dataIndex: 'email', key: 'email' },
-        { title: 'Proveedor', dataIndex: 'auth_provider', key: 'auth_provider', width: 100 },
         {
             title: 'Estado',
             dataIndex: 'status',
@@ -233,7 +232,7 @@ export default function UsersPage() {
                             >
                                 <Input />
                             </Form.Item>
-                            <Form.Item name="password" label="Contraseña">
+                            <Form.Item name="password" label="Contraseña" rules={[{ required: true }]}>
                                 <Input.Password />
                             </Form.Item>
 
