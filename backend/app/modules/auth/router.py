@@ -320,6 +320,11 @@ async def authorize(
     # sesión): nunca se redirige a un destino no confiable (evita open redirect).
     service.validate_client_and_redirect(client_id, redirect_uri)
 
+    # Solo se soporta el flujo de código (lo que ya declara el discovery). El error
+    # vuelve al cliente por redirect, no como 400: para eso el destino se validó arriba.
+    if response_type != "code":
+        return RedirectResponse(build_callback_url(redirect_uri, error="unsupported_response_type", state=state))
+
     if current_user is None:
         if prompt == "none":
             return RedirectResponse(build_callback_url(redirect_uri, error="login_required", state=state))
@@ -381,6 +386,12 @@ async def authorize_url(
         request,
         "authorize_url",
     )
+    # Mismo contrato que /authorize: valida el destino antes de devolver una URL de
+    # error hacia él. `service.authorize` lo revalida, pero corre demasiado tarde.
+    service.validate_client_and_redirect(client_id, redirect_uri)
+    if response_type != "code":
+        return {"redirect_url": build_callback_url(redirect_uri, error="unsupported_response_type", state=state)}
+
     redirect_url, reauth_reason = service.authorize(
         client_id,
         redirect_uri,
