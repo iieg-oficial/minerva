@@ -108,6 +108,10 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   reportaba otro). Es **por sesión de navegador**, no por usuario: iniciar sesión en otro equipo ya
   no rejuvenece las sesiones abiertas ni les deja pasar un `max_age` que no cumplen.
   `User.last_login_at` queda como dato informativo y deja de gobernar decisiones de autenticación.
+  **Al desplegar, las sesiones abiertas exigen un re-login único**: no traen el claim, y `iat` no
+  sirve como sustituto porque `/auth/refresh` lo regeneraba sin re-autenticar a nadie (una sesión
+  vieja recién refrescada luciría fresca). Esas sesiones siguen sirviendo para SSO sin `max_age`,
+  pero no pueden refrescarse ni acreditar frescura; se extinguen solas dentro del TTL de sesión.
 - **Tras rotar, el backend rechazaba durante 5 min los tokens que él mismo acababa de firmar.** El
   caché del JWKS en Redis (`minerva:jwks:current`, 300 s) no se invalidaba nunca. Ahora el CLI lo
   borra al publicar o promover una clave, y además `_resolve_token` reconstruye el JWKS desde la BD
