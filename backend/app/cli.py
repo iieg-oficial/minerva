@@ -27,10 +27,16 @@ def _drop_jwks_cache() -> None:
     import asyncio
 
     from app.core.dependencies.auth import invalidate_jwks_cache
-    from app.core.redis import get_redis
+    from app.core.redis import close_redis, init_redis
 
     async def _run() -> None:
-        await invalidate_jwks_cache(get_redis())
+        # El CLI no pasa por el lifespan de FastAPI: hay que abrir y cerrar la
+        # conexión aquí, o `get_redis()` falla por no estar inicializada.
+        redis = await init_redis()
+        try:
+            await invalidate_jwks_cache(redis)
+        finally:
+            await close_redis()
 
     try:
         asyncio.run(_run())
