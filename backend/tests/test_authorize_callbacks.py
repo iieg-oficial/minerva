@@ -22,6 +22,9 @@ from tests.conftest import grant_role, test_engine
 CLIENT_SECRET = "callbacks-secret"
 REDIRECT_PLAIN = "https://callbacks.example.com/cb"
 REDIRECT_QUERY = "https://callbacks.example.com/cb?tenant=jal&lang=es"
+# Registrada con parámetros que chocan con los que Minerva emite. Es legal registrarla
+# así, y duplicar una clave dejaría al criterio del parser del consumidor cuál gana.
+REDIRECT_CHOQUE = "https://callbacks.example.com/cb?tenant=jal&state=fijo&code=fijo&error=fijo"
 # Cubre todo lo que la concatenación cruda rompía: espacio, separadores de query y
 # fragmento. Un cliente compara el state que vuelve con el que mandó (anti-CSRF).
 STATE_RESERVADO = "a b&c=d/e?f#g+h%20i"
@@ -38,7 +41,7 @@ def app_ctx():
         )
         session.add(app_row)
         session.flush()
-        for uri in (REDIRECT_PLAIN, REDIRECT_QUERY):
+        for uri in (REDIRECT_PLAIN, REDIRECT_QUERY, REDIRECT_CHOQUE):
             session.add(RedirectURI(application_id=app_row.id, uri=uri, environment="production"))
 
         con_rol = User(email="con-rol@iieg.gob.mx", full_name="Con Rol", auth_provider="local", status="active")
@@ -124,6 +127,30 @@ def test_el_state_reservado_tambien_vuelve_identico_con_query_previa(client, app
     assert params["state"] == [STATE_RESERVADO]
     assert params["tenant"] == ["jal"]
     assert "code" in params
+
+
+def test_el_callback_no_duplica_los_parametros_del_protocolo(client, app_ctx):
+    """Una redirect_uri registrada con `?state=fijo&code=fijo` no puede producir dos
+    `state` ni dos `code`: el consumidor leería el que decida su parser."""
+    location = _authorize(client, app_ctx, app_ctx["token"], redirect_uri=REDIRECT_CHOQUE, state="s")
+
+    params = _query(location)
+    assert params["state"] == ["s"], f"state duplicado o equivocado: {params.get('state')}"
+    assert len(params["code"]) == 1 and params["code"] != ["fijo"]
+    assert "error" not in params, "un callback con código no puede arrastrar un error previo"
+    assert params["tenant"] == ["jal"], "los parámetros ajenos al protocolo sí se conservan"
+
+
+def test_un_callback_de_error_no_arrastra_un_code_previo(client, app_ctx):
+    """El caso inverso: si la URI registrada trae `code=fijo`, una denegación no puede
+    llegar con un `code` — el consumidor lo canjearía como si le hubieran autorizado."""
+    location = _authorize(client, app_ctx, app_ctx["token_sin_rol"], redirect_uri=REDIRECT_CHOQUE, state="s")
+
+    params = _query(location)
+    assert params["error"] == ["access_denied"]
+    assert "code" not in params, "el callback de error llegó con un code"
+    assert params["state"] == ["s"]
+    assert params["tenant"] == ["jal"]
 
 
 def test_response_type_no_soportado_devuelve_error_sin_emitir_codigo(client, app_ctx):
