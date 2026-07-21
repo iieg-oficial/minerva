@@ -28,7 +28,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.add_column(
-        "users", sa.Column("auth_provider", sa.String(length=20), nullable=False, server_default="local")
-    )
+    op.add_column("users", sa.Column("auth_provider", sa.String(length=20), nullable=False, server_default="local"))
     op.add_column("users", sa.Column("provider_subject", sa.String(length=255), nullable=True))
