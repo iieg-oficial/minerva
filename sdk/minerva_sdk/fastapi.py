@@ -136,6 +136,7 @@ def clear_caches() -> None:
     _permissions_cache.clear()
     _jwks_cache["jwks"] = None
     _jwks_cache["exp"] = 0.0
+    _jwks_cache["retry_after"] = 0.0
 
 
 def _prune_permissions_cache(now: float) -> None:
