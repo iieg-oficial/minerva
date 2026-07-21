@@ -98,12 +98,15 @@ async def _decode(token: str) -> dict:
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> dict:
-    """Devuelve los claims del usuario autenticado (valida firma del JWT)."""
+    """Devuelve los claims del usuario autenticado (valida firma del JWT).
+
+    El dict son **solo** los claims del token: nunca la credencial. Es seguro
+    serializarlo o registrarlo en logs. El bearer que `require_permission` necesita
+    para consultar Minerva lo obtiene por su cuenta de la misma dependencia
+    `_bearer`, no de aquí."""
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token no proporcionado")
-    user = await _decode(credentials.credentials)
-    user["_token"] = credentials.credentials
-    return user
+    return await _decode(credentials.credentials)
 
 
 async def _fetch_permissions(token: str, sub: str, application_code: str) -> set[str]:
@@ -151,13 +154,19 @@ def require_permission(permission: str, application_code: str | None = None):
     """
     app_code = application_code or settings.application_code
 
-    async def dependency(user: dict = Depends(get_current_user)) -> dict:
+    async def dependency(
+        user: dict = Depends(get_current_user),
+        credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    ) -> dict:
         if not app_code:
             raise HTTPException(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "MINERVA_APPLICATION_CODE no configurado",
             )
-        perms = await _fetch_permissions(user["_token"], user["sub"], app_code)
+        # FastAPI cachea `_bearer` por request: es el mismo objeto que ya validó
+        # `get_current_user`, así que llegar aquí garantiza que no es None.
+        assert credentials is not None
+        perms = await _fetch_permissions(credentials.credentials, user["sub"], app_code)
         if permission not in perms:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, f"Requiere permiso: {permission}"

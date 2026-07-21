@@ -13,4 +13,4 @@ from minerva_sdk.config import MinervaSettings, settings
 from minerva_sdk.fastapi import get_current_user, require_permission
 
 __all__ = ["MinervaSettings", "settings", "get_current_user", "require_permission"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
