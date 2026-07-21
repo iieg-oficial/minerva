@@ -19,8 +19,11 @@ from minerva_sdk.config import settings
 
 _bearer = HTTPBearer(auto_error=False)
 
-# Caché simple: { (sub, application_code): (expira_en, set_de_permisos) }
-_permissions_cache: dict[tuple[str, str], tuple[float, set[str]]] = {}
+# Caché de permisos ligada al TOKEN, no al usuario:
+# { (jti, application_code): (expira_en, permisos) }
+_permissions_cache: dict[tuple[str, str], tuple[float, frozenset[str]]] = {}
+# Cota del dict antes de barrer las entradas vencidas (ver _prune_permissions_cache).
+_PERMISSIONS_CACHE_MAX = 1000
 # Caché del JWKS: las claves públicas cambian poco (rotación), no hace falta
 # pedirlas en cada request.
 _jwks_cache: dict[str, object] = {"exp": 0.0, "jwks": None}
@@ -109,12 +112,46 @@ async def get_current_user(
     return await _decode(credentials.credentials)
 
 
-async def _fetch_permissions(token: str, sub: str, application_code: str) -> set[str]:
-    cache_key = (sub, application_code)
+def invalidate_token(jti: str) -> None:
+    """Olvida los permisos cacheados de un token concreto. Engánchalo a tu propio
+    logout si quieres que la revocación surta efecto sin esperar al TTL."""
+    for key in [k for k in _permissions_cache if k[0] == jti]:
+        _permissions_cache.pop(key, None)
+
+
+def clear_caches() -> None:
+    """Vacía las cachés en memoria (permisos y JWKS). Pensado para pruebas y para
+    forzar una resincronización completa con Minerva."""
+    _permissions_cache.clear()
+    _jwks_cache["jwks"] = None
+    _jwks_cache["exp"] = 0.0
+
+
+def _prune_permissions_cache(now: float) -> None:
+    """Barrido perezoso de entradas vencidas: el dict es global del proceso y sin esto
+    crece sin cota en un servicio de larga vida."""
+    if len(_permissions_cache) <= _PERMISSIONS_CACHE_MAX:
+        return
+    for key in [k for k, (expires_at, _) in _permissions_cache.items() if expires_at <= now]:
+        _permissions_cache.pop(key, None)
+
+
+async def _fetch_permissions(token: str, claims: dict, application_code: str) -> set[str]:
+    """Permisos del usuario en la aplicación, con caché ligada al TOKEN.
+
+    La caché se indexa por `jti`, no por `sub`: dos tokens del mismo usuario nunca
+    comparten una decisión de autorización, así que revocar uno no deja al otro
+    heredando permisos (ni al revés). Además la entrada nunca sobrevive al `exp` del
+    token que la produjo. Un token sin `jti` no se cachea: se pregunta siempre.
+    """
+    jti = claims.get("jti")
     now = time.time()
-    cached = _permissions_cache.get(cache_key)
-    if cached and cached[0] > now:
-        return cached[1]
+    cache_key = (jti, application_code) if jti else None
+
+    if cache_key is not None:
+        cached = _permissions_cache.get(cache_key)
+        if cached and cached[0] > now:
+            return set(cached[1])
 
     url = f"{settings.issuer_url.rstrip('/')}/api/v1/me/permissions"
     try:
@@ -128,6 +165,10 @@ async def _fetch_permissions(token: str, sub: str, application_code: str) -> set
     except httpx.HTTPStatusError as exc:
         # 401 de Minerva (p. ej. token revocado) se propaga como 401 al cliente.
         if exc.response.status_code == status.HTTP_401_UNAUTHORIZED:
+            # Minerva ya no reconoce este token: tirar su entrada evita que un
+            # reintento dentro del TTL siga viendo permisos cacheados.
+            if cache_key is not None:
+                _permissions_cache.pop(cache_key, None)
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED, "Token inválido o revocado"
             )
@@ -142,7 +183,15 @@ async def _fetch_permissions(token: str, sub: str, application_code: str) -> set
         )
 
     perms = set(resp.json().get("permissions", []))
-    _permissions_cache[cache_key] = (now + settings.permissions_cache_ttl, perms)
+    if cache_key is not None:
+        # El TTL nunca puede pasar del `exp` del token: una entrada que sobreviviera
+        # al token seguiría autorizando a un portador que ya no debería pasar.
+        expires_at = now + settings.permissions_cache_ttl
+        token_exp = claims.get("exp")
+        if token_exp is not None:
+            expires_at = min(expires_at, float(token_exp))
+        _permissions_cache[cache_key] = (expires_at, frozenset(perms))
+        _prune_permissions_cache(now)
     return perms
 
 
@@ -166,7 +215,7 @@ def require_permission(permission: str, application_code: str | None = None):
         # FastAPI cachea `_bearer` por request: es el mismo objeto que ya validó
         # `get_current_user`, así que llegar aquí garantiza que no es None.
         assert credentials is not None
-        perms = await _fetch_permissions(credentials.credentials, user["sub"], app_code)
+        perms = await _fetch_permissions(credentials.credentials, user, app_code)
         if permission not in perms:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, f"Requiere permiso: {permission}"

@@ -10,7 +10,19 @@ Uso típico::
 """
 
 from minerva_sdk.config import MinervaSettings, settings
-from minerva_sdk.fastapi import get_current_user, require_permission
+from minerva_sdk.fastapi import (
+    clear_caches,
+    get_current_user,
+    invalidate_token,
+    require_permission,
+)
 
-__all__ = ["MinervaSettings", "settings", "get_current_user", "require_permission"]
+__all__ = [
+    "MinervaSettings",
+    "settings",
+    "get_current_user",
+    "require_permission",
+    "invalidate_token",
+    "clear_caches",
+]
 __version__ = "0.2.0"
