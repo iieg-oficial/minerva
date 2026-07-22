@@ -12,12 +12,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 > **Estado del release.** 0.4.0 es un checkpoint de integración, **no** la versión 1.0.0
 > publicable. Cierra riesgos graves que seguían vivos en `main` (escalada administrativa vía
 > `/api/v1`, revocación volátil en Redis, JWT del panel en `localStorage`, confusión de clases
-> de token). Quedan pendientes conocidos, documentados en `docs/auditoria-claude.md`,
-> `docs/auditoria-codex.md` y `docs/retrospectiva-remediacion-1.0.0.md`: entre ellos el
-> `redirect_uri` de logout sin validar, el cruce de audiencia en `/api/v1/me/permissions`,
-> `max_age` no transportado por la SPA, la invalidación por usuario en el mismo segundo y la
-> unificación de la URL de base de datos entre runtime y Alembic. No debe leerse este tag como
-> cierre del contrato 1.0.
+> de token). Quedan pendientes conocidos de endurecimiento —entre ellos el `redirect_uri` de
+> logout sin validar, el cruce de audiencia en `/api/v1/me/permissions`, `max_age` no
+> transportado por la SPA, la invalidación por usuario emitida en el mismo segundo y la
+> unificación de la URL de base de datos entre runtime y Alembic—, por lo que este tag no debe
+> leerse como cierre del contrato 1.0.
 
 ### Changed
 
