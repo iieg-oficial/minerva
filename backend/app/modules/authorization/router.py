@@ -31,7 +31,7 @@ def check_permission(
     audit.log(
         "permission_check_allowed" if result["allowed"] else "permission_check_denied",
         actor_user_id=data.user_id,
-        application_id=data.application_slug,
+        application_id=result["application_id"],
         ip_address=request.client.host,
         user_agent=request.headers.get("user-agent"),
         event_metadata={"permission": data.permission},
