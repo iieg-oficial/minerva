@@ -38,7 +38,12 @@ def _jwks_for(public_pem: str) -> dict:
 
 
 def _sign(private_pem: str, **claims) -> str:
-    payload = {"sub": "u1", "iss": "http://localhost:9000", "exp": int(time.time()) + 300, **claims}
+    payload = {
+        "sub": "u1",
+        "iss": "http://localhost:9000",
+        "exp": int(time.time()) + 300,
+        **claims,
+    }
     return jwt.encode(payload, private_pem, algorithm="RS256", headers={"kid": KID})
 
 
@@ -48,7 +53,6 @@ def setup():
     _jwks_cache["jwks"] = _jwks_for(public_pem)  # inyecta el JWKS: sin red
     _jwks_cache["exp"] = time.time() + 3600
     config.settings.application_code = "godin"
-    config.settings.verify_aud = True
     config.settings.expected_issuer = ""
     yield private_pem
     _jwks_cache["jwks"] = None
@@ -56,10 +60,18 @@ def setup():
 
 
 def test_valid_rs256_token(setup):
-    token = _sign(setup, aud="godin", email="u@iieg.gob.mx")
+    token = _sign(setup, aud="godin", email="u@iieg.gob.mx", typ="access")
     payload = asyncio.run(_decode(token))
     assert payload["sub"] == "u1"
     assert payload["aud"] == "godin"
+
+
+def test_missing_token_type_rejected(setup):
+    # typ=access es obligatorio: un token sin typ no pasa (no compat legacy).
+    token = _sign(setup, aud="godin")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_decode(token))
+    assert exc.value.status_code == 401
 
 
 def test_wrong_audience_rejected(setup):
@@ -67,6 +79,37 @@ def test_wrong_audience_rejected(setup):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(_decode(token))
     assert exc.value.status_code == 401
+
+
+def test_non_access_token_type_rejected(setup):
+    # Un token de sesión de panel (typ=session) no vale en un consumidor.
+    token = _sign(setup, aud="godin", typ="session")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_decode(token))
+    assert exc.value.status_code == 401
+
+
+def test_access_token_type_accepted(setup):
+    token = _sign(setup, aud="godin", typ="access")
+    payload = asyncio.run(_decode(token))
+    assert payload["typ"] == "access"
+
+
+def test_wrong_issuer_rejected(setup):
+    # El iss se valida siempre (contra issuer_url por defecto); no hay switch.
+    token = _sign(setup, aud="godin", typ="access", iss="https://evil.example")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_decode(token))
+    assert exc.value.status_code == 401
+
+
+def test_missing_application_code_is_config_error(setup):
+    # La audiencia es obligatoria: sin application_code no se acepta ningún token.
+    config.settings.application_code = ""
+    token = _sign(setup, aud="godin", typ="access")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_decode(token))
+    assert exc.value.status_code == 500
 
 
 def test_hs256_rejected(setup):

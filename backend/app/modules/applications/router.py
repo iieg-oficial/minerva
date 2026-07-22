@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlmodel import Session
 
 from app.core.dependencies.admin import require_minerva_admin
-from app.core.dependencies.auth import get_current_user
+from app.core.dependencies.auth import get_current_panel_user
 from app.core.dependencies.db import get_db
 from app.core.exceptions import BadRequestError
 from app.modules.applications.schemas import (
@@ -44,7 +44,7 @@ def list_applications(
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     service: ApplicationService = Depends(get_application_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     apps, total = service.list_applications(offset, limit)
     return PaginatedResponse.create(apps, total)
@@ -55,7 +55,7 @@ def create_application(
     data: ApplicationCreate,
     request: Request,
     service: ApplicationService = Depends(get_application_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     return service.create_application(data)
 
@@ -64,7 +64,7 @@ def create_application(
 async def import_manifest(
     file: UploadFile = File(..., description="Archivo manifest.minerva.yml"),
     session: Session = Depends(get_db),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     """Importa (o recarga) un manifiesto de permisos/roles de un sistema.
 
@@ -83,7 +83,7 @@ async def import_manifest(
 def get_application(
     application_id: str,
     service: ApplicationService = Depends(get_application_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     return service.get_application(application_id)
 
@@ -93,7 +93,7 @@ def update_application(
     application_id: str,
     data: ApplicationUpdate,
     service: ApplicationService = Depends(get_application_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     return service.update_application(application_id, data)
 
@@ -102,7 +102,7 @@ def update_application(
 def delete_application(
     application_id: str,
     service: ApplicationService = Depends(get_application_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     """Elimina la aplicación con sus permisos, roles, redirect URIs y asignaciones."""
     service.delete_application(application_id)
@@ -114,7 +114,7 @@ async def update_application_manifest(
     file: UploadFile = File(..., description="Archivo manifest.minerva.yml"),
     service: ApplicationService = Depends(get_application_service),
     session: Session = Depends(get_db),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     """Recarga el manifiesto de una aplicación existente (upsert de permisos/roles).
 
@@ -136,7 +136,7 @@ async def update_application_manifest(
 def regenerate_secret(
     application_id: str,
     service: ApplicationService = Depends(get_application_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     """Genera un nuevo client_secret (se muestra una sola vez). El client_id no cambia."""
     return service.regenerate_secret(application_id)
@@ -147,7 +147,7 @@ def add_redirect_uri(
     application_id: str,
     data: RedirectURICreate,
     service: ApplicationService = Depends(get_application_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     return service.add_redirect_uri(application_id, data)
 
@@ -156,6 +156,6 @@ def add_redirect_uri(
 def list_redirect_uris(
     application_id: str,
     service: ApplicationService = Depends(get_application_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     return service.list_redirect_uris(application_id)

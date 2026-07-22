@@ -48,11 +48,16 @@ services:
     image: redis:7-alpine
     container_name: minerva_redis
     restart: unless-stopped
-    # Sin persistencia (RDB/AOF) a propósito: Redis aquí solo guarda rate limiting,
-    # blacklist de tokens y sesiones efímeras de /authorize (ver MINERVA dependencies
-    # en backend/app/core/config.py), nunca la fuente de verdad de datos. Perder este
-    # estado en un restart solo relaja temporalmente el rate-limiting; no corrompe nada.
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # Redis es control de seguridad, no solo caché: guarda la blacklist de `jti`
+    # revocados, los cortes de invalidación por usuario y el contenedor de sesión del
+    # panel (BFF). Por eso corre con persistencia AOF (`appendonly yes`, sobrevive
+    # reinicios) y `noeviction` (nunca desaloja una revocación por presión de memoria).
+    # Todas las claves tienen TTL acotado (blacklist ≤ vida del token, panel 8h,
+    # rate-limit 15min), así que 256mb sobra; con `noeviction`, si la memoria se llenara,
+    # fallan las escrituras (fail-closed) en vez de resucitar tokens revocados en silencio.
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    volumes:
+      - minerva_redis_data:/data
     ports:
       - "${REDIS_PORT:-6379}:6379"
     healthcheck:
@@ -89,6 +94,7 @@ services:
 
 volumes:
   minerva_postgres_data:
+  minerva_redis_data:
 
 networks:
   minerva_network:

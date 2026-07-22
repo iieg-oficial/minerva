@@ -29,11 +29,6 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = "admin@iieg.gob.mx"
     ADMIN_PASSWORD: str = "changeme123"
 
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:9000/auth/google/callback"
-    ALLOWED_GOOGLE_DOMAIN: str = "iieg.gob.mx"
-
     MINERVA_ISSUER: str = "http://localhost:9000"
     FRONTEND_URL: str = "http://localhost:3000"
 
@@ -45,6 +40,10 @@ class Settings(BaseSettings):
     MINERVA_MODE: str = "dev"
     MINERVA_DB_URL: str = ""
     MINERVA_ENABLE_DEV_LOGIN: bool = True
+    # Registro público self-service en /auth/register. Cerrado por defecto: Minerva
+    # es un IdP institucional, las cuentas las provisiona un admin (o la federación).
+    # Habilítalo solo si de verdad quieres alta libre de cuentas.
+    MINERVA_ENABLE_PUBLIC_REGISTER: bool = False
     MINERVA_AUTO_IMPORT_MANIFESTS: bool = True
     MINERVA_MANIFESTS_PATH: str = "/app/manifests"
     MINERVA_JWT_ISSUER: str = ""
@@ -67,10 +66,19 @@ class Settings(BaseSettings):
     # valida un token. Con TTL corto, un caché stale nunca rechaza un JWKS válido
     # dentro de la ventana (build_jwks() ya incluye claves retiradas).
     MINERVA_JWKS_CACHE_TTL_SECONDS: int = 300
+    # Cuánto puede tardar un verificador externo en ver una clave nueva en su JWKS
+    # cacheado. Gobierna cuándo una clave `pending` puede promoverse a `active`
+    # (publish-before-use). Default 60 min: cubre el default del SDK, que cachea el
+    # JWKS una hora (MINERVA_JWKS_CACHE_TTL=3600).
+    MINERVA_KEY_PROPAGATION_MINUTES: int = 60
+    # Margen de reloj entre Minerva y los verificadores, para no purgar una clave
+    # justo cuando a otro le queda un segundo de token válido.
+    MINERVA_CLOCK_SKEW_MINUTES: int = 5
 
     # --- Redis -------------------------------------------------------------
-    # Redis tiene un alcance acotado: rate limiting, blacklist de tokens y
-    # sesiones efímeras del flujo /authorize. NO es la fuente de verdad de datos.
+    # Redis es control de seguridad: rate limiting, blacklist de tokens, cortes de
+    # invalidación por usuario y el contenedor de sesión del panel (patrón BFF, la
+    # fuente de verdad efímera del multi-cuenta). NO es la fuente de verdad de datos.
     REDIS_URL: str = "redis://minerva_redis:6379/0"
     RATE_LIMIT_LOGIN_MAX: int = 5
     RATE_LIMIT_LOGIN_WINDOW: int = 900  # segundos (15 min)
@@ -95,8 +103,36 @@ class Settings(BaseSettings):
         return self.MINERVA_ACCESS_TOKEN_EXPIRE_MINUTES or self.ACCESS_TOKEN_EXPIRE_MINUTES
 
     @property
+    def key_retirement_overlap_minutes(self) -> int:
+        """Cuánto debe seguir publicada en el JWKS una clave ya retirada: la vida
+        máxima de CUALQUIER token firmado con ella, más el margen de reloj. Purgarla
+        antes invalida tokens todavía vigentes.
+
+        Se deriva (no es una variable de entorno aparte) para que no pueda quedar
+        desincronizada del TTL de sesión. El máximo real es la sesión del panel
+        (`effective_token_expire_minutes`, 480 min), NO el access token OIDC
+        (`MINERVA_ACCESS_TOKEN_TTL_MINUTES`, 15 min) que se usaba antes. Los refresh
+        tokens no entran: son opacos y hasheados en BD, nadie los firma.
+        """
+        max_signed_token_minutes = max(self.MINERVA_ACCESS_TOKEN_TTL_MINUTES, self.effective_token_expire_minutes)
+        return max_signed_token_minutes + self.MINERVA_CLOCK_SKEW_MINUTES
+
+    @property
     def is_dev_mode(self) -> bool:
         return self.MINERVA_MODE.lower() == "dev"
+
+    # --- Cookie de sesión del panel (BFF) ----------------------------------
+    # El panel usa una cookie opaca HttpOnly (solo un id de sesión, nunca el JWT).
+    # En producción usa el prefijo `__Host-` (exige Secure + Path=/ + sin Domain,
+    # por eso solo funciona sobre HTTPS); en dev HTTP se usa un nombre distinto sin
+    # Secure para no romper el desarrollo local, sin debilitar producción.
+    @property
+    def session_cookie_secure(self) -> bool:
+        return not self.is_dev_mode
+
+    @property
+    def session_cookie_name(self) -> str:
+        return "minerva_sid" if self.is_dev_mode else "__Host-minerva_sid"
 
     def validate_production_config(self) -> None:
         """Falla rápido al arrancar si MINERVA_MODE no es dev y quedó algún valor

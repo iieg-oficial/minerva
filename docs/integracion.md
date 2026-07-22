@@ -107,10 +107,13 @@ cada arranque del backend.
 **Manual, vía API:**
 
 ```bash
-curl -X POST http://localhost:9000/api/v1/manifests/import \
+curl -X POST http://localhost:9000/applications/import-manifest \
   -H "Authorization: Bearer <admin_token>" \
   -F "file=@manifest.minerva.yml"
 ```
+
+> El import por API vive en el panel admin (`/applications/import-manifest`, requiere rol
+> de administrador). El Dev Kit `/api/v1` es solo self-service (dev-login, `me`, `me/permissions`).
 
 ## 3. Flujo OIDC: Authorization Code + PKCE
 
@@ -154,6 +157,23 @@ Parámetros adicionales soportados (OIDC Core 3.1.2.1):
   cierre sesión y quieras que el usuario pueda entrar con una cuenta distinta (sin él, Minerva
   hace SSO silencioso con la última cuenta activa).
 - `max_age={segundos}` → fuerza re-autenticación si la sesión es más vieja que ese valor.
+
+Sobre la respuesta de `/authorize`:
+
+- **`response_type` solo acepta `code`** (es lo que declara el discovery). Cualquier otro valor
+  (`token`, `id_token`, ...) se rechaza con `error=unsupported_response_type` de vuelta a tu
+  `redirect_uri`, no con un `code` como si nada.
+- **Tu `state` vuelve byte-for-byte**, aunque contenga espacios, `&`, `=` o `#`. Compáralo tal cual
+  con el que generaste: es tu defensa anti-CSRF.
+- **Tu `redirect_uri` puede traer query propia** (`https://tu-app/callback?tenant=jal`): Minerva la
+  preserva y agrega `code`/`state` a esa misma query. Regístrala completa, tal cual. Si registras un
+  `code`, `state` o `error` fijo en esa query, Minerva lo **reemplaza** por el suyo en vez de
+  duplicar la clave.
+- **`auth_time` del `id_token` es el momento en que el usuario se autenticó en *esa sesión***, no el
+  de la emisión del código: un SSO silencioso 6 h después sigue reportando ese login de hace 6 h.
+  Es por sesión de navegador, así que si el usuario inicia sesión en otro equipo, esta sesión no
+  "rejuvenece"; y refrescar el token del panel no cuenta como re-autenticación. Es la misma
+  referencia con la que Minerva evalúa `max_age`, así que lo que exige y lo que reporta coinciden.
 
 > **Logout de Minerva.** `POST /auth/logout` (con el `access_token` en el header) revoca el token
 > del lado del servidor: a partir de ese momento Minerva ya no lo acepta, así que un `/authorize`
@@ -209,7 +229,7 @@ tokens — trátalo como de un solo uso.
 > cuando tu backend vuelve a tocar a Minerva. `get_current_user` del SDK valida el JWT
 > localmente (JWKS) y **no** se entera hasta que expira; `require_permission` sí consulta
 > `GET /api/v1/me/permissions` en tiempo real (sujeto a su caché corta,
-> `MINERVA_PERMISSIONS_CACHE_TTL`, default 300s) y por tanto responde `401` antes.
+> `MINERVA_PERMISSIONS_CACHE_TTL`, desactivada por defecto) y por tanto responde `401` antes.
 
 ### 3.4 Cerrar sesión / revocar (RFC 7009)
 
@@ -316,11 +336,25 @@ Variables de entorno del SDK (`minerva_sdk/config.py`):
 | Variable | Para qué |
 |---|---|
 | `MINERVA_ISSUER_URL` | URL base de Minerva (de donde se descarga el JWKS) |
-| `MINERVA_APPLICATION_CODE` | tu `application_code` — se usa para verificar `aud` y para consultar `/me/permissions` |
-| `MINERVA_EXPECTED_ISSUER` | (opcional) valida `iss` exacto del token |
-| `MINERVA_VERIFY_AUD` | si `true` (default), exige que `aud` coincida con tu `application_code` |
+| `MINERVA_APPLICATION_CODE` | tu `application_code` — **obligatorio**: se exige siempre como `aud` y se usa para consultar `/me/permissions` |
+| `MINERVA_EXPECTED_ISSUER` | issuer esperado del `iss`; si se deja vacío se usa `MINERVA_ISSUER_URL`. La validación de `iss` no se puede desactivar |
 | `MINERVA_JWKS_CACHE_TTL` | segundos de caché del JWKS (default 3600) |
-| `MINERVA_PERMISSIONS_CACHE_TTL` | segundos de caché de permisos por usuario (default 300) |
+| `MINERVA_JWKS_REFRESH_COOLDOWN` | segundos mínimos entre refrescos del JWKS por `kid` desconocido (default 30) |
+| `MINERVA_PERMISSIONS_CACHE_TTL` | segundos de caché de permisos (default **0 = sin caché**) |
+| `MINERVA_REQUEST_TIMEOUT` | segundos de timeout de las llamadas a Minerva (default 10) |
+
+> **El objeto de usuario son solo claims.** El dict que devuelven `get_current_user` y
+> `require_permission` nunca contiene el bearer, así que es seguro serializarlo o
+> registrarlo. Si vienes del SDK 0.1.0, ver «Migración desde 0.1.0» en `sdk/README.md`:
+> `user["_token"]` ya no existe.
+
+> **Revocación inmediata por defecto.** El SDK **no cachea permisos** salvo que lo actives:
+> cada chequeo consulta a Minerva, que es quien aplica la revocación, así que revocar un
+> token deja de autorizar en el acto. Si pones `MINERVA_PERMISSIONS_CACHE_TTL > 0` ganas
+> menos tráfico a cambio de que una revocación tarde hasta ese TTL en notarse.
+
+> **Rotación de claves.** Si Minerva rota su clave de firma, el SDK refresca el JWKS al ver
+> un `kid` desconocido: la rotación **no** produce 401 espurios.
 
 ```python
 from fastapi import Depends, FastAPI
@@ -358,7 +392,7 @@ probar el endpoint protegido.
 | Aspecto | Dev | Producción |
 |---|---|---|
 | `MINERVA_ISSUER_URL` (en tu sistema) | `http://localhost:9000` | URL pública de Minerva = el host de nginx **sin `:9000`** (todo va consolidado tras nginx); HTTPS al tener certificado |
-| Verificación de `aud`/`iss` | puede dejarse relajada para probar rápido | `MINERVA_VERIFY_AUD=true` y `MINERVA_EXPECTED_ISSUER` fijado |
+| Verificación de `aud`/`iss` | siempre activa (`aud`=`application_code`, `iss`=`issuer_url`) | fija `MINERVA_EXPECTED_ISSUER` al issuer público si difiere del host de JWKS |
 | Registro de `redirect_uri` | localhost, puertos de desarrollo | dominio real de tu sistema, HTTPS |
 | Manifiesto | auto-importado al arrancar Minerva en local | importar explícitamente vía API/CI en el despliegue, no depender de auto-import |
 | Secrets (`client_secret`) | puede vivir en `.env` local | secret manager — nunca en el repo ni en logs |

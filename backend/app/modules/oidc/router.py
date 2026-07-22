@@ -10,12 +10,12 @@ cada una mantiene su propia política de CORS sin contaminar a la otra.
 La sub-app se monta en `app/main.py` con `app.mount("/.well-known", wellknown_app)`.
 """
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.core.dependencies.auth import get_current_user
+from app.core.dependencies.auth import get_current_access_user
 from app.core.dependencies.db import get_db
 from app.modules.oidc.schemas import JWKS, OpenIDConfiguration
 from app.modules.oidc.service import OIDCService
@@ -70,8 +70,13 @@ def openid_configuration() -> OpenIDConfiguration:
 
 
 @wellknown_app.get("/jwks.json", response_model=JWKS)
-def jwks(service: OIDCService = Depends(get_oidc_service)) -> JWKS:
-    """JWKS: claves públicas para que los consumidores verifiquen la firma RS256."""
+def jwks(response: Response, service: OIDCService = Depends(get_oidc_service)) -> JWKS:
+    """JWKS: claves públicas para que los consumidores verifiquen la firma RS256.
+
+    El `max-age` declara a los verificadores la misma ventana de propagación que
+    Minerva asume al promover una clave pendiente: si respetan la cabecera, para
+    cuando la clave nueva empiece a firmar ya la tienen cacheada."""
+    response.headers["Cache-Control"] = f"public, max-age={settings.MINERVA_KEY_PROPAGATION_MINUTES * 60}"
     return JWKS(**service.build_jwks())
 
 
@@ -114,7 +119,7 @@ def _userinfo_claims(payload: dict) -> dict:
 
 @userinfo_app.get("")
 @userinfo_app.get("/")
-def userinfo(current_user: dict = Depends(get_current_user)) -> dict:
+def userinfo(current_user: dict = Depends(get_current_access_user)) -> dict:
     """OIDC UserInfo (Core 5.3): claims de identidad filtrados por el scope del
     access token presentado como Bearer."""
     return _userinfo_claims(current_user)

@@ -1,7 +1,8 @@
 """Helpers de integración con FastAPI para validar identidad y permisos
 emitidos por Minerva.
 
-El flujo recomendado (ver `docs/integracion.md`) es validar **permisos**, no roles. La firma de los access tokens se verifica con
+El flujo recomendado (ver `docs/integracion.md`) es validar **permisos**, no roles.
+La firma de los access tokens se verifica con
 RS256 contra el JWKS público de Minerva (sin secreto compartido). Los permisos
 finos se consultan en tiempo real a `GET /api/v1/me/permissions`, con caché en
 memoria; ese endpoint también aplica la revocación del lado de Minerva, así que
@@ -13,27 +14,46 @@ import time
 import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from httpx import AsyncClient
 from jose import JWTError, jwt
 
 from minerva_sdk.config import settings
 
 _bearer = HTTPBearer(auto_error=False)
 
-# Caché simple: { (sub, application_code): (expira_en, set_de_permisos) }
-_permissions_cache: dict[tuple[str, str], tuple[float, set[str]]] = {}
+# Caché de permisos ligada al TOKEN, no al usuario:
+# { (jti, application_code): (expira_en, permisos) }
+_permissions_cache: dict[tuple[str, str], tuple[float, frozenset[str]]] = {}
+# Cota del dict antes de barrer las entradas vencidas (ver _prune_permissions_cache).
+_PERMISSIONS_CACHE_MAX = 1000
 # Caché del JWKS: las claves públicas cambian poco (rotación), no hace falta
-# pedirlas en cada request.
-_jwks_cache: dict[str, object] = {"exp": 0.0, "jwks": None}
+# pedirlas en cada request. `retry_after` acota los refrescos por `kid` desconocido.
+_jwks_cache: dict[str, object] = {"exp": 0.0, "jwks": None, "retry_after": 0.0}
 
 
-async def _get_jwks() -> dict:
+def _has_kid(jwks: dict, kid: str) -> bool:
+    return any(key.get("kid") == kid for key in jwks.get("keys", []))
+
+
+async def _get_jwks(kid: str | None = None) -> dict:
+    """JWKS de Minerva, cacheado. Si el `kid` del token no está en el caché, lo
+    refresca aunque no haya expirado: es lo que evita rechazar tokens válidos durante
+    una hora tras una rotación de clave en Minerva.
+
+    El refresco se limita a uno por `MINERVA_JWKS_REFRESH_COOLDOWN`, para que tokens
+    con un `kid` inventado no conviertan cada request en una llamada a Minerva.
+    """
     now = time.time()
     cached = _jwks_cache["jwks"]
     if cached is not None and float(_jwks_cache["exp"]) > now:
-        return cached  # type: ignore[return-value]
+        if kid is None or _has_kid(cached, kid):  # type: ignore[arg-type]
+            return cached  # type: ignore[return-value]
+        if now < float(_jwks_cache["retry_after"]):
+            return cached  # type: ignore[return-value]
+        _jwks_cache["retry_after"] = now + settings.jwks_refresh_cooldown
 
     url = f"{settings.issuer_url.rstrip('/')}/.well-known/jwks.json"
-    async with httpx.AsyncClient(timeout=settings.request_timeout) as cli:
+    async with AsyncClient(timeout=settings.request_timeout) as cli:
         resp = await cli.get(url)
         resp.raise_for_status()
     jwks = resp.json()
@@ -44,56 +64,130 @@ async def _get_jwks() -> dict:
 
 async def _decode(token: str) -> dict:
     try:
-        alg = jwt.get_unverified_header(token).get("alg")
+        header = jwt.get_unverified_header(token)
     except JWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Token inválido: {exc}")
+    alg = header.get("alg")
 
     # El algoritmo se fija a RS256 (único soportado) para evitar ataques de
     # confusión de algoritmo. No hay validación HS256.
     if alg != "RS256":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Algoritmo de token no soportado: {alg}")
 
-    # El audience esperado es el código de esta aplicación (= aud del access token).
-    audience = settings.application_code if (settings.verify_aud and settings.application_code) else None
+    # La audiencia es obligatoria (= código de esta app): sin ella no se puede
+    # verificar que el token fue emitido para este consumidor. No hay switch para
+    # desactivarla; si falta la configuración, es un error de despliegue.
+    if not settings.application_code:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "MINERVA_APPLICATION_CODE no configurado",
+        )
 
     try:
-        jwks = await _get_jwks()
+        jwks = await _get_jwks(kid=header.get("kid"))
         payload = jwt.decode(
             token,
             jwks,
             algorithms=["RS256"],
-            audience=audience,
-            options={"verify_aud": audience is not None},
+            audience=settings.application_code,
+            options={"verify_aud": True},
         )
     except JWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Token inválido: {exc}")
     except httpx.HTTPError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"No se pudo obtener el JWKS de Minerva: {exc}")
 
-    if settings.expected_issuer and payload.get("iss") != settings.expected_issuer:
+    # El `iss` se valida SIEMPRE: contra MINERVA_EXPECTED_ISSUER o, por defecto, el
+    # issuer_url del que se descubre el JWKS. No se puede desactivar.
+    expected_iss = (settings.expected_issuer or settings.issuer_url).rstrip("/")
+    if str(payload.get("iss", "")).rstrip("/") != expected_iss:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Issuer inválido")
+
+    # Un consumidor solo acepta access tokens (typ=access). Una sesión de panel, un
+    # dev token o un id token no cruzan aquí aunque su firma sea válida (RFC 8725).
+    if payload.get("typ") != "access":
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Tipo de token no válido para un consumidor")
     return payload
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict:
-    """Devuelve los claims del usuario autenticado (valida firma del JWT)."""
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> dict:
+    """Devuelve los claims del usuario autenticado (valida firma del JWT).
+
+    El dict son **solo** los claims del token: nunca la credencial. Es seguro
+    serializarlo o registrarlo en logs. El bearer que `require_permission` necesita
+    para consultar Minerva lo obtiene por su cuenta de la misma dependencia
+    `_bearer`, no de aquí."""
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token no proporcionado")
-    user = await _decode(credentials.credentials)
-    user["_token"] = credentials.credentials
-    return user
+    return await _decode(credentials.credentials)
 
 
-async def _fetch_permissions(token: str, sub: str, application_code: str) -> set[str]:
-    cache_key = (sub, application_code)
+def invalidate_token(jti: str) -> None:
+    """Olvida los permisos cacheados de un token concreto. Engánchalo a tu propio
+    logout si quieres que la revocación surta efecto sin esperar al TTL."""
+    for key in [k for k in _permissions_cache if k[0] == jti]:
+        _permissions_cache.pop(key, None)
+
+
+def clear_caches() -> None:
+    """Vacía las cachés en memoria (permisos y JWKS). Pensado para pruebas y para
+    forzar una resincronización completa con Minerva."""
+    _permissions_cache.clear()
+    _jwks_cache["jwks"] = None
+    _jwks_cache["exp"] = 0.0
+    _jwks_cache["retry_after"] = 0.0
+
+
+def _prune_permissions_cache(now: float) -> None:
+    """Mantiene la caché acotada: el dict es global del proceso y sin esto crece sin
+    cota en un servicio de larga vida.
+
+    Primero descarta las entradas vencidas. Si con eso no basta —muchos tokens vigentes
+    a la vez—, expulsa las más próximas a vencer hasta volver al límite: son las que
+    menos valor tienen guardadas. Sin este segundo paso el límite no existía.
+    """
+    if len(_permissions_cache) <= _PERMISSIONS_CACHE_MAX:
+        return
+
+    for key in [k for k, (expires_at, _) in _permissions_cache.items() if expires_at <= now]:
+        _permissions_cache.pop(key, None)
+
+    excess = len(_permissions_cache) - _PERMISSIONS_CACHE_MAX
+    if excess <= 0:
+        return
+    oldest = sorted(_permissions_cache.items(), key=lambda item: item[1][0])[:excess]
+    for key, _ in oldest:
+        _permissions_cache.pop(key, None)
+
+
+async def _fetch_permissions(token: str, claims: dict, application_code: str) -> set[str]:
+    """Permisos del usuario en la aplicación, consultados a Minerva.
+
+    **Sin caché por defecto** (`MINERVA_PERMISSIONS_CACHE_TTL=0`): cada chequeo pregunta
+    a Minerva, que es quien aplica la revocación, así que revocar un token surte efecto
+    de inmediato. Servir una decisión positiva desde memoria significa, por definición,
+    no enterarse de una revocación hasta que la entrada expire.
+
+    Si el consumidor activa la caché, se indexa por `jti` (no por `sub`: dos tokens del
+    mismo usuario nunca comparten decisión) y la entrada nunca sobrevive al `exp` del
+    token. Un token sin `jti` tampoco se cachea. La ventana de propagación de una
+    revocación pasa a ser el TTL configurado.
+    """
+    jti = claims.get("jti")
     now = time.time()
-    cached = _permissions_cache.get(cache_key)
-    if cached and cached[0] > now:
-        return cached[1]
+    cache_enabled = settings.permissions_cache_ttl > 0
+    cache_key = (jti, application_code) if (cache_enabled and jti) else None
+
+    if cache_key is not None:
+        cached = _permissions_cache.get(cache_key)
+        if cached and cached[0] > now:
+            return set(cached[1])
 
     url = f"{settings.issuer_url.rstrip('/')}/api/v1/me/permissions"
     try:
-        async with httpx.AsyncClient(timeout=settings.request_timeout) as cli:
+        async with AsyncClient(timeout=settings.request_timeout) as cli:
             resp = await cli.get(
                 url,
                 params={"application": application_code},
@@ -103,13 +197,31 @@ async def _fetch_permissions(token: str, sub: str, application_code: str) -> set
     except httpx.HTTPStatusError as exc:
         # 401 de Minerva (p. ej. token revocado) se propaga como 401 al cliente.
         if exc.response.status_code == status.HTTP_401_UNAUTHORIZED:
+            # Minerva ya no reconoce este token: tirar su entrada evita que un
+            # reintento dentro del TTL siga viendo permisos cacheados.
+            if cache_key is not None:
+                _permissions_cache.pop(cache_key, None)
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido o revocado")
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"No se pudo consultar permisos en Minerva: {exc}")
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"No se pudo consultar permisos en Minerva: {exc}",
+        )
     except httpx.HTTPError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"No se pudo consultar permisos en Minerva: {exc}")
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"No se pudo consultar permisos en Minerva: {exc}",
+        )
 
     perms = set(resp.json().get("permissions", []))
-    _permissions_cache[cache_key] = (now + settings.permissions_cache_ttl, perms)
+    if cache_key is not None:
+        # El TTL nunca puede pasar del `exp` del token: una entrada que sobreviviera
+        # al token seguiría autorizando a un portador que ya no debería pasar.
+        expires_at = now + settings.permissions_cache_ttl
+        token_exp = claims.get("exp")
+        if token_exp is not None:
+            expires_at = min(expires_at, float(token_exp))
+        _permissions_cache[cache_key] = (expires_at, frozenset(perms))
+        _prune_permissions_cache(now)
     return perms
 
 
@@ -121,13 +233,19 @@ def require_permission(permission: str, application_code: str | None = None):
     """
     app_code = application_code or settings.application_code
 
-    async def dependency(user: dict = Depends(get_current_user)) -> dict:
+    async def dependency(
+        user: dict = Depends(get_current_user),
+        credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    ) -> dict:
         if not app_code:
             raise HTTPException(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "MINERVA_APPLICATION_CODE no configurado",
             )
-        perms = await _fetch_permissions(user["_token"], user["sub"], app_code)
+        # FastAPI cachea `_bearer` por request: es el mismo objeto que ya validó
+        # `get_current_user`, así que llegar aquí garantiza que no es None.
+        assert credentials is not None
+        perms = await _fetch_permissions(credentials.credentials, user, app_code)
         if permission not in perms:
             raise HTTPException(status.HTTP_403_FORBIDDEN, f"Requiere permiso: {permission}")
         return user

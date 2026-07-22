@@ -124,3 +124,42 @@ def test_delete_role_permission(client, admin_token):
         f"/roles/{role_id}/permissions/{perm_id}", headers={"Authorization": f"Bearer {admin_token}"}
     )
     assert response.status_code == 204
+
+
+def test_add_permission_to_role_rechaza_otra_app(client, admin_token):
+    app_a = client.post(
+        "/applications",
+        json={"name": "Cross App A", "slug": "cross-app-a"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()
+    app_b = client.post(
+        "/applications",
+        json={"name": "Cross App B", "slug": "cross-app-b"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()
+
+    role_response = client.post(
+        f"/roles?application_id={app_a['id']}",
+        json={"name": "Role A", "slug": "cross-app-a.role"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    role_id = role_response.json()["id"]
+
+    perm_response = client.post(
+        f"/permissions?application_id={app_b['id']}",
+        json={"name": "Perm B", "slug": "cross-app-b.docs.view"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    perm_id = perm_response.json()["id"]
+
+    response = client.post(
+        f"/roles/{role_id}/permissions/{perm_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 400
+
+    list_response = client.get(
+        f"/roles/{role_id}/permissions",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert len(list_response.json()) == 0

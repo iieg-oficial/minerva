@@ -50,6 +50,18 @@ def test_add_redirect_uri(client, admin_token):
     assert response.status_code == 201
     assert response.json()["uri"] == "https://uri-app.example.com/callback"
 
+    # Contrato: GET devuelve una lista plana (no un objeto paginado con .items). El panel
+    # depende de esto para pintar las URIs; si el endpoint regresara a un envoltorio, la lista
+    # saldría vacía en el front sin que nadie lo note.
+    list_response = client.get(
+        f"/applications/{app_id}/redirect-uris",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert list_response.status_code == 200
+    uris = list_response.json()
+    assert isinstance(uris, list)
+    assert [u["uri"] for u in uris] == ["https://uri-app.example.com/callback"]
+
 
 _MANIFEST = """
 application:
@@ -91,6 +103,44 @@ def test_delete_application_cascades(client, admin_token):
     assert client.get(f"/applications/{app_id}", headers=auth).status_code == 404
     assert client.get(f"/permissions?application_id={app_id}", headers=auth).json()["items"] == []
     assert client.get(f"/roles?application_id={app_id}", headers=auth).json()["items"] == []
+
+
+def test_delete_application_used_removes_tokens(client, admin_token, admin_user):
+    """R15: borrar una app ya usada (con auth_codes/refresh_tokens emitidos) no debe
+    dejar huérfanos ni violar la FK a applications.client_id. Los audit_logs se conservan
+    desligados (application_id=None), no se borran."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlmodel import Session, select
+
+    from app.modules.audit.models import AuditLog
+    from app.modules.auth.models import AuthCode, RefreshToken
+    from tests.conftest import test_engine
+
+    auth = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post("/applications", json={"name": "Used App", "slug": "used-app"}, headers=auth).json()
+    app_id, client_id = created["id"], created["client_id"]
+
+    expires = datetime.now(timezone.utc) + timedelta(minutes=5)
+    with Session(test_engine) as session:
+        session.add(
+            AuthCode(code="c-1", client_id=client_id, user_id=admin_user["id"], redirect_uri="x", expires_at=expires)
+        )
+        session.add(
+            RefreshToken(
+                token_hash="h-1", family_id="f-1", client_id=client_id, user_id=admin_user["id"], expires_at=expires
+            )
+        )
+        session.add(AuditLog(id="log-1", action="app.delete.test", application_id=app_id))
+        session.commit()
+
+    assert client.delete(f"/applications/{app_id}", headers=auth).status_code == 204
+
+    with Session(test_engine) as session:
+        assert session.exec(select(AuthCode).where(AuthCode.client_id == client_id)).all() == []
+        assert session.exec(select(RefreshToken).where(RefreshToken.client_id == client_id)).all() == []
+        log = session.get(AuditLog, "log-1")
+        assert log is not None and log.application_id is None
 
 
 def test_delete_application_not_found(client, admin_token):
@@ -151,3 +201,27 @@ def test_duplicate_slug(client, admin_token):
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert response.status_code == 409
+
+
+def test_import_manifest_rejects_foreign_permission(client, admin_token):
+    bad = """
+application:
+  code: godin
+permissions:
+  - key: mariachi.database.view
+    name: Mal
+"""
+    resp = _import_manifest(client, admin_token, bad)
+    assert resp.status_code == 400
+
+
+def test_import_manifest_rejects_bad_convention(client, admin_token):
+    bad = """
+application:
+  code: godin
+permissions:
+  - key: godin-oficios-view
+    name: Mal
+"""
+    resp = _import_manifest(client, admin_token, bad)
+    assert resp.status_code == 400

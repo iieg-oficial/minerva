@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserBase(BaseModel):
@@ -9,15 +9,14 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str | None = None
-    auth_provider: str = "local"
+    password: str = Field(min_length=8)
     domain: str | None = None
 
 
 class UserUpdate(BaseModel):
     full_name: str | None = None
     email: str | None = None
-    password: str | None = None
+    password: str | None = Field(default=None, min_length=8)
     status: str | None = None
     domain: str | None = None
 
@@ -32,8 +31,6 @@ class UserRead(BaseModel):
     id: str
     email: str
     full_name: str
-    auth_provider: str
-    provider_subject: str | None = None
     status: str
     domain: str | None = None
     created_at: datetime

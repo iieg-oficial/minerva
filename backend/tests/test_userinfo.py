@@ -26,7 +26,7 @@ def app_ctx():
         session.add(app_row)
         session.flush()
         session.add(RedirectURI(application_id=app_row.id, uri=REDIRECT_URI, environment="production"))
-        user = User(email="userinfo@iieg.gob.mx", full_name="UserInfo User", auth_provider="local", status="active")
+        user = User(email="userinfo@iieg.gob.mx", full_name="UserInfo User", status="active")
         session.add(user)
         grant_role(session, app_row.id, user.id)
         session.commit()

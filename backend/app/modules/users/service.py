@@ -39,16 +39,14 @@ class UserService:
         user = User(
             email=data.email,
             full_name=data.full_name,
-            auth_provider=data.auth_provider,
+            hashed_password=hash_password(data.password),
             domain=data.domain,
         )
-        if data.password:
-            user.hashed_password = hash_password(data.password)
 
         user = self.repo.create(user)
         return UserRead.model_validate(user)
 
-    def update_user(self, user_id: str, data: UserUpdate) -> UserRead:
+    def update_user(self, user_id: str, data: UserUpdate, commit: bool = True) -> UserRead:
         user = self.repo.get_by_id(user_id)
         if not user:
             raise NotFoundError(detail="Usuario no encontrado")
@@ -67,26 +65,33 @@ class UserService:
         if data.domain is not None:
             user.domain = data.domain
 
-        user = self.repo.update(user)
+        user = self.repo.update(user, commit=commit)
         return UserRead.model_validate(user)
 
-    def update_status(self, user_id: str, data: UserStatusUpdate) -> UserRead:
+    def update_status(self, user_id: str, data: UserStatusUpdate, commit: bool = True) -> UserRead:
         user = self.repo.get_by_id(user_id)
         if not user:
             raise NotFoundError(detail="Usuario no encontrado")
 
         user.status = data.status
-        user = self.repo.update(user)
+        user = self.repo.update(user, commit=commit)
         return UserRead.model_validate(user)
 
-    def revoke_refresh_tokens(self, user_id: str) -> list[str]:
+    def revoke_refresh_tokens(self, user_id: str, commit: bool = True) -> list[str]:
         """Revoca los refresh tokens OIDC vigentes del usuario (parte de invalidar
         sus sesiones al cambiar credenciales/status). Devuelve los access_jti a
         blacklistear. La invalidación de los bearer/sesión (por `iat`) la resuelve
-        el marcador en Redis desde el router."""
-        from app.modules.auth.repository import RefreshTokenRepository
+        el marcador en Redis desde el router. commit=False deja la revocación pendiente
+        para confirmarla junto con el cambio, tras escribir las invalidaciones en Redis."""
+        from app.modules.auth.repository import RefreshTokenRepository, RefreshTokenRowLocked
 
-        return RefreshTokenRepository(self.session).revoke_all_for_user(user_id)
+        try:
+            return RefreshTokenRepository(self.session).revoke_all_for_user(user_id, commit=commit)
+        except RefreshTokenRowLocked:
+            # Contención real: uno de los refresh tokens del usuario se está rotando
+            # ahora mismo (lock de fila tomado por esa transacción). No es un error de
+            # negocio, es un conflicto temporal: el caller (router) debe reintentar.
+            raise ConflictError(detail="Hay una rotación de token en curso para este usuario; reintente")
 
     def authenticate(self, email: str, password: str) -> str:
         user = self.repo.get_by_email(email)
@@ -102,22 +107,3 @@ class UserService:
         from app.modules.oidc.service import OIDCService
 
         return OIDCService(self.session).issue_session_token(user.id, user.email, user.full_name)
-
-    def get_or_create_google_user(self, email: str, name: str, provider_subject: str) -> User:
-        user = self.repo.get_by_email(email)
-        if user:
-            if user.auth_provider != "google":
-                raise BadRequestError(detail="El usuario ya existe con otro proveedor")
-            user.full_name = name
-            user.provider_subject = provider_subject
-            user = self.repo.update(user)
-        else:
-            user = User(
-                email=email,
-                full_name=name,
-                auth_provider="google",
-                provider_subject=provider_subject,
-                hashed_password=None,
-            )
-            user = self.repo.create(user)
-        return user

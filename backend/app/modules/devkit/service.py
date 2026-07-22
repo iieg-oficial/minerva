@@ -1,22 +1,19 @@
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.modules.applications.repository import ApplicationRepository
 from app.modules.devkit.manifest import ManifestLoader
 from app.modules.devkit.schemas import (
-    AccessAssignmentRead,
     DevLoginRequest,
     ManifestImportResult,
     MePermissionsResponse,
     MeResponse,
     TokenResponse,
 )
-from app.modules.groups.models import UserRole
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
 from app.modules.oidc.service import OIDCService
 from app.modules.permissions.repository import RolePermissionRepository
-from app.modules.roles.repository import RoleRepository
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
 
@@ -26,7 +23,6 @@ class DevKitService:
         self.session = session
         self.user_repo = UserRepository(session)
         self.app_repo = ApplicationRepository(session)
-        self.role_repo = RoleRepository(session)
         self.user_role_repo = UserRoleRepository(session)
         self.group_user_repo = GroupUserRepository(session)
         self.group_role_repo = GroupRoleRepository(session)
@@ -56,7 +52,6 @@ class DevKitService:
             user = User(
                 email=data.email,
                 full_name=data.full_name or data.email.split("@")[0],
-                auth_provider="dev",
                 status="active",
             )
             user = self.user_repo.create(user)
@@ -107,69 +102,6 @@ class DevKitService:
             roles=[r.name for r in roles],
             permissions=sorted(permissions),
         )
-
-    # --- Access assignments ----------------------------------------------
-    def list_access_assignments(
-        self, user_id: str | None = None, application_code: str | None = None
-    ) -> list[AccessAssignmentRead]:
-        from sqlmodel import select
-
-        statement = select(UserRole)
-        if user_id:
-            statement = statement.where(UserRole.user_id == user_id)
-        assignments = self.session.exec(statement).all()
-
-        result: list[AccessAssignmentRead] = []
-        for ur in assignments:
-            role = self.role_repo.get_by_id(ur.role_id)
-            if not role:
-                continue
-            app_code = self._app_slug(role.application_id)
-            if application_code and app_code != application_code:
-                continue
-            result.append(
-                AccessAssignmentRead(
-                    id=f"{ur.user_id}:{ur.role_id}",
-                    user_id=ur.user_id,
-                    role_id=ur.role_id,
-                    role_name=role.name,
-                    role_slug=role.slug,
-                    application_id=role.application_id,
-                    application_code=app_code,
-                )
-            )
-        return result
-
-    def create_access_assignment(self, user_id: str, role_id: str) -> AccessAssignmentRead:
-        user = self.user_repo.get_by_id(user_id)
-        if not user:
-            raise NotFoundError(detail="Usuario no encontrado")
-        role = self.role_repo.get_by_id(role_id)
-        if not role:
-            raise NotFoundError(detail="Rol no encontrado")
-
-        if self.user_role_repo.get(user_id, role_id):
-            raise ConflictError(detail="El rol ya está asignado a este usuario")
-
-        self.user_role_repo.add(UserRole(user_id=user_id, role_id=role_id))
-        return AccessAssignmentRead(
-            id=f"{user_id}:{role_id}",
-            user_id=user_id,
-            role_id=role_id,
-            role_name=role.name,
-            role_slug=role.slug,
-            application_id=role.application_id,
-            application_code=self._app_slug(role.application_id),
-        )
-
-    def delete_access_assignment(self, assignment_id: str) -> None:
-        if ":" not in assignment_id:
-            raise BadRequestError(detail="Identificador de asignación inválido (formato user_id:role_id)")
-        user_id, role_id = assignment_id.split(":", 1)
-        ur = self.user_role_repo.get(user_id, role_id)
-        if not ur:
-            raise NotFoundError(detail="Asignación no encontrada")
-        self.user_role_repo.remove(ur)
 
     # --- Manifests --------------------------------------------------------
     def import_manifest(self, content: str, source: str = "manifest.minerva.yml") -> ManifestImportResult:

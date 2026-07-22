@@ -78,7 +78,6 @@ equivalentes heredadas (`DATABASE_URL`, `JWT_SECRET_KEY`, etc.).
 | `REDIS_PORT` | `6379` | Puerto expuesto de Redis. |
 | `FRONTEND_URL` | `http://localhost:3100` | URL pública del panel. Fuera de localhost: `http://<dominio\|IP>` **sin puerto** si `FRONTEND_PORT=80` (nginx consolidado). |
 | `MINERVA_JWT_ISSUER` | `http://localhost:9000` | **Issuer** de los tokens OIDC. Fuera de localhost: el mismo host de nginx, **sin `:9000`** (el backend no publica puerto en este deploy); `https://` al tener certificado. |
-| `GOOGLE_REDIRECT_URI` | `http://localhost:9000/auth/google/callback` | Redirect URI de Google; regístralo idéntico en la consola de Google. |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | `minerva` / `minerva` / `minerva` | Credenciales de PostgreSQL. **Cambia `POSTGRES_PASSWORD` en producción** (antes venían fijas en el compose; ahora se leen del `.env`). |
 
 ### Aplicación
@@ -96,7 +95,8 @@ equivalentes heredadas (`DATABASE_URL`, `JWT_SECRET_KEY`, etc.).
 |---|---|---|
 | `MINERVA_MODE` | `dev` | `dev` o `central`. En despliegues reales normalmente `central`. |
 | `MINERVA_DB_URL` | `postgresql://minerva:minerva@minerva-db:5432/minerva` | Conexión a PostgreSQL. Tiene prioridad sobre `DATABASE_URL`. |
-| `MINERVA_ENABLE_DEV_LOGIN` | `true` | Habilita el login de desarrollo (sin Google). **`false` en producción.** |
+| `MINERVA_ENABLE_DEV_LOGIN` | `true` | Habilita el login de desarrollo. **`false` en producción.** |
+| `MINERVA_ENABLE_PUBLIC_REGISTER` | `false` | Habilita el registro público self-service en `/auth/register`. Cerrado por defecto: las cuentas las provisiona un admin. |
 | `MINERVA_AUTO_IMPORT_MANIFESTS` | `true` | Importa los manifests de `MINERVA_MANIFESTS_PATH` al arrancar. |
 | `MINERVA_MANIFESTS_PATH` | `/app/manifests` | Ruta interna donde se leen los manifests (montada como volumen). |
 | `MINERVA_JWT_SECRET` | `dev-secret` | Legado; la firma real es RS256. Cámbialo igualmente. |
@@ -118,14 +118,6 @@ equivalentes heredadas (`DATABASE_URL`, `JWT_SECRET_KEY`, etc.).
 |---|---|---|
 | `ADMIN_EMAIL` | `admin@iieg.gob.mx` | Correo del admin sembrado al arrancar. |
 | `ADMIN_PASSWORD` | `changeme123` | Contraseña del admin. **Cámbiala en producción.** |
-
-### Google OAuth (login institucional)
-
-| Variable | Default | Descripción |
-|---|---|---|
-| `GOOGLE_CLIENT_ID` | vacío | Client ID de OAuth de Google. |
-| `GOOGLE_CLIENT_SECRET` | vacío | Client Secret de OAuth de Google. |
-| `ALLOWED_GOOGLE_DOMAIN` | `iieg.gob.mx` | Dominio de correo permitido para login con Google. |
 
 ### Redis y rate limiting
 
@@ -156,6 +148,6 @@ ya viene con `APP_ENV=production`, `restart: unless-stopped` en los servicios y 
 - [ ] `SECRET_KEY`, `JWT_SECRET_KEY`, `MINERVA_JWT_SECRET` con valores aleatorios largos.
 - [ ] `MINERVA_KEY_ENCRYPTION_KEY` generada y persistida de forma segura.
 - [ ] `ADMIN_PASSWORD` cambiada tras el primer acceso.
-- [ ] `MINERVA_JWT_ISSUER` / `FRONTEND_URL` / `GOOGLE_REDIRECT_URI` con las URLs públicas reales
+- [ ] `MINERVA_JWT_ISSUER` / `FRONTEND_URL` con las URLs públicas reales
       (issuer **sin `:9000`**: nginx es el único punto público, ver sección 3).
 - [ ] Credenciales de PostgreSQL distintas a las de ejemplo (`minerva:minerva`).

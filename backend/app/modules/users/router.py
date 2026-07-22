@@ -4,7 +4,7 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.dependencies.admin import require_minerva_admin
-from app.core.dependencies.auth import get_current_user
+from app.core.dependencies.auth import get_current_panel_user
 from app.core.dependencies.db import get_db
 from app.core.redis import get_redis
 from app.core.token_blacklist import invalidate_user_tokens, revoke_jti
@@ -21,13 +21,30 @@ def get_user_service(session: Session = Depends(get_db)) -> UserService:
 
 async def _invalidate_user_sessions(redis: Redis, service: UserService, user_id: str) -> None:
     """Mata las sesiones/tokens vigentes del usuario tras cambiar sus credenciales o
-    status: (1) revoca sus refresh tokens OIDC y blacklistea sus access_jti, y
-    (2) marca el corte por `iat` para los bearer/sesión del panel que valida el backend."""
-    jtis = service.revoke_refresh_tokens(user_id)
+    status: (1) revoca sus refresh tokens OIDC (pendiente en PG) y blacklistea sus
+    access_jti, y (2) marca el corte por `iat` para los bearer/sesión del panel.
+
+    Deja la revocación de PG pendiente (commit=False): la confirma el router DESPUÉS de
+    que estas escrituras en Redis tengan éxito. Si Redis falla, la excepción sale antes
+    del commit y el router hace rollback → el cambio de credenciales no queda durable sin
+    su invalidación (fail-closed)."""
+    jtis = service.revoke_refresh_tokens(user_id, commit=False)
     access_ttl = settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60
     for jti in jtis:
         await revoke_jti(redis, jti, access_ttl)
     await invalidate_user_tokens(redis, user_id, settings.effective_token_expire_minutes * 60)
+
+
+async def _apply_with_invalidation(service: UserService, redis: Redis, user_id: str) -> None:
+    """Confirma un cambio que invalida sesiones en el orden fail-closed: las invalidaciones
+    van a Redis primero y solo entonces se confirma PostgreSQL. Si Redis falla, rollback
+    (PG intacto); si PG falla después, queda una invalidación de más (fallo seguro)."""
+    try:
+        await _invalidate_user_sessions(redis, service, user_id)
+    except Exception:
+        service.session.rollback()
+        raise
+    service.session.commit()
 
 
 @router.get("", response_model=PaginatedResponse[UserRead])
@@ -35,7 +52,7 @@ def list_users(
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     service: UserService = Depends(get_user_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     users, total = service.list_users(offset, limit)
     return PaginatedResponse.create(users, total)
@@ -45,7 +62,7 @@ def list_users(
 def get_user(
     user_id: str,
     service: UserService = Depends(get_user_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     return service.get_user(user_id)
 
@@ -55,7 +72,7 @@ def create_user(
     data: UserCreate,
     request: Request,
     service: UserService = Depends(get_user_service),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
     return service.create_user(data)
 
@@ -66,12 +83,15 @@ async def update_user(
     data: UserUpdate,
     service: UserService = Depends(get_user_service),
     redis: Redis = Depends(get_redis),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
-    result = service.update_user(user_id, data)
     # Cambiar contraseña, correo o desactivar invalida las sesiones vigentes.
-    if data.password is not None or data.email is not None or (data.status is not None and data.status != "active"):
-        await _invalidate_user_sessions(redis, service, user_id)
+    invalidating = (
+        data.password is not None or data.email is not None or (data.status is not None and data.status != "active")
+    )
+    result = service.update_user(user_id, data, commit=not invalidating)
+    if invalidating:
+        await _apply_with_invalidation(service, redis, user_id)
     return result
 
 
@@ -81,9 +101,10 @@ async def update_user_status(
     data: UserStatusUpdate,
     service: UserService = Depends(get_user_service),
     redis: Redis = Depends(get_redis),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_panel_user),
 ):
-    result = service.update_status(user_id, data)
-    if data.status != "active":
-        await _invalidate_user_sessions(redis, service, user_id)
+    invalidating = data.status != "active"
+    result = service.update_status(user_id, data, commit=not invalidating)
+    if invalidating:
+        await _apply_with_invalidation(service, redis, user_id)
     return result

@@ -96,7 +96,7 @@ completas (no se repiten aquí).
 | `groups` | Grupos de usuarios; herencia de roles vía grupo |
 | `authorization` | Chequeo de permisos efectivos (`/authorization/check`, `/authorization/me/permissions`) |
 | `audit` | Bitácora de eventos (login, token exchange, rate limit excedido, etc.) |
-| `devkit` | Contrato `/api/v1/*`: dev-login, `me/permissions` (consumido por el SDK), CRUD administrativo, import de manifiestos |
+| `devkit` | Contrato `/api/v1/*` **solo self-service**: dev-login, `me` y `me/permissions` (consumido por el SDK). La administración (CRUD, import de manifiestos) vive en los routers canónicos del panel |
 
 ### `core/`: utilidades compartidas
 
@@ -183,13 +183,21 @@ se guarda en la tabla `signing_keys`. El JWKS público solo expone la(s) clave(s
 - **`features/admin/`** — panel administrativo (usuarios, aplicaciones, roles, permisos,
   grupos, autorización, auditoría), protegido por `ProtectedRoute`.
 
+**Sesión del panel (patrón BFF).** El panel es **stateful**: el navegador guarda solo una cookie
+opaca HttpOnly (`__Host-minerva_sid`), y el estado multi-cuenta (tokens `typ=session`, cuenta
+activa, CSRF) vive en Redis (`backend/app/core/panel_session.py`). El frontend nunca ve el JWT: el
+`SessionProvider` consulta `GET /auth/session` (descriptores no sensibles) y las mutaciones llevan
+`X-CSRF-Token`. Es la única excepción al principio stateless; **OAuth/OIDC de consumidores sigue
+stateless** (Bearer). La pérdida/limpieza de Redis invalida las sesiones del panel.
+
 ## SDK (`sdk/minerva_sdk`)
 
 Helpers de FastAPI para que un sistema consumidor valide identidad y permisos sin
 reimplementar la verificación JWT:
 
 - `get_current_user`: decodifica el Bearer, exige `alg=RS256` (rechaza confusión de
-  algoritmo), valida contra el JWKS de Minerva (cacheado), opcionalmente verifica `aud`/`iss`.
+  algoritmo), valida contra el JWKS de Minerva (cacheado), verifica `aud`/`iss` y que el
+  token sea de clase `typ=access` (un consumidor no acepta sesiones de panel ni dev tokens).
 - `require_permission(permission, application_code=None)`: dependencia que además
   consulta `GET /api/v1/me/permissions` en tiempo real (con caché corta) — un permiso
   revocado en Minerva deja de pasar en el siguiente request, sin esperar a que expire el token.

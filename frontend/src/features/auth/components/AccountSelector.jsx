@@ -24,14 +24,18 @@ function StatusPill({ expired }) {
         return (
             <Flex align="center" gap={6}>
                 <ClockCircleOutlined style={{ color: '#8E8E8E', fontSize: 13 }} />
-                <Text style={{ color: '#8E8E8E', fontSize: 13, fontFamily: '"Garet", sans-serif' }}>Sesión vencida</Text>
+                <Text style={{ color: '#8E8E8E', fontSize: 13, fontFamily: '"Garet", sans-serif' }}>
+                    Sesión vencida
+                </Text>
             </Flex>
         );
     }
     return (
         <Flex align="center" gap={6}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E' }} />
-            <Text style={{ color: '#16A34A', fontSize: 13, fontFamily: '"Garet", sans-serif' }}>Sesión activa</Text>
+            <Text style={{ color: '#16A34A', fontSize: 13, fontFamily: '"Garet", sans-serif' }}>
+                Sesión activa
+            </Text>
         </Flex>
     );
 }
@@ -50,16 +54,26 @@ function AccountRow({ session, brandColor, onClick, extra, dim }) {
                 minWidth: 0,
             }}
         >
-            <Avatar style={{ backgroundColor: brandColor, flexShrink: 0 }}>{initial(session)}</Avatar>
+            <Avatar style={{ backgroundColor: brandColor, flexShrink: 0 }}>
+                {initial(session)}
+            </Avatar>
             <Flex vertical style={{ minWidth: 0, flex: 1 }}>
                 <Text
                     strong
                     ellipsis
-                    style={{ color: BRAND.numeralia, fontSize: 14, fontFamily: '"Garet", sans-serif' }}
+                    style={{
+                        color: BRAND.numeralia,
+                        fontSize: 14,
+                        fontFamily: '"Garet", sans-serif',
+                    }}
                 >
                     {session.name || session.email}
                 </Text>
-                <Text type="secondary" ellipsis style={{ fontSize: 12, fontFamily: '"Garet", sans-serif' }}>
+                <Text
+                    type="secondary"
+                    ellipsis
+                    style={{ fontSize: 12, fontFamily: '"Garet", sans-serif' }}
+                >
                     {session.email}
                 </Text>
             </Flex>
@@ -69,14 +83,23 @@ function AccountRow({ session, brandColor, onClick, extra, dim }) {
     );
 }
 
-// Selector de cuentas ya iniciadas en este navegador (estilo Google/GitHub), con
+// Selector de cuentas ya iniciadas en este navegador, con
 // el mismo shell visual que el login. Estados:
 //  - list   → cuenta activa + dropdown de otras cuentas (login_again / login_select_account)
 //  - manage → gestor con borrar por cuenta (login_account_manager)
-export default function AccountSelector({ appName, brandColor = BRAND.purple, onSelect, onReauth, onAddAccount }) {
+export default function AccountSelector({
+    appName,
+    brandColor = BRAND.purple,
+    onSelect,
+    onReauth,
+    onAddAccount,
+    onAccountsChanged,
+}) {
     const [view, setView] = useState('list');
     const [open, setOpen] = useState(false);
-    const [selectedSub, setSelectedSub] = useState(() => getActive()?.sub || getSessions()[0]?.sub || null);
+    const [selectedSub, setSelectedSub] = useState(
+        () => getActive()?.sub || getSessions()[0]?.sub || null
+    );
     const [, refresh] = useReducer((x) => x + 1, 0);
 
     const sessions = getSessions();
@@ -85,21 +108,21 @@ export default function AccountSelector({ appName, brandColor = BRAND.purple, on
 
     const pick = (s) => {
         setSelectedSub(s.sub);
-        if (!isExpired(s)) setActive(s.sub); // deja su token en el espejo para Continuar
         setOpen(false);
     };
 
-    const handleContinue = () => {
+    const handleContinue = async () => {
         if (!selected) return;
         if (isExpired(selected)) return onReauth(selected);
-        setActive(selected.sub);
+        await setActive(selected.sub); // fija la cuenta activa en el backend antes de continuar
         onSelect(selected);
     };
 
-    const handleRemove = (sub) => {
-        removeSession(sub);
+    const handleRemove = async (sub) => {
+        await removeSession(sub); // quita la cuenta del dispositivo y revoca su token
         if (sub === selectedSub) setSelectedSub(getActive()?.sub || getSessions()[0]?.sub || null);
         refresh();
+        onAccountsChanged?.();
     };
 
     const addBtn = (
@@ -107,7 +130,12 @@ export default function AccountSelector({ appName, brandColor = BRAND.purple, on
             type="text"
             icon={<PlusCircleOutlined style={{ color: brandColor, fontSize: 20 }} />}
             onClick={onAddAccount}
-            style={{ color: BRAND.numeralia, fontWeight: 700, fontFamily: '"Garet", sans-serif', paddingLeft: 4 }}
+            style={{
+                color: BRAND.numeralia,
+                fontWeight: 700,
+                fontFamily: '"Garet", sans-serif',
+                paddingLeft: 4,
+            }}
         >
             Agregar cuenta
         </Button>
@@ -123,11 +151,17 @@ export default function AccountSelector({ appName, brandColor = BRAND.purple, on
                         onClick={() => setView('list')}
                         aria-label="Volver"
                     />
-                    <Title level={4} style={{ margin: 0, color: brandColor, fontFamily: '"Garet", sans-serif' }}>
+                    <Title
+                        level={4}
+                        style={{ margin: 0, color: brandColor, fontFamily: '"Garet", sans-serif' }}
+                    >
                         Gestionar cuentas
                     </Title>
                 </Flex>
-                <Text type="secondary" style={{ fontSize: 12, fontFamily: '"Garet", sans-serif', marginBottom: 8 }}>
+                <Text
+                    type="secondary"
+                    style={{ fontSize: 12, fontFamily: '"Garet", sans-serif', marginBottom: 8 }}
+                >
                     Elige qué cuentas quieres conservar en este dispositivo.
                 </Text>
 
@@ -140,12 +174,18 @@ export default function AccountSelector({ appName, brandColor = BRAND.purple, on
                     }}
                 >
                     {sessions.length === 0 ? (
-                        <Text type="secondary" style={{ display: 'block', padding: 16, textAlign: 'center' }}>
+                        <Text
+                            type="secondary"
+                            style={{ display: 'block', padding: 16, textAlign: 'center' }}
+                        >
                             No hay cuentas guardadas
                         </Text>
                     ) : (
                         sessions.map((s, i) => (
-                            <div key={s.sub} style={{ borderTop: i ? '1px solid #F0ECF4' : 'none' }}>
+                            <div
+                                key={s.sub}
+                                style={{ borderTop: i ? '1px solid #F0ECF4' : 'none' }}
+                            >
                                 <AccountRow
                                     session={s}
                                     brandColor={brandColor}
@@ -189,11 +229,22 @@ export default function AccountSelector({ appName, brandColor = BRAND.purple, on
 
     return (
         <Flex vertical gap={16} style={{ width: '100%' }}>
-            <Title level={4} style={{ margin: 0, color: brandColor, fontWeight: 700, fontFamily: '"Garet", sans-serif' }}>
+            <Title
+                level={4}
+                style={{
+                    margin: 0,
+                    color: brandColor,
+                    fontWeight: 700,
+                    fontFamily: '"Garet", sans-serif',
+                }}
+            >
                 Iniciar sesión con:
             </Title>
             {appName && (
-                <Text type="secondary" style={{ marginTop: -12, fontFamily: '"Garet", sans-serif' }}>
+                <Text
+                    type="secondary"
+                    style={{ marginTop: -12, fontFamily: '"Garet", sans-serif' }}
+                >
                     para continuar en {appName}
                 </Text>
             )}
@@ -243,7 +294,12 @@ export default function AccountSelector({ appName, brandColor = BRAND.purple, on
                     >
                         <div style={{ maxHeight: 200, overflowY: 'auto' }}>
                             {others.map((s) => (
-                                <AccountRow key={s.sub} session={s} brandColor={brandColor} onClick={() => pick(s)} />
+                                <AccountRow
+                                    key={s.sub}
+                                    session={s}
+                                    brandColor={brandColor}
+                                    onClick={() => pick(s)}
+                                />
                             ))}
                         </div>
                         <Button

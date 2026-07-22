@@ -1,6 +1,27 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Typography, Space, Tag, App, Alert, Divider } from 'antd';
-import { PlusOutlined, EditOutlined, LinkOutlined, ReloadOutlined, KeyOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons';
+import {
+    Table,
+    Button,
+    Modal,
+    Form,
+    Input,
+    Select,
+    Typography,
+    Space,
+    Tag,
+    App,
+    Alert,
+    Divider,
+} from 'antd';
+import {
+    PlusOutlined,
+    EditOutlined,
+    LinkOutlined,
+    ReloadOutlined,
+    KeyOutlined,
+    UploadOutlined,
+    DeleteOutlined,
+} from '@ant-design/icons';
 import * as appsAPI from '@/api/applications';
 import ManifestUploadButton from '@features/admin/components/ManifestUploadButton';
 
@@ -34,7 +55,9 @@ export default function ApplicationsPage() {
         }
     }, [pagination, message]);
 
-    useEffect(() => { fetchApps(); }, [fetchApps]);
+    useEffect(() => {
+        fetchApps();
+    }, [fetchApps]);
 
     // El client_secret solo viaja en la respuesta de creación/regeneración y no
     // se vuelve a poder consultar: hay que mostrarlo aquí para que el admin lo copie.
@@ -51,12 +74,22 @@ export default function ApplicationsPage() {
                         message="Guarda el client secret ahora"
                         description="Por seguridad no se vuelve a mostrar. Si lo pierdes, tendrás que regenerarlo."
                     />
-                    <Typography.Paragraph style={{ marginBottom: 4 }}><strong>Client ID</strong></Typography.Paragraph>
-                    <Typography.Paragraph copyable={{ text: result.client_id }} style={{ marginBottom: 16 }}>
+                    <Typography.Paragraph style={{ marginBottom: 4 }}>
+                        <strong>Client ID</strong>
+                    </Typography.Paragraph>
+                    <Typography.Paragraph
+                        copyable={{ text: result.client_id }}
+                        style={{ marginBottom: 16 }}
+                    >
                         <Typography.Text code>{result.client_id}</Typography.Text>
                     </Typography.Paragraph>
-                    <Typography.Paragraph style={{ marginBottom: 4 }}><strong>Client Secret</strong></Typography.Paragraph>
-                    <Typography.Paragraph copyable={{ text: result.client_secret_hash }} style={{ marginBottom: 0 }}>
+                    <Typography.Paragraph style={{ marginBottom: 4 }}>
+                        <strong>Client Secret</strong>
+                    </Typography.Paragraph>
+                    <Typography.Paragraph
+                        copyable={{ text: result.client_secret_hash }}
+                        style={{ marginBottom: 0 }}
+                    >
                         <Typography.Text code>{result.client_secret_hash}</Typography.Text>
                     </Typography.Paragraph>
                 </div>
@@ -69,7 +102,10 @@ export default function ApplicationsPage() {
     const handleManifestImported = (res) => {
         fetchApps();
         if (res?.client_secret) {
-            showCredentials({ client_id: res.client_id, client_secret_hash: res.client_secret }, { isNew: true });
+            showCredentials(
+                { client_id: res.client_id, client_secret_hash: res.client_secret },
+                { isNew: true }
+            );
         }
     };
 
@@ -90,7 +126,8 @@ export default function ApplicationsPage() {
         modal.confirm({
             title: `¿Eliminar la aplicación "${record.name}"?`,
             width: 520,
-            content: 'Se eliminarán también sus permisos, roles, redirect URIs y las asignaciones de esos roles a usuarios y grupos. Esta acción no se puede deshacer.',
+            content:
+                'Se eliminarán también sus permisos, roles, redirect URIs y las asignaciones de esos roles a usuarios y grupos. Esta acción no se puede deshacer.',
             okText: 'Eliminar',
             okButtonProps: { danger: true },
             cancelText: 'Cancelar',
@@ -109,7 +146,8 @@ export default function ApplicationsPage() {
     const handleRegenerateSecret = (record) => {
         modal.confirm({
             title: `¿Regenerar el client secret de "${record.name}"?`,
-            content: 'El secret anterior dejará de funcionar. El client_id no cambia; deberás actualizar el sistema consumidor con el nuevo secret.',
+            content:
+                'El secret anterior dejará de funcionar. El client_id no cambia; deberás actualizar el sistema consumidor con el nuevo secret.',
             okText: 'Regenerar',
             okButtonProps: { danger: true },
             cancelText: 'Cancelar',
@@ -156,7 +194,7 @@ export default function ApplicationsPage() {
         setSelectedApp(app);
         try {
             const data = await appsAPI.listRedirectUris(app.id);
-            setUris(data.items || []);
+            setUris(data || []);
         } catch {
             setUris([]);
         }
@@ -169,7 +207,7 @@ export default function ApplicationsPage() {
             message.success('URI agregada');
             uriForm.resetFields();
             const data = await appsAPI.listRedirectUris(selectedApp.id);
-            setUris(data.items || []);
+            setUris(data || []);
         } catch (err) {
             message.error(err.response?.data?.detail || 'Error al agregar URI');
         }
@@ -178,16 +216,33 @@ export default function ApplicationsPage() {
     const columns = [
         { title: 'Nombre', dataIndex: 'name', key: 'name' },
         { title: 'Slug', dataIndex: 'slug', key: 'slug' },
-        { title: 'Client ID', dataIndex: 'client_id', key: 'client_id', width: 200, ellipsis: true },
         {
-            title: 'Estado', dataIndex: 'status', key: 'status', width: 100,
+            title: 'Client ID',
+            dataIndex: 'client_id',
+            key: 'client_id',
+            width: 200,
+            ellipsis: true,
+        },
+        {
+            title: 'Estado',
+            dataIndex: 'status',
+            key: 'status',
+            width: 100,
             render: (v) => <Tag color={v === 'active' ? 'green' : 'default'}>{v}</Tag>,
         },
         {
-            title: '', key: 'actions', width: 190,
+            title: '',
+            key: 'actions',
+            width: 190,
             render: (_, record) => (
                 <Space size={0}>
-                    <Button type="text" size="small" icon={<LinkOutlined />} title="Redirect URIs" onClick={() => handleUriOpen(record)} />
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<LinkOutlined />}
+                        title="Redirect URIs"
+                        onClick={() => handleUriOpen(record)}
+                    />
                     <ManifestUploadButton
                         appId={record.id}
                         type="text"
@@ -195,10 +250,31 @@ export default function ApplicationsPage() {
                         icon={<UploadOutlined />}
                         title="Actualizar manifiesto"
                         onImported={fetchApps}
-                    >{null}</ManifestUploadButton>
-                    <Button type="text" size="small" icon={<KeyOutlined />} title="Regenerar client secret" onClick={() => handleRegenerateSecret(record)} />
-                    <Button type="text" size="small" icon={<EditOutlined />} title="Editar" onClick={() => handleEdit(record)} />
-                    <Button type="text" size="small" danger icon={<DeleteOutlined />} title="Eliminar" onClick={() => handleDelete(record)} />
+                    >
+                        {null}
+                    </ManifestUploadButton>
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<KeyOutlined />}
+                        title="Regenerar client secret"
+                        onClick={() => handleRegenerateSecret(record)}
+                    />
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<EditOutlined />}
+                        title="Editar"
+                        onClick={() => handleEdit(record)}
+                    />
+                    <Button
+                        type="text"
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        title="Eliminar"
+                        onClick={() => handleDelete(record)}
+                    />
                 </Space>
             ),
         },
@@ -206,20 +282,44 @@ export default function ApplicationsPage() {
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <Title level={4} style={{ margin: 0 }}>Aplicaciones</Title>
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 16,
+                }}
+            >
+                <Title level={4} style={{ margin: 0 }}>
+                    Aplicaciones
+                </Title>
                 <Space>
-                    <Button icon={<ReloadOutlined />} onClick={fetchApps}>Actualizar</Button>
+                    <Button icon={<ReloadOutlined />} onClick={fetchApps}>
+                        Actualizar
+                    </Button>
                     <ManifestUploadButton onImported={handleManifestImported} />
-                    <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingApp(null); form.resetFields(); setModalOpen(true); }}>
+                    <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => {
+                            setEditingApp(null);
+                            form.resetFields();
+                            setModalOpen(true);
+                        }}
+                    >
                         Nueva aplicación
                     </Button>
                 </Space>
             </div>
 
-            <Table columns={columns} dataSource={apps} rowKey="id" loading={loading}
+            <Table
+                columns={columns}
+                dataSource={apps}
+                rowKey="id"
+                loading={loading}
                 pagination={{
-                    total, current: Math.floor(pagination.offset / pagination.limit) + 1,
+                    total,
+                    current: Math.floor(pagination.offset / pagination.limit) + 1,
                     pageSize: pagination.limit,
                     onChange: (p, ps) => setPagination({ offset: (p - 1) * ps, limit: ps }),
                 }}
@@ -228,7 +328,12 @@ export default function ApplicationsPage() {
             <Modal
                 title={editingApp ? 'Editar aplicación' : 'Nueva aplicación'}
                 open={modalOpen}
-                onCancel={() => { setModalOpen(false); setEditingApp(null); form.resetFields(); editForm.resetFields(); }}
+                onCancel={() => {
+                    setModalOpen(false);
+                    setEditingApp(null);
+                    form.resetFields();
+                    editForm.resetFields();
+                }}
                 footer={null}
             >
                 {!editingApp && (
@@ -239,16 +344,30 @@ export default function ApplicationsPage() {
                         message="¿Tienes el manifiesto del sistema?"
                         description={
                             <Space direction="vertical" size={8}>
-                                <span>Puedes dar de alta la aplicación junto con sus permisos y roles subiendo su manifest.minerva.yml.</span>
-                                <ManifestUploadButton onImported={(res) => { setModalOpen(false); handleManifestImported(res); }}>
+                                <span>
+                                    Puedes dar de alta la aplicación junto con sus permisos y roles
+                                    subiendo su manifest.minerva.yml.
+                                </span>
+                                <ManifestUploadButton
+                                    onImported={(res) => {
+                                        setModalOpen(false);
+                                        handleManifestImported(res);
+                                    }}
+                                >
                                     Crear desde manifiesto
                                 </ManifestUploadButton>
                             </Space>
                         }
                     />
                 )}
-                {!editingApp && <Divider style={{ margin: '0 0 16px' }}>o captura manualmente</Divider>}
-                <Form form={editingApp ? editForm : form} layout="vertical" onFinish={editingApp ? handleUpdate : handleCreate}>
+                {!editingApp && (
+                    <Divider style={{ margin: '0 0 16px' }}>o captura manualmente</Divider>
+                )}
+                <Form
+                    form={editingApp ? editForm : form}
+                    layout="vertical"
+                    onFinish={editingApp ? handleUpdate : handleCreate}
+                >
                     {!editingApp && (
                         <>
                             <Form.Item name="name" label="Nombre" rules={[{ required: true }]}>
@@ -277,16 +396,31 @@ export default function ApplicationsPage() {
                                 <Input placeholder="https://..." />
                             </Form.Item>
                             <Form.Item name="status" label="Estado">
-                                <Select options={[{ label: 'Activo', value: 'active' }, { label: 'Inactivo', value: 'inactive' }]} />
+                                <Select
+                                    options={[
+                                        { label: 'Activo', value: 'active' },
+                                        { label: 'Inactivo', value: 'inactive' },
+                                    ]}
+                                />
                             </Form.Item>
-                            <Divider style={{ margin: '8px 0 16px' }}>Branding en el login (opcional)</Divider>
-                            <Form.Item name="display_name" label="Nombre a mostrar" extra="Se muestra en la pantalla de login. Si se deja vacío, se usa el nombre.">
+                            <Divider style={{ margin: '8px 0 16px' }}>
+                                Branding en el login (opcional)
+                            </Divider>
+                            <Form.Item
+                                name="display_name"
+                                label="Nombre a mostrar"
+                                extra="Se muestra en la pantalla de login. Si se deja vacío, se usa el nombre."
+                            >
                                 <Input placeholder="Ej. Godín Oficios" />
                             </Form.Item>
                             <Form.Item name="logo_url" label="URL del logo">
                                 <Input placeholder="https://.../logo.png" />
                             </Form.Item>
-                            <Form.Item name="brand_color" label="Color de marca" extra="Hex, p. ej. #5C2472. Colorea el botón de acceso.">
+                            <Form.Item
+                                name="brand_color"
+                                label="Color de marca"
+                                extra="Hex, p. ej. #5C2472. Colorea el botón de acceso."
+                            >
                                 <Input placeholder="#5C2472" />
                             </Form.Item>
                         </>
@@ -303,19 +437,39 @@ export default function ApplicationsPage() {
                 onCancel={() => setUriModalOpen(false)}
                 footer={null}
             >
-                <Table columns={[
-                    { title: 'URI', dataIndex: 'uri', key: 'uri' },
-                    { title: 'Entorno', dataIndex: 'environment', key: 'environment', width: 100 },
-                ]} dataSource={uris} rowKey="id" size="small" pagination={false} style={{ marginBottom: 16 }} />
+                <Table
+                    columns={[
+                        { title: 'URI', dataIndex: 'uri', key: 'uri' },
+                        {
+                            title: 'Entorno',
+                            dataIndex: 'environment',
+                            key: 'environment',
+                            width: 100,
+                        },
+                    ]}
+                    dataSource={uris}
+                    rowKey="id"
+                    size="small"
+                    pagination={false}
+                    style={{ marginBottom: 16 }}
+                />
                 <Form form={uriForm} layout="inline" onFinish={handleAddUri}>
                     <Form.Item name="uri" rules={[{ required: true, type: 'url' }]}>
                         <Input placeholder="https://app.com/callback" style={{ width: 280 }} />
                     </Form.Item>
                     <Form.Item name="environment" initialValue="production">
-                        <Select options={[{ label: 'Production', value: 'production' }, { label: 'Development', value: 'development' }]} style={{ width: 130 }} />
+                        <Select
+                            options={[
+                                { label: 'Production', value: 'production' },
+                                { label: 'Development', value: 'development' },
+                            ]}
+                            style={{ width: 130 }}
+                        />
                     </Form.Item>
                     <Form.Item>
-                        <Button type="primary" htmlType="submit">Agregar</Button>
+                        <Button type="primary" htmlType="submit">
+                            Agregar
+                        </Button>
                     </Form.Item>
                 </Form>
             </Modal>

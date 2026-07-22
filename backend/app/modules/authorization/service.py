@@ -49,15 +49,15 @@ class AuthorizationService:
             raise NotFoundError(detail="Usuario no encontrado")
 
         if user.status != "active":
-            return {"allowed": False, "reason": "Usuario inactivo"}
+            return {"allowed": False, "reason": "Usuario inactivo", "application_id": app.id}
 
         roles = self._get_effective_roles(user_id)
         app_roles = [r for r in roles if r.application_id == app.id]
         effective_perms = self._get_effective_permissions_for_roles(app_roles)
         has_perm = any(p.slug == permission_slug for p in effective_perms)
         if has_perm:
-            return {"allowed": True, "reason": "User has permission through assigned roles"}
-        return {"allowed": False, "reason": "No tiene el permiso requerido"}
+            return {"allowed": True, "reason": "User has permission through assigned roles", "application_id": app.id}
+        return {"allowed": False, "reason": "No tiene el permiso requerido", "application_id": app.id}
 
     def get_me_permissions(self, user_id: str, application_slug: str) -> dict:
         app = self.app_service.get_application_by_slug(application_slug)

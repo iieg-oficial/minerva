@@ -1,5 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Typography, Space, Tag, Card, Alert, Collapse, Empty, Spin, App } from 'antd';
+import {
+    Table,
+    Button,
+    Typography,
+    Space,
+    Tag,
+    Card,
+    Alert,
+    Collapse,
+    Empty,
+    Spin,
+    App,
+} from 'antd';
 import { ReloadOutlined, KeyOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import * as permsAPI from '@/api/permissions';
 import * as appsAPI from '@/api/applications';
@@ -31,16 +43,22 @@ export default function PermissionsPage() {
         }
     }, [message]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
     const columns = [
         { title: 'Nombre', dataIndex: 'name', key: 'name', width: 220 },
         {
-            title: 'Slug', dataIndex: 'slug', key: 'slug',
+            title: 'Slug',
+            dataIndex: 'slug',
+            key: 'slug',
             render: (slug) => <Tag color={PURPLE}>{slug}</Tag>,
         },
         {
-            title: 'Descripción', dataIndex: 'description', key: 'description',
+            title: 'Descripción',
+            dataIndex: 'description',
+            key: 'description',
             render: (d) => d || <Text type="secondary">—</Text>,
         },
     ];
@@ -63,7 +81,9 @@ export default function PermissionsPage() {
             label: (
                 <Space>
                     <KeyOutlined style={{ color: PURPLE }} />
-                    <Text strong style={{ fontFamily: FONT }}>{g.app.name}</Text>
+                    <Text strong style={{ fontFamily: FONT }}>
+                        {g.app.name}
+                    </Text>
                     <Tag>{g.perms.length}</Tag>
                 </Space>
             ),
@@ -77,25 +97,50 @@ export default function PermissionsPage() {
                 />
             ),
         })),
-        ...(orphan.length > 0 ? [{
-            key: '__orphan__',
-            label: (
-                <Space>
-                    <KeyOutlined />
-                    <Text strong style={{ fontFamily: FONT }}>Sin sistema asociado</Text>
-                    <Tag>{orphan.length}</Tag>
-                </Space>
-            ),
-            children: <Table columns={columns} dataSource={orphan} rowKey="id" size="small" pagination={false} />,
-        }] : []),
+        ...(orphan.length > 0
+            ? [
+                  {
+                      key: '__orphan__',
+                      label: (
+                          <Space>
+                              <KeyOutlined />
+                              <Text strong style={{ fontFamily: FONT }}>
+                                  Sin sistema asociado
+                              </Text>
+                              <Tag>{orphan.length}</Tag>
+                          </Space>
+                      ),
+                      children: (
+                          <Table
+                              columns={columns}
+                              dataSource={orphan}
+                              rowKey="id"
+                              size="small"
+                              pagination={false}
+                          />
+                      ),
+                  },
+              ]
+            : []),
     ];
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <Title level={4} style={{ margin: 0, fontFamily: FONT }}>Permisos</Title>
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 16,
+                }}
+            >
+                <Title level={4} style={{ margin: 0, fontFamily: FONT }}>
+                    Permisos
+                </Title>
                 <Space>
-                    <Button icon={<ReloadOutlined />} onClick={fetchData}>Actualizar</Button>
+                    <Button icon={<ReloadOutlined />} onClick={fetchData}>
+                        Actualizar
+                    </Button>
                     <ManifestUploadButton type="primary" onImported={fetchData}>
                         Cargar manifiesto
                     </ManifestUploadButton>

@@ -1,10 +1,20 @@
 import fakeredis.aioredis
 import pytest
+from fastapi import Depends, Request
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
+import app.core.redis as redis_module
+from app.core.config import settings
 from app.core.database import get_session
+from app.core.dependencies.auth import (
+    _panel_user_from_cookie,
+    _resolve_token,
+    get_current_panel_user,
+    get_optional_panel_user,
+)
 from app.core.dependencies.db import get_db
+from app.core.exceptions import UnauthorizedError
 from app.core.models import import_models
 from app.core.redis import get_redis
 from app.main import app
@@ -17,6 +27,20 @@ from app.modules.users.models import User
 TEST_DATABASE_URL = "sqlite:///./test.db"
 
 test_engine = create_engine(TEST_DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
+
+
+def require_test_database_url(url: str) -> None:
+    """Guarda fail-closed antes de dropear/crear esquemas contra PostgreSQL real (issue
+    #38): que exista MINERVA_TEST_POSTGRES_URL nunca es suficiente por sí solo, exige
+    además que el nombre de la base termine en `_test` para no apuntar por error a una
+    base de desarrollo/producción real."""
+    db_name = url.rsplit("/", 1)[-1].split("?", 1)[0]
+    if not db_name.endswith("_test"):
+        raise RuntimeError(
+            f"MINERVA_TEST_POSTGRES_URL apunta a la base {db_name!r}, que no termina en "
+            "'_test'. Abortando para no dropear/crear esquemas sobre una base que podría "
+            "ser real; usa una base dedicada a pruebas (p. ej. 'minerva_test')."
+        )
 
 
 def grant_role(session: Session, application_id: str, user_id: str, slug: str = "member") -> None:
@@ -34,6 +58,38 @@ def override_get_db():
 
 app.dependency_overrides[get_db] = override_get_db
 app.dependency_overrides[get_session] = override_get_db
+
+
+# La suite legacy autentica el panel con Bearer `typ=session`; en producción el panel
+# es cookie-only. Este override (SOLO test) acepta la cookie real —path de producción,
+# usado por test_panel_session— o, en su defecto, un Bearer de sesión, para no reescribir
+# ~70 llamadas existentes. El middleware CSRF real igual se aplica cuando hay cookie.
+async def _override_panel_user(request: Request, session: Session = Depends(get_db), redis=Depends(get_redis)) -> dict:
+    # Bearer PRIMERO: login/register fijan cookie en el jar del TestClient, y la suite
+    # legacy cambia de identidad por Bearer; priorizarlo evita que una cookie residual
+    # contamine esos tests. test_panel_session no manda Bearer → cae al path de cookie real.
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        try:
+            return await _resolve_token(auth[7:], session, redis, expected_types={"session"}, audience="minerva")
+        except ValueError as e:
+            raise UnauthorizedError(detail=str(e))
+    if request.cookies.get(settings.session_cookie_name):
+        return await _panel_user_from_cookie(request, session, redis, optional=False)
+    raise UnauthorizedError(detail="Token no proporcionado")
+
+
+async def _override_optional_panel_user(
+    request: Request, session: Session = Depends(get_db), redis=Depends(get_redis)
+) -> dict | None:
+    try:
+        return await _override_panel_user(request, session, redis)
+    except UnauthorizedError:
+        return None
+
+
+app.dependency_overrides[get_current_panel_user] = _override_panel_user
+app.dependency_overrides[get_optional_panel_user] = _override_optional_panel_user
 # Las sub-apps (`.well-known`, `/userinfo`) mantienen su propio registro de
 # overrides: son ASGI apps separadas, no heredan los de `app`.
 wellknown_app.dependency_overrides[get_db] = override_get_db
@@ -58,9 +114,24 @@ def fresh_redis():
     fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
     app.dependency_overrides[get_redis] = lambda: fake
     userinfo_app.dependency_overrides[get_redis] = lambda: fake
+    # El middleware CSRF usa get_redis() directo (no por DI), así que fijamos también
+    # el singleton del módulo para que apunte al mismo fake que ven las dependencias.
+    redis_module._redis = fake
     yield fake
     app.dependency_overrides.pop(get_redis, None)
     userinfo_app.dependency_overrides.pop(get_redis, None)
+    redis_module._redis = None
+
+
+@pytest.fixture(autouse=True)
+def enable_public_register():
+    """El registro público está cerrado por defecto (R4). Los tests crean usuarios
+    vía /auth/register, así que lo habilitan aquí; la prueba del cierre lo apaga
+    explícitamente con monkeypatch."""
+    original = settings.MINERVA_ENABLE_PUBLIC_REGISTER
+    settings.MINERVA_ENABLE_PUBLIC_REGISTER = True
+    yield
+    settings.MINERVA_ENABLE_PUBLIC_REGISTER = original
 
 
 @pytest.fixture
@@ -98,9 +169,27 @@ def _grant_minerva_admin(email: str) -> None:
         session.commit()
 
 
+def _mint_session_token(email: str) -> str:
+    """Emite un token de sesión (`typ=session`) para un usuario ya creado. El panel es
+    cookie-only, así que /register ya no devuelve el JWT; la suite legacy lo obtiene
+    aquí para autenticar por Bearer (ver `_override_panel_user`)."""
+    from app.modules.oidc.service import OIDCService
+
+    with Session(test_engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        return OIDCService(session).issue_session_token(user.id, user.email, user.full_name)
+
+
+@pytest.fixture
+def make_session_token():
+    """Devuelve el acuñador de tokens de sesión (para tests que necesitan el JWT de
+    un usuario para autenticar por Bearer sin pasar por /auth/login)."""
+    return _mint_session_token
+
+
 @pytest.fixture
 def admin_token(client):
-    response = client.post(
+    client.post(
         "/auth/register",
         json={
             "email": "testadmin@iieg.gob.mx",
@@ -108,14 +197,17 @@ def admin_token(client):
             "password": "testpass123",
         },
     )
+    # /register fija la cookie de sesión en el jar del TestClient; la limpiamos para
+    # que la suite legacy (que autentica por Bearer) no dispare el middleware CSRF.
+    client.cookies.clear()
     _grant_minerva_admin("testadmin@iieg.gob.mx")
-    return response.json()["access_token"]
+    return _mint_session_token("testadmin@iieg.gob.mx")
 
 
 @pytest.fixture
 def non_admin_token(client):
     """Token de un usuario autenticado pero SIN rol de administrador."""
-    response = client.post(
+    client.post(
         "/auth/register",
         json={
             "email": "plainuser@iieg.gob.mx",
@@ -123,7 +215,8 @@ def non_admin_token(client):
             "password": "testpass123",
         },
     )
-    return response.json()["access_token"]
+    client.cookies.clear()
+    return _mint_session_token("plainuser@iieg.gob.mx")
 
 
 @pytest.fixture

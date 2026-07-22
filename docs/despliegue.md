@@ -29,10 +29,9 @@ Al arrancar (`lifespan` en `backend/app/main.py`), el backend:
 ### ⚠️ Gotcha de puertos: 8000 vs 9000
 
 El backend se sirve en **9000** (Dockerfile, docker-compose, entrypoint). Algunos
-valores legacy en `.env`/`config.py` (`GOOGLE_REDIRECT_URI`, comentarios viejos)
-todavía mencionan **8000**. Si tocas configuración de red/proxy/redirects, verifica el
-puerto extremo a extremo (`MINERVA_ISSUER`, `GOOGLE_REDIRECT_URI`, `vite.config.js`)
-antes de asumir que un solo lado está mal.
+valores legacy en `.env`/`config.py` (comentarios viejos) todavía mencionan **8000**.
+Si tocas configuración de red/proxy/redirects, verifica el puerto extremo a extremo
+(`MINERVA_ISSUER`, `vite.config.js`) antes de asumir que un solo lado está mal.
 
 ### Correr el backend sin Docker (conda)
 
@@ -96,7 +95,23 @@ Implicaciones:
   `http://<host>` **sin `:9000`**.
 - El backend recibe `FORWARDED_ALLOW_IPS=*` (seguro: nadie más que nginx lo alcanza), así honra
   `X-Forwarded-For` y el **rate limit de login se cuenta por IP real del cliente**, no por la de nginx.
-- SSL futuro = terminar TLS en este nginx (un solo lugar); `nginx.conf` ya envía `X-Forwarded-Proto`.
+- **TLS lo termina un terminador externo** delante de nginx (este nginx sirve HTTP). nginx propaga el
+  esquema real del cliente al backend con `X-Forwarded-Proto` (respeta el que envía el terminador;
+  si no hay, usa `$scheme`), así el backend ve `https` aunque el salto interno sea HTTP.
+- **Cabeceras defensivas:** `nginx.conf` emite CSP (con `frame-ancestors 'none'`),
+  `X-Content-Type-Options: nosniff` y `Referrer-Policy`. La CSP permite `style-src 'unsafe-inline'`
+  por Ant Design (cssinjs) e `img-src ... https:` para los logos de branding por app (`logo_url`).
+  **HSTS no lo emite este nginx** (sirve solo `:80`; el navegador ignora un HSTS recibido por HTTP):
+  configúralo en el **terminador TLS** que va delante, con
+  `add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;` — **sin
+  `preload`** por defecto (es difícil de revertir y exige HTTPS en todos los subdominios). La cookie de
+  sesión del panel usa el prefijo `__Host-` (exige HTTPS): en HTTP local se usa `minerva_sid` sin
+  `Secure`, derivado de `MINERVA_MODE`.
+- **Redis es control de seguridad, no solo caché.** Además del rate limit, guarda la blacklist de
+  `jti`, los cortes de invalidación por usuario y el **contenedor de sesión del panel**. Por eso corre
+  con persistencia AOF (`appendonly yes`) y `maxmemory-policy noeviction` (ver §3.4): sobrevive
+  reinicios y no desaloja revocaciones por presión de memoria. Perder Redis cierra las sesiones del
+  panel y re-habilita tokens revocados, por eso es durable.
 
 ### 2.3 Variables a revisar/ajustar
 
@@ -128,8 +143,11 @@ resto de variables de la sección 2.1) en el `.env` de producción.
 Lo siguiente es **decisión de infraestructura del IIEG al desplegar a un servidor
 real**, no algo que el backend resuelva por sí mismo:
 
-- **TLS/HTTPS**: al tener certificado, terminar TLS en el nginx del servicio `frontend` (el único
-  punto público; ver 2.2) y cambiar `MINERVA_ISSUER`/`FRONTEND_URL` a `https://`. Por ahora HTTP.
+- **TLS/HTTPS**: al tener certificado, terminar TLS en un **terminador/reverse proxy externo** delante
+  del nginx del servicio `frontend`, emitir ahí **HSTS** (sin `preload` por defecto) y cambiar
+  `MINERVA_ISSUER`/`FRONTEND_URL` a `https://`. Ese terminador debe enviar `X-Forwarded-Proto: https`
+  (nginx ya lo propaga al backend). Por ahora HTTP. Alternativa: terminar TLS en el propio nginx
+  añadiendo un `server` con `listen 443 ssl` y su `add_header Strict-Transport-Security`.
 - **Secret manager**: `MINERVA_KEY_ENCRYPTION_KEY`, `ADMIN_PASSWORD`, credenciales de
   PostgreSQL/Redis deben vivir en un gestor de secretos real, no en un `.env` plano en
   el servidor.
@@ -141,23 +159,51 @@ real**, no algo que el backend resuelva por sí mismo:
 
 ### 3.1 Rotación de claves de firma RS256
 
+La rotación es de **dos fases** (*publish-before-use*): la clave nueva se publica en el
+JWKS antes de empezar a firmar con ella, para que los verificadores la tengan cacheada
+cuando llegue el primer token firmado. Firmar de inmediato con una clave recién creada
+es lo que corta el servicio.
+
 ```bash
 # Dentro del contenedor backend, o con el entorno conda `minerva` activo:
-python -m app.cli rotate-key
+python -m app.cli rotate-key     # fase 1: publica la clave nueva como `pending`
+# ...esperar la ventana de propagación (ver abajo)...
+python -m app.cli promote-key    # fase 2: la clave nueva empieza a firmar
 ```
 
-Qué hace (`OIDCService.rotate_key`, `backend/app/modules/oidc/service.py`):
-1. Retira la clave activa actual (`status=retired`).
-2. Genera un nuevo par RSA 2048 y lo marca como activa.
-3. Purga claves retiradas más viejas que `MINERVA_ACCESS_TOKEN_TTL_MINUTES` — pasada esa
-   ventana, ningún token vigente puede seguir firmado con ellas.
+`promote-key --force` salta la espera; úsalo solo si sabes que ningún verificador tiene
+todavía el JWKS anterior cacheado.
 
-El JWKS público (`/.well-known/jwks.json`) sirve simultáneamente la clave activa y las
-retiradas todavía dentro de la ventana, así que un token emitido segundos antes de la
-rotación sigue verificando.
+**Fase 1 — `rotate-key`.** Crea un par RSA 2048 con `status=pending`: ya aparece en
+`/.well-known/jwks.json`, pero **no firma nada todavía**. Invalida el caché JWKS de Redis
+para que el propio backend la vea de inmediato.
 
-**Recomendación operativa:** colgar `rotate-key` de un cron periódico (p. ej. diario o
-semanal) en el servidor o como Job programado del orquestador.
+**Fase 2 — `promote-key`.** La pendiente pasa a `active` y la anterior a `retired`, en una
+sola transacción (nunca hay dos claves activas ni ninguna). Después purga las retiradas
+que ya no puedan estar firmando nada vigente. El comando **rechaza** la promoción si no
+ha pasado la ventana de propagación; `--force` la salta a propósito.
+
+Las dos ventanas que gobiernan el proceso:
+
+| Ventana | Variable | Default | Qué significa |
+|---|---|---|---|
+| Propagación | `MINERVA_KEY_PROPAGATION_MINUTES` | 60 min | Cuánto puede tardar un verificador en ver la clave nueva en su JWKS cacheado. Cubre el default del SDK (`MINERVA_JWKS_CACHE_TTL=3600`). Es lo que hay que esperar entre fase 1 y fase 2. |
+| Retención | derivada (`key_retirement_overlap_minutes`) | 485 min | Cuánto sigue publicada una clave ya retirada: la vida máxima de token firmado (la sesión del panel, 480 min) + `MINERVA_CLOCK_SKEW_MINUTES`. Purgar antes invalidaría sesiones vigentes. |
+
+La retención es **derivada, no configurable**, para que no pueda quedar desfasada del TTL
+de sesión. Los refresh tokens no cuentan: son opacos, nadie los firma.
+
+A lo sumo puede existir **una** clave `active` y **una** `pending` a la vez: lo garantizan
+índices únicos parciales en `signing_keys` (migración 009), no solo el código, así que ni
+un INSERT manual ni una restauración a medias pueden dejar ambiguo con qué clave se firma.
+
+> **Clave comprometida.** Este flujo **no** cubre ese caso. Rotar solo deja de *emitir* con
+> la clave vieja; la comprometida sigue publicada en el JWKS toda la ventana de retención,
+> así que los tokens firmados con ella se siguen aceptando. Retirarla de verdad exige
+> borrarla del JWKS y revocar los tokens vivos, que hoy es un procedimiento manual.
+
+**Recomendación operativa:** colgar la rotación de un cron periódico (p. ej. mensual),
+recordando que son **dos** ejecuciones separadas por la ventana de propagación.
 
 ### 3.2 Backups de PostgreSQL
 
@@ -188,19 +234,31 @@ alembic revision --autogenerate -m "descripcion breve"
 alembic upgrade head
 ```
 
-### 3.4 Redis: alcance y expectativas
+### 3.4 Redis: control de seguridad durable
 
-Redis se levanta **sin persistencia** (`redis-server --maxmemory 256mb
---maxmemory-policy allkeys-lru`, sin RDB/AOF) — decisión explícita, no un descuido.
-Solo guarda:
-- Rate limiting (`/auth/login`, `/auth/authorize`).
-- Blacklist de `jti` de tokens revocados.
-- Sesiones efímeras del flujo `/authorize` (código + PKCE/nonce/state, de vida muy corta).
+Redis es un **control de seguridad**, no solo caché. Guarda:
+- Blacklist de `jti` de tokens revocados (logout-all, quitar cuenta, rotación de refresh).
+- Cortes de invalidación por usuario (`minerva:uinval:*`, al cambiar contraseña/correo/status).
+- Contenedor de sesión del panel (patrón BFF): cuentas iniciadas y token `typ=session` de cada una.
+- Rate limiting (`/auth/login`, `/auth/authorize`) y sesiones efímeras del flujo `/authorize`.
 
-Perder este estado en un restart **no corrompe nada**: solo relaja temporalmente el
-rate limiting y permite que tokens recién revocados sigan aceptándose hasta que
-expiren por sí solos (ventana acotada por `MINERVA_ACCESS_TOKEN_TTL_MINUTES`). No
-requiere backup.
+Por eso corre con **persistencia AOF y sin evicción**:
+`redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction`, con un
+volumen nombrado `minerva_redis_data:/data`. Consecuencias:
+- **Sobrevive reinicios:** un token revocado sigue rechazado tras reiniciar el contenedor
+  `minerva_redis` (antes, sin persistencia, un restart lo resucitaba hasta su `exp` — hasta 8 h
+  para la sesión del panel).
+- **`noeviction`:** las claves de seguridad no se desalojan por presión de memoria. Todas tienen
+  TTL acotado (blacklist ≤ vida del token, panel 8 h, rate-limit 15 min), así que 256 mb sobra; si
+  la memoria llegara a llenarse, fallan las escrituras (fail-closed) en vez de borrar revocaciones.
+- **Backup:** incluye el volumen `minerva_redis_data` en la estrategia de respaldo junto con el de
+  PostgreSQL (el AOF vive ahí).
+
+**Política de fail-safe (fail-closed):** si Redis no está disponible, las operaciones de seguridad
+(validar revocación, rate limit) fallan y la request se rechaza — Minerva **no** degrada a fail-open
+(nunca honra un token que no pudo verificar contra la blacklist). Verificarlo tras un cambio de infra:
+`docker compose restart minerva_redis` y reintentar un token revocado (sigue devolviendo 401);
+`docker exec minerva_redis redis-cli config get appendonly maxmemory-policy` → `yes` / `noeviction`.
 
 ### 3.5 Checklist rápido antes de exponer Minerva a producción
 
@@ -209,7 +267,8 @@ requiere backup.
 3. `MINERVA_KEY_ENCRYPTION_KEY` generada y guardada en un secret manager.
 4. `MINERVA_ISSUER` apunta a la URL pública real (HTTPS).
 5. TLS terminado en el reverse proxy delante de backend y frontend.
-6. Backup de PostgreSQL programado (cron diario mínimo).
+6. Backup de PostgreSQL programado (cron diario mínimo); incluir el volumen `minerva_redis_data`
+   (AOF con la blacklist/invalidaciones/sesiones del panel).
 7. `rotate-key` programado en cron.
 8. Confirmar que el backend arranca y `validate_production_config()` no lanza error
    (revisar logs del primer arranque).

@@ -2,6 +2,7 @@
 
 import fakeredis.aioredis
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlmodel import Session
 
 from app.core.security import decode_token_rs256, hash_secret
@@ -28,7 +29,7 @@ def app_ctx():
         session.add(app_row)
         session.flush()
         session.add(RedirectURI(application_id=app_row.id, uri=REDIRECT_URI, environment="production"))
-        user = User(email="refresh@iieg.gob.mx", full_name="Refresh User", auth_provider="local", status="active")
+        user = User(email="refresh@iieg.gob.mx", full_name="Refresh User", status="active")
         session.add(user)
         grant_role(session, app_row.id, user.id)
         session.commit()
@@ -118,6 +119,28 @@ def test_revoke_endpoint_invalidates_refresh(client, app_ctx):
 
 def test_refresh_invalid_token_rejected(client, app_ctx):
     assert _refresh(client, app_ctx, "token-que-no-existe").status_code == 400
+
+
+def test_redis_failure_during_rotation_leaves_original_usable(client, app_ctx, fresh_redis):
+    """R11 (fail-closed): si Redis falla al blacklistear durante la rotación, el refresh
+    original NO debe quedar rotado a medias en PG; tras recuperarse Redis sigue sirviendo."""
+    first = _initial_tokens(client, app_ctx)
+
+    original_set = fresh_redis.set
+
+    async def boom(*args, **kwargs):
+        raise RedisConnectionError("redis down")
+
+    fresh_redis.set = boom
+    with pytest.raises(RedisConnectionError):
+        _refresh(client, app_ctx, first["refresh_token"])
+
+    # Redis se recupera: como hubo rollback, el refresh original sigue activo y rota limpio
+    # (si hubiera quedado rotado a medias, esto daría 400 por detección de reúso).
+    fresh_redis.set = original_set
+    resp = _refresh(client, app_ctx, first["refresh_token"])
+    assert resp.status_code == 200, "la rotación quedó confirmada a medias pese al fallo de Redis"
+    assert resp.json()["refresh_token"] != first["refresh_token"]
 
 
 async def test_blacklist_helper_roundtrip():

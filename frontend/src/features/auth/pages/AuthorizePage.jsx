@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { App as AntApp, Button, Flex, Result, Spin, Typography } from 'antd';
 import { authorizeUrl } from '@/api/auth';
-import { getActive, getSessions, isExpired, setActive } from '@/api/session';
+import { isExpired, setActive } from '@/api/session';
+import { useSession } from '@features/auth/SessionContext';
 import { getAppBranding } from '@/api/public';
 import AccountSelector from '../components/AccountSelector';
 import AuthShell from '../components/AuthShell';
@@ -34,6 +35,7 @@ export default function AuthorizePage() {
     const [params] = useSearchParams();
     const navigate = useNavigate();
     const { message } = AntApp.useApp();
+    const { loading: sessionLoading, active, accounts } = useSession();
     const ran = useRef(false);
     const [error, setError] = useState(null);
     const [selecting, setSelecting] = useState(false);
@@ -84,20 +86,36 @@ export default function AuthorizePage() {
                     navigate(loginNext(), { replace: true });
                     return;
                 }
-                const detail = err.response?.data?.detail || 'No se pudo completar la autorización.';
+                const detail =
+                    err.response?.data?.detail || 'No se pudo completar la autorización.';
                 if (popupMode) postToOpener(redirectUri, { state, error: 'server_error' });
                 message.error(detail);
                 setError(detail);
             });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [clientId, redirectUri, state, scope, codeChallenge, codeChallengeMethod, nonce, prompt, popupMode]);
+    }, [
+        clientId,
+        redirectUri,
+        state,
+        scope,
+        codeChallenge,
+        codeChallengeMethod,
+        nonce,
+        prompt,
+        popupMode,
+    ]);
 
     useEffect(() => {
+        // Espera a que el contexto resuelva el estado de sesión (cookie) antes de
+        // decidir el flujo: si no, leería cuentas vacías y saltaría a login por error.
+        if (sessionLoading) return;
         if (ran.current) return;
         ran.current = true;
 
         if (!clientId || !redirectUri || !state) {
-            setError('Solicitud de autorización inválida: faltan parámetros (client_id, redirect_uri, state).');
+            setError(
+                'Solicitud de autorización inválida: faltan parámetros (client_id, redirect_uri, state).'
+            );
             return;
         }
 
@@ -107,38 +125,43 @@ export default function AuthorizePage() {
             // vuelva a disparar (evita el loop formulario→authorize→formulario).
             const resumeParams = new URLSearchParams(params);
             resumeParams.delete('prompt');
-            navigate(`/login?next=${encodeURIComponent(`/authorize?${resumeParams.toString()}`)}&add=1`, {
-                replace: true,
-            });
+            navigate(
+                `/login?next=${encodeURIComponent(`/authorize?${resumeParams.toString()}`)}&add=1`,
+                {
+                    replace: true,
+                }
+            );
             return;
         }
 
         if (prompt === 'select_account') {
             // Si la única cuenta guardada es la activa y sigue vigente (login recién hecho),
             // no tiene sentido pedir un "Continuar" extra: procede directo.
-            const sessions = getSessions();
-            const active = getActive();
-            const onlyFreshAccount = sessions.length === 1 && active?.sub === sessions[0].sub && !isExpired(active);
+            const onlyFreshAccount =
+                accounts.length === 1 && active?.sub === accounts[0].sub && !isExpired(active);
             if (onlyFreshAccount) {
                 proceed();
                 return;
             }
-            if (clientId) getAppBranding(clientId).then(setBranding).catch(() => {});
+            if (clientId)
+                getAppBranding(clientId)
+                    .then(setBranding)
+                    .catch(() => {});
             setSelecting(true);
             return;
         }
 
         // SSO silencioso: si hay cuenta activa, seguimos; si no, a login.
-        if (!getActive()) {
+        if (!active) {
             navigate(loginNext(), { replace: true });
             return;
         }
         proceed();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [clientId, redirectUri, state, prompt]);
+    }, [clientId, redirectUri, state, prompt, sessionLoading]);
 
-    const onSelect = (session) => {
-        setActive(session.sub); // el interceptor tomará el token de esta cuenta
+    const onSelect = async (session) => {
+        await setActive(session.sub); // fija la cuenta activa en el backend antes de continuar
         setSelecting(false);
         proceed();
     };

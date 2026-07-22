@@ -135,9 +135,6 @@ class ApplicationService:
         uris = self.redirect_repo.list_by_application(app_id)
         return [RedirectURIRead.model_validate(u) for u in uris]
 
-    def delete_redirect_uri(self, uri_id: str) -> None:
-        self.redirect_repo.delete(uri_id)
-
     def validate_redirect_uri(self, client_id: str, redirect_uri: str) -> bool:
         app = self.repo.get_by_client_id(client_id)
         if not app:
