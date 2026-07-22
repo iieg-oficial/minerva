@@ -48,6 +48,17 @@ def test_check_permission_allowed(client, admin_token):
     assert response.status_code == 200
     assert response.json()["allowed"] is True
 
+    # El audit log del check debe guardar el UUID de la app, no el slug (FK a applications.id).
+    audit = client.get(
+        "/audit?action=permission_check_allowed",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert audit.status_code == 200
+    logs = audit.json()["items"]
+    assert logs, "el check permitido debe dejar un audit log"
+    assert logs[0]["application_id"] == app_id
+    assert logs[0]["application_id"] != "authz-test-app"
+
 
 def test_check_permission_denied(client, admin_token):
     client.post(
