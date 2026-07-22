@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.core.config import settings
@@ -30,13 +31,27 @@ from app.modules.roles.router import router as roles_router
 from app.modules.users.models import User
 from app.modules.users.router import router as users_router
 
+# Clave de namespace (arbitraria pero fija) del advisory lock que serializa el seed entre
+# procesos. Solo importa que sea única entre los locks del proyecto.
+_SEED_ADMIN_LOCK_KEY = 728_314
+
 
 def seed_admin(session: Session) -> None:
     """Reconcilia el estado base del panel recurso por recurso: admin-user, app `minerva`,
     su rol admin, los permisos con su asignación al rol y el `UserRole` del admin. Crea lo
     que falte y no toca lo que ya existe (idempotente). No hace early-return si el admin ya
     existe: así se auto-repara si se borró la app `minerva` (que cascadea su rol) con el
-    admin-user aún presente. El caller commitea."""
+    admin-user aún presente. El caller commitea.
+
+    `Role`/`Permission` no tienen constraint único por `(application_id, slug)`, así que el
+    get-or-create (SELECT-luego-INSERT) tiene una carrera: con varios workers/instancias
+    arrancando a la vez, dos podrían ver la tabla vacía y duplicar rol/permisos. Un advisory
+    lock de transacción (se libera solo al commit/rollback) serializa toda la función entre
+    procesos: el primero reconcilia y el resto entra después y ve todo ya creado. Solo aplica
+    en PostgreSQL; SQLite (tests) no tiene la función ni concurrencia real."""
+    if session.bind is not None and session.bind.dialect.name == "postgresql":
+        session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _SEED_ADMIN_LOCK_KEY})
+
     admin_user = session.exec(select(User).where(User.email == settings.ADMIN_EMAIL)).first()
     if not admin_user:
         admin_user = User(
