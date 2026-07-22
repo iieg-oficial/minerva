@@ -7,6 +7,18 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-22
+
+> **Estado del release.** 0.4.0 es un checkpoint de integración, **no** la versión 1.0.0
+> publicable. Cierra riesgos graves que seguían vivos en `main` (escalada administrativa vía
+> `/api/v1`, revocación volátil en Redis, JWT del panel en `localStorage`, confusión de clases
+> de token). Quedan pendientes conocidos, documentados en `docs/auditoria-claude.md`,
+> `docs/auditoria-codex.md` y `docs/retrospectiva-remediacion-1.0.0.md`: entre ellos el
+> `redirect_uri` de logout sin validar, el cruce de audiencia en `/api/v1/me/permissions`,
+> `max_age` no transportado por la SPA, la invalidación por usuario en el mismo segundo y la
+> unificación de la URL de base de datos entre runtime y Alembic. No debe leerse este tag como
+> cierre del contrato 1.0.
+
 ### Changed
 
 - **BREAKING · SDK 0.2.0: la caché de permisos queda desactivada por defecto.**
@@ -25,8 +37,9 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   (aún no firma). El segundo paso, `python -m app.cli promote-key`, la activa y retira la anterior
   en una sola transacción, y rechaza hacerlo antes de `MINERVA_KEY_PROPAGATION_MINUTES` (60 min por
   defecto), que es el tiempo que un verificador puede tardar en ver la clave nueva en su JWKS
-  cacheado. Para clave comprometida, `rotate-key --emergency` hace ambos pasos de golpe asumiendo
-  el corte. Detalle operativo en `docs/despliegue.md` §3.1.
+  cacheado. `promote-key --force` salta esa espera a propósito. La atención de una **clave
+  comprometida** (retirarla del JWKS antes de que expiren los tokens firmados con ella) sigue
+  siendo un procedimiento manual, no automatizado. Detalle operativo en `docs/despliegue.md` §3.1.
 
 - **BREAKING · Sesión del panel migrada a cookie opaca HttpOnly (patrón BFF).** El panel admin ya
   no guarda JWT ni credenciales en `localStorage`: el navegador solo conserva una cookie opaca
