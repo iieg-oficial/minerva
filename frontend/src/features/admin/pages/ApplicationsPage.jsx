@@ -194,7 +194,7 @@ export default function ApplicationsPage() {
         setSelectedApp(app);
         try {
             const data = await appsAPI.listRedirectUris(app.id);
-            setUris(data.items || []);
+            setUris(data || []);
         } catch {
             setUris([]);
         }
@@ -207,7 +207,7 @@ export default function ApplicationsPage() {
             message.success('URI agregada');
             uriForm.resetFields();
             const data = await appsAPI.listRedirectUris(selectedApp.id);
-            setUris(data.items || []);
+            setUris(data || []);
         } catch (err) {
             message.error(err.response?.data?.detail || 'Error al agregar URI');
         }
