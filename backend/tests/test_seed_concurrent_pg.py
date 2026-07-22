@@ -12,6 +12,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -65,12 +66,10 @@ def _count(engine, model) -> int:
         return len(session.exec(select(model)).all())
 
 
-def test_dos_seeds_concurrentes_no_duplican_rol_ni_permisos(migrated_engine):
-    """Estado de partida: admin-user + app minerva creados, pero sin rol/permisos/asignación
-    (p. ej. se borró y recreó la app, o un seed previo quedó a medias). Dos procesos corren
-    `seed_admin` a la vez; el advisory lock los serializa, así que el resultado debe ser
-    exactamente 1 rol, 6 permisos, 6 vínculos y 1 UserRole —sin duplicados."""
-    with Session(migrated_engine) as session:
+def _seed_admin_and_app_without_role(engine) -> None:
+    """Estado de partida de la carrera: admin-user + app minerva creados, pero sin
+    rol/permisos/asignación (p. ej. se borró y recreó la app, o un seed quedó a medias)."""
+    with Session(engine) as session:
         session.add(
             User(
                 email=settings.ADMIN_EMAIL,
@@ -91,6 +90,20 @@ def test_dos_seeds_concurrentes_no_duplican_rol_ni_permisos(migrated_engine):
             )
         )
         session.commit()
+
+
+def _assert_counts_sin_duplicados(engine) -> None:
+    assert _count(engine, Role) == 1
+    assert _count(engine, Permission) == 6
+    assert _count(engine, RolePermission) == 6
+    assert _count(engine, UserRole) == 1
+
+
+def test_dos_seeds_concurrentes_no_duplican_rol_ni_permisos(migrated_engine):
+    """Dos procesos corren `seed_admin` a la vez sobre admin+app sin rol; el advisory lock
+    los serializa, así que el resultado debe ser exactamente 1 rol, 6 permisos, 6 vínculos
+    y 1 UserRole —sin duplicados."""
+    _seed_admin_and_app_without_role(migrated_engine)
 
     barrier = threading.Barrier(2)
     results: queue.Queue = queue.Queue()
@@ -116,7 +129,61 @@ def test_dos_seeds_concurrentes_no_duplican_rol_ni_permisos(migrated_engine):
     errors = [value for kind, value in outcomes if kind == "error"]
     assert not errors, f"ningún seed debía fallar, pero: {errors}"
 
-    assert _count(migrated_engine, Role) == 1
-    assert _count(migrated_engine, Permission) == 6
-    assert _count(migrated_engine, RolePermission) == 6
-    assert _count(migrated_engine, UserRole) == 1
+    _assert_counts_sin_duplicados(migrated_engine)
+
+
+def test_seed_admin_bloquea_al_segundo_hasta_el_commit_del_primero(migrated_engine, monkeypatch):
+    """Prueba determinista de que el lock realmente serializa (no que los conteos cuadren
+    por suerte del scheduler): la sesión A corre `seed_admin` y **no** commitea, reteniendo
+    el advisory lock. La sesión B intenta correr `seed_admin` en otro hilo; debe quedar
+    bloqueada al adquirir el lock hasta que A commitee, y solo entonces terminar."""
+    _seed_admin_and_app_without_role(migrated_engine)
+
+    b_intento_lock = threading.Event()
+    b_termino = threading.Event()
+    b_result: queue.Queue = queue.Queue()
+
+    # Sesión A: corre seed_admin y retiene la transacción (lock tomado) sin commitear.
+    session_a = Session(migrated_engine)
+    seed_admin(session_a)
+
+    # Señaliza el intento de B de adquirir el lock, justo antes del execute que se bloquea.
+    original_execute = Session.execute
+
+    def execute_senalado(self, statement, *args, **kwargs):
+        if "pg_advisory_xact_lock" in str(statement):
+            b_intento_lock.set()
+        return original_execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "execute", execute_senalado)
+
+    def _seed_b():
+        try:
+            with Session(migrated_engine) as session_b:
+                seed_admin(session_b)
+                session_b.commit()
+            b_result.put(("ok", None))
+        except Exception as exc:  # noqa: BLE001 - el test reporta el fallo
+            b_result.put(("error", f"{type(exc).__name__}: {exc}"))
+        finally:
+            b_termino.set()
+
+    thread_b = threading.Thread(target=_seed_b)
+    thread_b.start()
+
+    assert b_intento_lock.wait(timeout=10), "B nunca intentó adquirir el lock"
+    # ponytail: margen fijo para que B entre al pg_advisory_xact_lock y se bloquee; no hay
+    # señal de "ya estoy bloqueado en el kernel de PG" sin pollear pg_locks, y esto basta.
+    time.sleep(0.5)
+    assert not b_termino.is_set(), "B no debía terminar mientras A retiene el lock"
+
+    # A libera el lock al commitear → B debe poder terminar.
+    session_a.commit()
+    session_a.close()
+
+    assert b_termino.wait(timeout=10), "B no terminó tras liberar A el lock"
+    thread_b.join(timeout=5)
+    kind, err = b_result.get()
+    assert kind == "ok", f"B falló: {err}"
+
+    _assert_counts_sin_duplicados(migrated_engine)
