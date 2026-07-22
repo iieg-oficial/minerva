@@ -55,8 +55,11 @@ export default function AdminLayout() {
     const location = useLocation();
     const { token } = useToken();
 
+    // Prefijo más largo: /admin solo gana en la raíz exacta; cada subruta resalta su sección.
     const selectedKey =
-        MENU_ITEMS.find((item) => location.pathname.startsWith(item.key))?.key || '/admin';
+        MENU_ITEMS.map((item) => item.key)
+            .filter((key) => location.pathname === key || location.pathname.startsWith(key + '/'))
+            .sort((a, b) => b.length - a.length)[0] || '/admin';
 
     const { accounts: sessions, active, refresh } = useSession();
     const { message } = AntApp.useApp();
