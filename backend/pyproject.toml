@@ -67,3 +67,26 @@ check_untyped_defs = true
 namespace_packages = true
 explicit_package_bases = true
 exclude = ["alembic/", "tests/"]
+
+# Cuarentena de deuda de tipos: estos módulos ya tenían errores cuando se agregó mypy al CI.
+# Se ignoran para que el gate falle SOLO ante errores nuevos en código limpio o nuevo. No es
+# limpieza: al tipar un módulo, quítalo de esta lista para que quede gateado. Burn-down módulo
+# a módulo. NO agregues módulos nuevos aquí; el default es que todo lo demás sí se revisa.
+[[tool.mypy.overrides]]
+module = [
+    "app.modules.auth.router",
+    "app.modules.auth.repository",
+    "app.core.panel_session",
+    "app.modules.groups.repository",
+    "app.modules.permissions.repository",
+    "app.modules.roles.repository",
+    "app.modules.devkit.manifest",
+    "app.modules.audit.repository",
+    "app.modules.applications.service",
+    "app.modules.applications.repository",
+    "app.modules.users.repository",
+    "app.modules.oidc.repository",
+    "app.modules.authorization.router",
+    "app.core.dependencies.auth",
+]
+ignore_errors = true

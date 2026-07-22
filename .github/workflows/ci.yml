@@ -24,6 +24,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check app alembic tests
       - run: ruff format --check app alembic tests
+      - run: mypy app # gate de tipos: falla ante errores nuevos (deuda actual en cuarentena, ver pyproject)
       - run: pytest tests/ -v # SQLite + fakeredis, sin servicios externos
 
   sdk:
