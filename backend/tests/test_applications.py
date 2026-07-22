@@ -50,6 +50,18 @@ def test_add_redirect_uri(client, admin_token):
     assert response.status_code == 201
     assert response.json()["uri"] == "https://uri-app.example.com/callback"
 
+    # Contrato: GET devuelve una lista plana (no un objeto paginado con .items). El panel
+    # depende de esto para pintar las URIs; si el endpoint regresara a un envoltorio, la lista
+    # saldría vacía en el front sin que nadie lo note.
+    list_response = client.get(
+        f"/applications/{app_id}/redirect-uris",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert list_response.status_code == 200
+    uris = list_response.json()
+    assert isinstance(uris, list)
+    assert [u["uri"] for u in uris] == ["https://uri-app.example.com/callback"]
+
 
 _MANIFEST = """
 application:
