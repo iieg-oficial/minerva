@@ -7,6 +7,23 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **BREAKING · `GET {panel}/logout?redirect_uri=...` solo acepta rutas internas del panel.**
+  La página aceptaba cualquier URL absoluta `http(s)`, así que un consumidor —o un enlace
+  fabricado— podía usar el logout de Minerva como *open redirect* hacia un dominio ajeno, con la
+  credibilidad del dominio institucional detrás. Ahora el destino se resuelve contra el origen
+  actual y se descarta si no coincide: cualquier URL externa cae en `/login`. Un destino externo
+  legítimo requiere registro previo de `post_logout_redirect_uris`
+  ([OIDC RP-Initiated Logout §2](https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout)),
+  que Minerva todavía no implementa. **Migración:** un consumidor que hoy pase su propia URL debe
+  invertir el orden — cerrar primero su sesión y redirigir al final a `{panel}/logout`, o dejar que
+  el usuario termine en el login de Minerva.
+- **El logout ya no aparenta éxito cuando falla.** La navegación colgaba de `.finally()`, así que un
+  `POST /auth/logout` fallido redirigía igual y el usuario se iba creyendo que había cerrado sesión
+  mientras la cookie seguía viva. Ahora solo se navega en la resolución exitosa; ante un fallo la
+  página se conserva y ofrece reintentar.
+
 ## [0.4.0] - 2026-07-22
 
 > **Estado del release.** 0.4.0 es un checkpoint de integración, **no** la versión 1.0.0
