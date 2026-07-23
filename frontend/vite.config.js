@@ -11,6 +11,12 @@ export default defineConfig({
             '@app': path.resolve(__dirname, 'src/app'),
         },
     },
+    test: {
+        environment: 'jsdom',
+        globals: true,
+        setupFiles: './src/test/setup.js',
+        include: ['src/**/*.test.{js,jsx}'],
+    },
     server: {
         port: 3000,
         proxy: {
