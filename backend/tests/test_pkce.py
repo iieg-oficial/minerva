@@ -58,6 +58,39 @@ def test_verify_pkce_rfc_vector():
     assert not verify_pkce("verifier-equivocado", RFC_CHALLENGE)
 
 
+def test_verify_pkce_rejects_non_ascii_verifier():
+    """bcrypt no es lo único que truena con no-ASCII: encode('ascii') en verify_pkce
+    lanzaba UnicodeEncodeError; debe rechazarse como formato inválido, no crashear."""
+    verifier = "ñ" * 43
+    assert not verify_pkce(verifier, RFC_CHALLENGE)
+
+
+def test_verify_pkce_rejects_too_short_verifier():
+    verifier = "a" * 42
+    assert not verify_pkce(verifier, _challenge(verifier))
+
+
+def test_verify_pkce_rejects_too_long_verifier():
+    verifier = "a" * 129
+    assert not verify_pkce(verifier, _challenge(verifier))
+
+
+def test_verify_pkce_accepts_43_char_verifier():
+    verifier = "a" * 43
+    assert verify_pkce(verifier, _challenge(verifier))
+
+
+def test_verify_pkce_accepts_128_char_verifier():
+    verifier = "a" * 128
+    assert verify_pkce(verifier, _challenge(verifier))
+
+
+def test_verify_pkce_rejects_disallowed_symbols():
+    # '+', '/' y '=' son válidos en base64 estándar pero no son "unreserved" (RFC 7636 §4.1).
+    verifier = ("a" * 40) + "+/="
+    assert not verify_pkce(verifier, _challenge(verifier))
+
+
 def test_pkce_happy_path(seeded):
     challenge = _challenge(RFC_VERIFIER)
     with Session(test_engine) as session:
@@ -84,6 +117,19 @@ def test_pkce_wrong_verifier_rejected(seeded):
         )
         with pytest.raises(BadRequestError):
             svc.exchange_token(seeded["client_id"], _code_from_url(url), REDIRECT_URI, CLIENT_SECRET, "otro-verifier")
+
+
+def test_exchange_rejects_malformed_verifier(seeded):
+    """Regresión: un verifier no-ASCII en el canje debe dar 400 (BadRequestError),
+    no un 500 por UnicodeEncodeError sin capturar."""
+    challenge = _challenge(RFC_VERIFIER)
+    with Session(test_engine) as session:
+        svc = AuthService(session)
+        url, _ = svc.authorize(
+            seeded["client_id"], REDIRECT_URI, seeded["user_id"], "s", "openid", code_challenge=challenge
+        )
+        with pytest.raises(BadRequestError):
+            svc.exchange_token(seeded["client_id"], _code_from_url(url), REDIRECT_URI, CLIENT_SECRET, "ñ" * 43)
 
 
 def test_pkce_missing_verifier_rejected(seeded):
