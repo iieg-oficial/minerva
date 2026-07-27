@@ -23,6 +23,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   `POST /auth/logout` fallido redirigía igual y el usuario se iba creyendo que había cerrado sesión
   mientras la cookie seguía viva. Ahora solo se navega en la resolución exitosa; ante un fallo la
   página se conserva y ofrece reintentar.
+- **Un `code_verifier` PKCE no-ASCII causaba un 500 en vez de un rechazo.** `verify_pkce` codificaba
+  el verifier directamente como ASCII, así que un valor con caracteres fuera de ese rango lanzaba
+  `UnicodeEncodeError` sin capturar. Ahora se valida primero contra el alfabeto y la longitud de
+  [RFC 7636 §4.1](https://www.rfc-editor.org/rfc/rfc7636.html#section-4.1) (43–128 caracteres
+  "unreserved"): fuera de ese formato, el canje responde 400 igual que un verifier incorrecto.
 
 ## [0.4.0] - 2026-07-22
 
