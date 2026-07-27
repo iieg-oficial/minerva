@@ -1,3 +1,13 @@
+import pytest
+from jose import jwt as jose_jwt
+from sqlmodel import Session
+
+import app.core.token_blacklist as token_blacklist
+from app.core.dependencies.auth import _resolve_token
+from app.core.token_blacklist import invalidate_user_tokens
+from tests.conftest import test_engine
+
+
 def test_list_users(client, admin_token):
     response = client.get("/users", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 200
@@ -92,3 +102,34 @@ def test_deactivating_user_invalidates_existing_tokens(client, admin_token, make
     assert changed.status_code == 200
 
     assert client.get("/auth/me", headers=user_h).status_code == 401
+
+
+async def test_iat_before_cutoff_is_rejected(client, admin_token, make_session_token, fresh_redis, monkeypatch):
+    user_id, token = _make_user_with_token(client, admin_token, "victim-before@iieg.gob.mx", make_session_token)
+    iat = jose_jwt.get_unverified_claims(token)["iat"]
+    monkeypatch.setattr(token_blacklist.time, "time", lambda: iat + 1)
+    await invalidate_user_tokens(fresh_redis, user_id, ttl_seconds=3600)
+    with Session(test_engine) as session:
+        with pytest.raises(ValueError):
+            await _resolve_token(token, session, fresh_redis, expected_types={"session"}, audience="minerva")
+
+
+async def test_iat_equal_to_cutoff_is_rejected(client, admin_token, make_session_token, fresh_redis, monkeypatch):
+    """Regresión: el corte usaba `<` y un token con iat == cutoff sobrevivía."""
+    user_id, token = _make_user_with_token(client, admin_token, "victim-equal@iieg.gob.mx", make_session_token)
+    iat = jose_jwt.get_unverified_claims(token)["iat"]
+    monkeypatch.setattr(token_blacklist.time, "time", lambda: iat)
+    await invalidate_user_tokens(fresh_redis, user_id, ttl_seconds=3600)
+    with Session(test_engine) as session:
+        with pytest.raises(ValueError):
+            await _resolve_token(token, session, fresh_redis, expected_types={"session"}, audience="minerva")
+
+
+async def test_iat_after_cutoff_is_accepted(client, admin_token, make_session_token, fresh_redis, monkeypatch):
+    user_id, token = _make_user_with_token(client, admin_token, "victim-after@iieg.gob.mx", make_session_token)
+    iat = jose_jwt.get_unverified_claims(token)["iat"]
+    monkeypatch.setattr(token_blacklist.time, "time", lambda: iat - 1)
+    await invalidate_user_tokens(fresh_redis, user_id, ttl_seconds=3600)
+    with Session(test_engine) as session:
+        payload = await _resolve_token(token, session, fresh_redis, expected_types={"session"}, audience="minerva")
+    assert payload["sub"] == user_id

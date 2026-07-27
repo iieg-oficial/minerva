@@ -23,6 +23,10 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   `POST /auth/logout` fallido redirigía igual y el usuario se iba creyendo que había cerrado sesión
   mientras la cookie seguía viva. Ahora solo se navega en la resolución exitosa; ante un fallo la
   página se conserva y ofrece reintentar.
+- **Un token emitido en el mismo segundo del corte de invalidación seguía siendo válido.** Al
+  cambiar contraseña/correo/status, el rechazo comparaba `iat < corte`, así que un token con
+  `iat` igual al corte (mismo segundo epoch) sobrevivía a una invalidación que prometía cerrarlo.
+  La comparación ahora es inclusiva (`iat <= corte`).
 
 ## [0.4.0] - 2026-07-22
 
