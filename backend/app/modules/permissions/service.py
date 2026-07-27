@@ -1,3 +1,4 @@
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
@@ -34,7 +35,13 @@ class PermissionService:
             raise ConflictError(detail="Ya existe un permiso con ese slug en esta aplicación")
 
         perm = Permission(application_id=app_id, name=data.name, slug=data.slug, description=data.description)
-        perm = self.repo.create(perm)
+        try:
+            perm = self.repo.create(perm)
+        except IntegrityError:
+            # Ver RoleService.create_role: la comprobación previa no cierra la carrera
+            # entre dos altas concurrentes; el constraint de BD sí (issue #76).
+            self.session.rollback()
+            raise ConflictError(detail="Ya existe un permiso con ese slug en esta aplicación")
         return PermissionRead.model_validate(perm)
 
     def update_permission(self, perm_id: str, data: PermissionUpdate) -> PermissionRead:

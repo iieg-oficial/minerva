@@ -63,6 +63,27 @@ def test_add_redirect_uri(client, admin_token):
     assert [u["uri"] for u in uris] == ["https://uri-app.example.com/callback"]
 
 
+def test_add_redirect_uri_concurrent_race_returns_conflict_not_500(client, admin_token, monkeypatch):
+    """Issue #76: si la comprobación previa no ve el duplicado (ventana de carrera
+    entre dos altas concurrentes), el constraint de BD debe traducirse a 409, no a
+    un 500 sin manejar."""
+    from app.modules.applications.repository import RedirectURIRepository
+
+    auth = {"Authorization": f"Bearer {admin_token}"}
+    app_id = client.post(
+        "/applications",
+        json={"name": "URI Race App", "slug": "uri-race-app"},
+        headers=auth,
+    ).json()["id"]
+    uri = "https://uri-race-app.example.com/callback"
+    first = client.post(f"/applications/{app_id}/redirect-uris", json={"uri": uri}, headers=auth)
+    assert first.status_code == 201
+
+    monkeypatch.setattr(RedirectURIRepository, "get_by_uri", lambda self, app_id, uri: None)
+    resp = client.post(f"/applications/{app_id}/redirect-uris", json={"uri": uri}, headers=auth)
+    assert resp.status_code == 409, resp.text
+
+
 _MANIFEST = """
 application:
   code: borrar
@@ -180,6 +201,25 @@ def test_update_manifest_rejects_code_mismatch(client, admin_token):
     other = _MANIFEST.replace("code: borrar", "code: otra").replace("borrar.cosa", "otra.cosa")
     resp = _import_manifest(client, admin_token, other, app_id=app_id)
     assert resp.status_code == 400
+
+
+def test_import_manifest_concurrent_race_returns_conflict_not_500(client, admin_token, monkeypatch):
+    """Issue #76: dos importaciones del mismo manifiesto pueden solaparse antes de que
+    ninguna haga commit. Si la comprobación previa de permisos/roles/redirect_uris no ve
+    lo que la otra ya insertó, el constraint de BD debe traducirse a 409, no a un 500."""
+    from app.modules.applications.repository import RedirectURIRepository
+    from app.modules.permissions.repository import PermissionRepository
+    from app.modules.roles.repository import RoleRepository
+
+    first = _import_manifest(client, admin_token, _MANIFEST)
+    assert first.status_code == 200
+
+    monkeypatch.setattr(PermissionRepository, "get_by_slug", lambda self, app_id, slug: None)
+    monkeypatch.setattr(RoleRepository, "get_by_slug", lambda self, app_id, slug: None)
+    monkeypatch.setattr(RedirectURIRepository, "get_by_uri", lambda self, app_id, uri: None)
+
+    resp = _import_manifest(client, admin_token, _MANIFEST)
+    assert resp.status_code == 409, resp.text
 
 
 def test_duplicate_slug(client, admin_token):

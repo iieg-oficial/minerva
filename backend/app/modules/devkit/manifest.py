@@ -15,9 +15,10 @@ import re
 import uuid
 
 import yaml
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
-from app.core.exceptions import BadRequestError
+from app.core.exceptions import BadRequestError, ConflictError
 from app.core.security import hash_secret
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.applications.repository import ApplicationRepository, RedirectURIRepository
@@ -136,82 +137,93 @@ class ManifestLoader:
             self.session.add(app)
             self.session.flush()
 
-        # --- Redirect URIs (upsert) ---------------------------------------
-        for uri in application.get("redirect_uris") or []:
-            existing = self.redirect_repo.get_by_uri(app.id, uri)
-            if not existing:
-                self.session.add(RedirectURI(application_id=app.id, uri=uri, environment="development"))
-        self.session.flush()
-
-        # --- Permisos (upsert) --------------------------------------------
-        perm_by_key: dict[str, Permission] = {}
-        permissions_upserted = 0
-        for perm in permissions:
-            key = perm["key"]
-            existing = self.perm_repo.get_by_slug(app.id, key)
-            if existing:
-                if perm.get("name"):
-                    existing.name = perm["name"]
-                if perm.get("description") is not None:
-                    existing.description = perm["description"]
-                self.session.add(existing)
-                perm_by_key[key] = existing
-            else:
-                new_perm = Permission(
-                    application_id=app.id,
-                    name=perm.get("name", key),
-                    slug=key,
-                    description=perm.get("description"),
-                )
-                self.session.add(new_perm)
-                perm_by_key[key] = new_perm
-                permissions_upserted += 1
-        self.session.flush()
-
-        # --- Roles + relación rol-permiso (upsert) ------------------------
-        roles_upserted = 0
-        role_permissions_linked = 0
-        for role in roles:
-            slug = _role_slug(code, role["name"])
-            existing_role = self.role_repo.get_by_slug(app.id, slug)
-            if existing_role:
-                existing_role.name = role["name"]
-                if role.get("description") is not None:
-                    existing_role.description = role["description"]
-                self.session.add(existing_role)
-                role_obj = existing_role
-            else:
-                role_obj = Role(
-                    application_id=app.id,
-                    name=role["name"],
-                    slug=slug,
-                    description=role.get("description"),
-                )
-                self.session.add(role_obj)
-                roles_upserted += 1
+        # Desde aquí, todo lo que escribe en tablas con constraint de unicidad por
+        # aplicación (redirect_uris, permissions, roles) puede chocar con otra
+        # importación concurrente que pasó su propia comprobación en la misma ventana:
+        # el `SELECT` de upsert no cierra esa carrera, el constraint de BD sí (issue
+        # #76). Se traduce a un 409 legible en vez de un 500 sin manejar; no hay
+        # retry/merge (fuera de alcance): el cliente reintenta y en ese segundo intento
+        # el `SELECT` ya ve las filas que ganó la otra importación.
+        try:
+            # --- Redirect URIs (upsert) ---------------------------------------
+            for uri in application.get("redirect_uris") or []:
+                existing = self.redirect_repo.get_by_uri(app.id, uri)
+                if not existing:
+                    self.session.add(RedirectURI(application_id=app.id, uri=uri, environment="development"))
             self.session.flush()
 
-            for key in role.get("permissions") or []:
-                perm_obj = perm_by_key[key]
-                link = self.role_perm_repo.get(role_obj.id, perm_obj.id)
-                if not link:
-                    self.session.add(RolePermission(role_id=role_obj.id, permission_id=perm_obj.id))
-                    role_permissions_linked += 1
-        self.session.flush()
+            # --- Permisos (upsert) --------------------------------------------
+            perm_by_key: dict[str, Permission] = {}
+            permissions_upserted = 0
+            for perm in permissions:
+                key = perm["key"]
+                existing = self.perm_repo.get_by_slug(app.id, key)
+                if existing:
+                    if perm.get("name"):
+                        existing.name = perm["name"]
+                    if perm.get("description") is not None:
+                        existing.description = perm["description"]
+                    self.session.add(existing)
+                    perm_by_key[key] = existing
+                else:
+                    new_perm = Permission(
+                        application_id=app.id,
+                        name=perm.get("name", key),
+                        slug=key,
+                        description=perm.get("description"),
+                    )
+                    self.session.add(new_perm)
+                    perm_by_key[key] = new_perm
+                    permissions_upserted += 1
+            self.session.flush()
 
-        # --- Registro de importación --------------------------------------
-        record = ManifestImport(
-            application_id=app.id,
-            application_code=code,
-            source=source,
-            checksum=checksum,
-            status="success",
-            message=f"{len(permissions)} permisos, {len(roles)} roles",
-            permissions_count=len(permissions),
-            roles_count=len(roles),
-        )
-        self.session.add(record)
-        self.session.commit()
+            # --- Roles + relación rol-permiso (upsert) ------------------------
+            roles_upserted = 0
+            role_permissions_linked = 0
+            for role in roles:
+                slug = _role_slug(code, role["name"])
+                existing_role = self.role_repo.get_by_slug(app.id, slug)
+                if existing_role:
+                    existing_role.name = role["name"]
+                    if role.get("description") is not None:
+                        existing_role.description = role["description"]
+                    self.session.add(existing_role)
+                    role_obj = existing_role
+                else:
+                    role_obj = Role(
+                        application_id=app.id,
+                        name=role["name"],
+                        slug=slug,
+                        description=role.get("description"),
+                    )
+                    self.session.add(role_obj)
+                    roles_upserted += 1
+                self.session.flush()
+
+                for key in role.get("permissions") or []:
+                    perm_obj = perm_by_key[key]
+                    link = self.role_perm_repo.get(role_obj.id, perm_obj.id)
+                    if not link:
+                        self.session.add(RolePermission(role_id=role_obj.id, permission_id=perm_obj.id))
+                        role_permissions_linked += 1
+            self.session.flush()
+
+            # --- Registro de importación --------------------------------------
+            record = ManifestImport(
+                application_id=app.id,
+                application_code=code,
+                source=source,
+                checksum=checksum,
+                status="success",
+                message=f"{len(permissions)} permisos, {len(roles)} roles",
+                permissions_count=len(permissions),
+                roles_count=len(roles),
+            )
+            self.session.add(record)
+            self.session.commit()
+        except IntegrityError:
+            self.session.rollback()
+            raise ConflictError(detail="Otra importación concurrente ya registró estos mismos datos; reintente")
 
         return ManifestImportResult(
             application_id=app.id,
