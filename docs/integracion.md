@@ -178,6 +178,16 @@ Sobre la respuesta de `/authorize`:
 > **Logout de Minerva.** `POST /auth/logout` (con el `access_token` en el header) revoca el token
 > del lado del servidor: a partir de ese momento Minerva ya no lo acepta, así que un `/authorize`
 > posterior no re-autentica en silencio con esa sesión. Es independiente del logout de tu propia app.
+>
+> **Logout redirigido (`GET {panel}/logout?redirect_uri=...`).** Cierra la cuenta activa del panel
+> (logout **suave**: no revoca el token, a diferencia de `POST /auth/logout`) y luego navega al
+> destino. `redirect_uri` acepta **solo rutas internas del panel** (`/login`, `/admin/users`…):
+> cualquier URL externa —absoluta, protocol-relative o con caracteres de escape— se descarta y el
+> usuario termina en `/login`. Los destinos externos exigen registro previo de
+> `post_logout_redirect_uris` ([RP-Initiated Logout §2](https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout)),
+> que Minerva aún no implementa. Si tu app necesita volver a sí misma, cierra primero tu sesión y
+> redirige al panel al final. Además, si el logout falla, la página **no** redirige: muestra el error
+> y ofrece reintentar, para no aparentar un cierre de sesión que no ocurrió.
 
 ### 3.2 Canjear el código (tu backend → Minerva, servidor-a-servidor)
 
