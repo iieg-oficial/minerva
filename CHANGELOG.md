@@ -28,6 +28,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   `UnicodeEncodeError` sin capturar. Ahora se valida primero contra el alfabeto y la longitud de
   [RFC 7636 §4.1](https://www.rfc-editor.org/rfc/rfc7636.html#section-4.1) (43–128 caracteres
   "unreserved"): fuera de ese formato, el canje responde 400 igual que un verifier incorrecto.
+- **Un fallo al emitir tokens dejaba el authorization code quemado sin entregar nada.** El canje
+  confirmaba el reclamo del código (`used=True`) en un commit separado de la emisión y persistencia
+  del refresh token; si algo fallaba entre medio, el código quedaba consumido para siempre sin que
+  el cliente recibiera tokens. Ahora ambas operaciones comparten una sola transacción: si falla la
+  emisión, el reclamo también se revierte y el código sigue disponible.
 
 ## [0.4.0] - 2026-07-22
 

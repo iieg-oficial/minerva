@@ -50,12 +50,15 @@ class AuthCodeRepository:
         statement = select(AuthCode).where(AuthCode.code == code, AuthCode.used.is_(False))
         return self.session.exec(statement).first()
 
-    def mark_used(self, auth_code: AuthCode) -> bool:
-        """Reclama el código de forma atómica. False si otro canje concurrente ya lo tomó."""
+    def mark_used(self, auth_code: AuthCode, commit: bool = True) -> bool:
+        """Reclama el código de forma atómica. False si otro canje concurrente ya lo tomó.
+        Con commit=False deja el reclamo pendiente para que el caller confirme junto con
+        la emisión del refresh token (issue #74): si algo falla entre medio, el rollback
+        automático de la sesión revierte el reclamo y el código no queda quemado."""
         result = self.session.execute(
             update(AuthCode).where(AuthCode.id == auth_code.id, AuthCode.used.is_(False)).values(used=True)
         )
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
         return result.rowcount == 1
 
 
