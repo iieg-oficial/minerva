@@ -51,6 +51,15 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   `full_name` mayor a 255 caracteres pasaba sin error en el registro, el alta admin o el `PATCH`
   de usuarios. Ahora los tres esquemas de entrada rechazan con 422 lo que exceda los 255
   caracteres de `User.full_name`, y también exigen un mínimo de 6 caracteres.
+- **BREAKING · `GET /api/v1/me/permissions` ya no filtra los permisos de otra aplicación.**
+  El parámetro `application` de la query nunca se comparaba contra la audiencia del token, así que
+  un access token emitido para la aplicación A podía pedir `application=B` y recibir los
+  permisos/roles reales del usuario en B —una aplicación para la que ese token nunca fue
+  autorizado— si el usuario los tenía asignados aparte
+  ([RFC 9700 §2.3](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.3)). Ahora se rechaza con
+  403: un access token solo puede consultar la app de su `aud`, y un token dev solo las de su
+  claim `applications`. **Migración:** un consumidor que hoy consulte una aplicación distinta a la
+  suya recibirá 403 en vez de los permisos ajenos.
 
 ## [0.4.0] - 2026-07-22
 

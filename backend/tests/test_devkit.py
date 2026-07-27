@@ -23,14 +23,47 @@ def test_dev_login_and_me(client):
 
 
 def test_me_permissions_self_service(client):
-    """El endpoint canónico del SDK sigue siendo self-service: un usuario recién
-    creado por dev-login puede consultar SUS permisos (vacíos) sin ser admin."""
-    token = dev_login(client, "sdkuser@local.dev")
-    # La app minerva existe por el seed de los fixtures que la usan; consultamos una
-    # app cualquiera registrada. Sin app, responde 404, no 403: no exige admin.
-    resp = client.get("/api/v1/me/permissions?application=minerva", headers=auth(token))
-    assert resp.status_code in (200, 404)
-    assert resp.status_code != 403
+    """El endpoint canónico del SDK sigue siendo self-service: un usuario con un rol
+    real en una app puede consultar SUS permisos ahí sin ser admin. El rol se otorga
+    ANTES del dev-login para que el token emitido incluya esa app en `applications`
+    (issue #64: el token solo puede consultar sus propias apps)."""
+    from sqlmodel import Session
+
+    from app.modules.applications.models import Application
+    from app.modules.users.models import User
+    from tests.conftest import grant_role, test_engine
+
+    email = "sdkuser@local.dev"
+    with Session(test_engine) as session:
+        user = User(email=email, full_name="Sdk User", status="active")
+        session.add(user)
+        session.flush()
+        app_row = Application(name="Sdk App", slug="sdk-app", status="active")
+        session.add(app_row)
+        session.flush()
+        grant_role(session, app_row.id, user.id)
+        session.commit()
+
+    token = dev_login(client, email)
+    resp = client.get("/api/v1/me/permissions?application=sdk-app", headers=auth(token))
+    assert resp.status_code == 200
+
+
+def test_me_permissions_dev_token_rejects_app_outside_claim(client):
+    """Issue #64: un token dev solo autoriza las apps de su claim `applications`;
+    pedir permisos de una app en la que el usuario NO tiene rol se rechaza con 403."""
+    from sqlmodel import Session
+
+    from app.modules.applications.models import Application
+    from tests.conftest import test_engine
+
+    with Session(test_engine) as session:
+        session.add(Application(name="Dev App Ajena", slug="dev-app-ajena", status="active"))
+        session.commit()
+
+    token = dev_login(client, "sin-acceso@local.dev")
+    resp = client.get("/api/v1/me/permissions?application=dev-app-ajena", headers=auth(token))
+    assert resp.status_code == 403
 
 
 def test_me_requires_auth(client):
