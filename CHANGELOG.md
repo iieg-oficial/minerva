@@ -23,6 +23,10 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   `POST /auth/logout` fallido redirigía igual y el usuario se iba creyendo que había cerrado sesión
   mientras la cookie seguía viva. Ahora solo se navega en la resolución exitosa; ante un fallo la
   página se conserva y ofrece reintentar.
+- **Contraseñas mayores a 72 bytes UTF-8 causaban un 500 en vez de un rechazo.** bcrypt 5 lanza
+  `ValueError` en vez de truncar más allá de ese límite, y ni el registro, el login, el alta de
+  usuario ni el `PATCH` lo validaban antes de llamar a bcrypt. Ahora las cuatro rutas comparten un
+  único validador que rechaza con 422 antes de llegar al hash/check.
 
 ## [0.4.0] - 2026-07-22
 
