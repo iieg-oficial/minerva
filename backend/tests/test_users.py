@@ -31,7 +31,7 @@ def test_create_user_rechaza_password_vacio_o_corto(client, admin_token):
     for password in ("", "corta7"):
         resp = client.post(
             "/users",
-            json={"email": f"weak-{len(password)}@iieg.gob.mx", "full_name": "Débil", "password": password},
+            json={"email": f"weak-{len(password)}@iieg.gob.mx", "full_name": "Persona Débil", "password": password},
             headers=admin_h,
         )
         assert resp.status_code == 422, f"contraseña {password!r} debería rechazarse: {resp.text}"
@@ -54,7 +54,7 @@ def test_create_user_rechaza_password_mayor_a_72_bytes(client, admin_token):
     admin_h = {"Authorization": f"Bearer {admin_token}"}
     resp = client.post(
         "/users",
-        json={"email": "largo@iieg.gob.mx", "full_name": "Largo", "password": "a" * 73},
+        json={"email": "largo@iieg.gob.mx", "full_name": "Nombre Largo", "password": "a" * 73},
         headers=admin_h,
     )
     assert resp.status_code == 422, resp.text
@@ -77,6 +77,25 @@ def test_update_user_rechaza_full_name_mayor_a_255(client, admin_token, admin_us
     resp = client.patch(
         f"/users/{admin_user['id']}",
         json={"full_name": "a" * 256},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_create_user_rechaza_full_name_menor_a_6(client, admin_token):
+    admin_h = {"Authorization": f"Bearer {admin_token}"}
+    resp = client.post(
+        "/users",
+        json={"email": "nombre-corto@iieg.gob.mx", "full_name": "abcde", "password": "pass123456"},
+        headers=admin_h,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_update_user_rechaza_full_name_menor_a_6(client, admin_token, admin_user):
+    resp = client.patch(
+        f"/users/{admin_user['id']}",
+        json={"full_name": "abcde"},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert resp.status_code == 422, resp.text

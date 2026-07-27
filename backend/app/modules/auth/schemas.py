@@ -7,7 +7,7 @@ from app.shared.validators import validate_password_max_bytes
 
 class AuthRegister(BaseModel):
     email: EmailStr
-    full_name: str = Field(min_length=1, max_length=255)
+    full_name: str = Field(min_length=6, max_length=255)
     password: Annotated[str, Field(min_length=8), AfterValidator(validate_password_max_bytes)]
 
 

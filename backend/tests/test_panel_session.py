@@ -21,7 +21,8 @@ def _csrf_headers(csrf, origin=None):
 
 
 def _register(client, email, password="testpass123"):
-    return client.post("/auth/register", json={"email": email, "full_name": email.split("@")[0], "password": password})
+    full_name = f"Usuario {email.split('@')[0]}"
+    return client.post("/auth/register", json={"email": email, "full_name": full_name, "password": password})
 
 
 def _read_container(fake, sid):

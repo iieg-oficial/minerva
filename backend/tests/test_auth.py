@@ -9,7 +9,7 @@ def test_register_disabled_returns_403(client, monkeypatch):
     monkeypatch.setattr(settings, "MINERVA_ENABLE_PUBLIC_REGISTER", False)
     resp = client.post(
         "/auth/register",
-        json={"email": "nuevo@iieg.gob.mx", "full_name": "Nuevo", "password": "testpass123"},
+        json={"email": "nuevo@iieg.gob.mx", "full_name": "Persona Nueva", "password": "testpass123"},
     )
     assert resp.status_code == 403
 
@@ -17,7 +17,7 @@ def test_register_disabled_returns_403(client, monkeypatch):
 def test_register_rejects_bad_email(client):
     resp = client.post(
         "/auth/register",
-        json={"email": "no-es-un-correo", "full_name": "X", "password": "testpass123"},
+        json={"email": "no-es-un-correo", "full_name": "Nombre Valido", "password": "testpass123"},
     )
     assert resp.status_code == 422
 
@@ -25,7 +25,7 @@ def test_register_rejects_bad_email(client):
 def test_register_rejects_short_password(client):
     resp = client.post(
         "/auth/register",
-        json={"email": "corto@iieg.gob.mx", "full_name": "X", "password": "1234"},
+        json={"email": "corto@iieg.gob.mx", "full_name": "Nombre Valido", "password": "1234"},
     )
     assert resp.status_code == 422
 
@@ -33,7 +33,7 @@ def test_register_rejects_short_password(client):
 def test_register_rejects_password_over_72_bytes(client):
     resp = client.post(
         "/auth/register",
-        json={"email": "largo@iieg.gob.mx", "full_name": "Largo", "password": "a" * 73},
+        json={"email": "largo@iieg.gob.mx", "full_name": "Nombre Largo", "password": "a" * 73},
     )
     assert resp.status_code == 422
 
@@ -65,6 +65,14 @@ def test_register_rejects_full_name_over_255_chars(client):
     assert resp.status_code == 422
 
 
+def test_register_rejects_full_name_under_6_chars(client):
+    resp = client.post(
+        "/auth/register",
+        json={"email": "nombre-corto@iieg.gob.mx", "full_name": "abcde", "password": "testpass123"},
+    )
+    assert resp.status_code == 422
+
+
 def test_login_rejects_password_over_72_bytes(client):
     resp = client.post(
         "/auth/login",
@@ -78,12 +86,12 @@ def test_email_is_case_insensitive(client):
     y el login debe funcionar sin importar mayúsculas."""
     first = client.post(
         "/auth/register",
-        json={"email": "Alice@iieg.gob.mx", "full_name": "Alice", "password": "testpass123"},
+        json={"email": "Alice@iieg.gob.mx", "full_name": "Alice User", "password": "testpass123"},
     )
     assert first.status_code == 201
     dup = client.post(
         "/auth/register",
-        json={"email": "alice@iieg.gob.mx", "full_name": "Alice", "password": "testpass123"},
+        json={"email": "alice@iieg.gob.mx", "full_name": "Alice User", "password": "testpass123"},
     )
     assert dup.status_code == 409
     login = client.post("/auth/login", json={"email": "ALICE@iieg.gob.mx", "password": "testpass123"})
