@@ -32,6 +32,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   `UnicodeEncodeError` sin capturar. Ahora se valida primero contra el alfabeto y la longitud de
   [RFC 7636 §4.1](https://www.rfc-editor.org/rfc/rfc7636.html#section-4.1) (43–128 caracteres
   "unreserved"): fuera de ese formato, el canje responde 400 igual que un verifier incorrecto.
+- **Un `full_name` más largo que la columna de BD no se rechazaba en el borde.** Los modelos
+  SQLModel `table=True` no validan `max_length` en runtime (solo lo usan para el DDL), así que un
+  `full_name` mayor a 255 caracteres pasaba sin error en el registro, el alta admin o el `PATCH`
+  de usuarios. Ahora los tres esquemas de entrada rechazan con 422 lo que exceda los 255
+  caracteres de `User.full_name`, y también exigen un mínimo de 6 caracteres.
 
 ## [0.4.0] - 2026-07-22
 
