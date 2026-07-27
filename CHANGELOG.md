@@ -32,6 +32,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   `UnicodeEncodeError` sin capturar. Ahora se valida primero contra el alfabeto y la longitud de
   [RFC 7636 §4.1](https://www.rfc-editor.org/rfc/rfc7636.html#section-4.1) (43–128 caracteres
   "unreserved"): fuera de ese formato, el canje responde 400 igual que un verifier incorrecto.
+- **Un fallo al borrar un rol podía dejarlo a medias.** `RoleService.delete_role` confirmaba por
+  separado cada limpieza de relaciones (permisos, usuarios, grupos) y el borrado del rol; si algo
+  fallaba entre medio, las relaciones ya borradas no se recuperaban aunque el rol siguiera vivo (o
+  viceversa). Ahora las cuatro operaciones comparten una sola transacción: si algo falla, el
+  rollback automático revierte todo y no queda ningún estado intermedio.
 
 ## [0.4.0] - 2026-07-22
 
