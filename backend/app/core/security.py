@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import re
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -8,6 +9,8 @@ import bcrypt
 from jose import JWTError, jwt
 
 from app.core.config import settings
+
+_CODE_VERIFIER_RE = re.compile(r"^[A-Za-z0-9\-._~]{43,128}$")
 
 
 def hash_token(token: str) -> str:
@@ -20,8 +23,12 @@ def verify_pkce(code_verifier: str, code_challenge: str) -> bool:
     """Verifica un par PKCE con método S256 (RFC 7636).
 
     challenge == BASE64URL-SIN-PADDING(SHA256(verifier)). Comparación en tiempo
-    constante para no filtrar información por temporización.
+    constante para no filtrar información por temporización. El verifier debe
+    cumplir el alfabeto "unreserved" de 43-128 caracteres (RFC 7636 §4.1): fuera
+    de eso se rechaza aquí para no llegar al encode('ascii') con datos inválidos.
     """
+    if not _CODE_VERIFIER_RE.fullmatch(code_verifier):
+        return False
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     expected = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
     return secrets.compare_digest(expected, code_challenge)

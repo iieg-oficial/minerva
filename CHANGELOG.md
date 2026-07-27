@@ -27,6 +27,15 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   cambiar contraseña/correo/status, el rechazo comparaba `iat < corte`, así que un token con
   `iat` igual al corte (mismo segundo epoch) sobrevivía a una invalidación que prometía cerrarlo.
   La comparación ahora es inclusiva (`iat <= corte`).
+- **Contraseñas mayores a 72 bytes UTF-8 causaban un 500 en vez de un rechazo.** bcrypt 5 lanza
+  `ValueError` en vez de truncar más allá de ese límite, y ni el registro, el login, el alta de
+  usuario ni el `PATCH` lo validaban antes de llamar a bcrypt. Ahora las cuatro rutas comparten un
+  único validador que rechaza con 422 antes de llegar al hash/check.
+- **Un `code_verifier` PKCE no-ASCII causaba un 500 en vez de un rechazo.** `verify_pkce` codificaba
+  el verifier directamente como ASCII, así que un valor con caracteres fuera de ese rango lanzaba
+  `UnicodeEncodeError` sin capturar. Ahora se valida primero contra el alfabeto y la longitud de
+  [RFC 7636 §4.1](https://www.rfc-editor.org/rfc/rfc7636.html#section-4.1) (43–128 caracteres
+  "unreserved"): fuera de ese formato, el canje responde 400 igual que un verifier incorrecto.
 
 ## [0.4.0] - 2026-07-22
 

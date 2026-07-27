@@ -58,6 +58,27 @@ def test_update_user_rechaza_password_corto(client, admin_token, admin_user):
     assert resp.status_code == 422, resp.text
 
 
+def test_create_user_rechaza_password_mayor_a_72_bytes(client, admin_token):
+    """bcrypt 5 lanza ValueError más allá de 72 bytes UTF-8; se rechaza antes con 422
+    para no producir un 500 en el alta."""
+    admin_h = {"Authorization": f"Bearer {admin_token}"}
+    resp = client.post(
+        "/users",
+        json={"email": "largo@iieg.gob.mx", "full_name": "Largo", "password": "a" * 73},
+        headers=admin_h,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_update_user_rechaza_password_mayor_a_72_bytes(client, admin_token, admin_user):
+    resp = client.patch(
+        f"/users/{admin_user['id']}",
+        json={"password": "a" * 73},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 422, resp.text
+
+
 def _make_user_with_token(client, admin_token, email, make_session_token):
     """Crea un usuario y devuelve (user_id, su_token_de_sesión). Acuña el token
     directamente (el panel es cookie-only: /auth/login ya no devuelve el JWT)."""

@@ -30,6 +30,39 @@ def test_register_rejects_short_password(client):
     assert resp.status_code == 422
 
 
+def test_register_rejects_password_over_72_bytes(client):
+    resp = client.post(
+        "/auth/register",
+        json={"email": "largo@iieg.gob.mx", "full_name": "Largo", "password": "a" * 73},
+    )
+    assert resp.status_code == 422
+
+
+def test_register_accepts_password_of_72_bytes(client):
+    resp = client.post(
+        "/auth/register",
+        json={"email": "limite@iieg.gob.mx", "full_name": "Limite", "password": "a" * 72},
+    )
+    assert resp.status_code == 201
+
+
+def test_register_rejects_multibyte_password_over_72_bytes(client):
+    # 'ñ' ocupa 2 bytes en UTF-8: 37 repeticiones son 74 bytes aunque len() diga 37.
+    resp = client.post(
+        "/auth/register",
+        json={"email": "multibyte@iieg.gob.mx", "full_name": "Multibyte", "password": "ñ" * 37},
+    )
+    assert resp.status_code == 422
+
+
+def test_login_rejects_password_over_72_bytes(client):
+    resp = client.post(
+        "/auth/login",
+        json={"email": "cualquiera@iieg.gob.mx", "password": "a" * 73},
+    )
+    assert resp.status_code == 422
+
+
 def test_email_is_case_insensitive(client):
     """El correo es la identidad: distinto casing no debe crear cuentas duplicadas
     y el login debe funcionar sin importar mayúsculas."""
