@@ -353,7 +353,7 @@ class AuthService:
         if user.status != "active":
             raise ForbiddenError(detail="Usuario inactivo")
 
-        if not self.auth_code_repo.mark_used(auth_code):
+        if not self.auth_code_repo.mark_used(auth_code, commit=False):
             raise BadRequestError(detail="Código de autorización inválido o ya usado")
 
         all_perms, all_role_slugs = self._get_user_permissions(user.id, app.slug)

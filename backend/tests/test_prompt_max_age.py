@@ -45,7 +45,7 @@ def app_ctx():
 def _login_and_get_token(client, email: str, password: str = "testpass123") -> str:
     # El panel es cookie-only: /register ya no devuelve el JWT. Se crea el usuario y se
     # acuña su token de sesión para usarlo por Bearer (limpiando la cookie residual).
-    client.post("/auth/register", json={"email": email, "full_name": "U", "password": password})
+    client.post("/auth/register", json={"email": email, "full_name": "Usuario Prueba", "password": password})
     client.cookies.clear()
     with Session(test_engine) as session:
         user = session.exec(select(User).where(User.email == email)).first()
