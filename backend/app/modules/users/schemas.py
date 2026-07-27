@@ -8,7 +8,7 @@ from app.shared.validators import validate_password_max_bytes
 
 class UserBase(BaseModel):
     email: str
-    full_name: str
+    full_name: str = Field(max_length=255)
 
 
 class UserCreate(UserBase):
@@ -17,7 +17,7 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    full_name: str | None = None
+    full_name: str | None = Field(default=None, max_length=255)
     email: str | None = None
     password: Annotated[str | None, Field(min_length=8), AfterValidator(validate_password_max_bytes)] = None
     status: str | None = None

@@ -55,6 +55,16 @@ def test_register_rejects_multibyte_password_over_72_bytes(client):
     assert resp.status_code == 422
 
 
+def test_register_rejects_full_name_over_255_chars(client):
+    """`full_name` es VARCHAR(255) en BD; un valor más largo se rechaza con 422 en vez
+    de fallar en el INSERT (el modelo SQLModel no valida `max_length` en runtime)."""
+    resp = client.post(
+        "/auth/register",
+        json={"email": "nombre-largo@iieg.gob.mx", "full_name": "a" * 256, "password": "testpass123"},
+    )
+    assert resp.status_code == 422
+
+
 def test_login_rejects_password_over_72_bytes(client):
     resp = client.post(
         "/auth/login",

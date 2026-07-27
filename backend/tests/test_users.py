@@ -60,6 +60,28 @@ def test_create_user_rechaza_password_mayor_a_72_bytes(client, admin_token):
     assert resp.status_code == 422, resp.text
 
 
+def test_create_user_rechaza_full_name_mayor_a_255(client, admin_token):
+    """`full_name` es VARCHAR(255) en BD; un valor más largo se rechaza con 422 en vez
+    de fallar en el INSERT (el modelo SQLModel no valida `max_length` en runtime)."""
+    admin_h = {"Authorization": f"Bearer {admin_token}"}
+    resp = client.post(
+        "/users",
+        json={"email": "nombre-largo@iieg.gob.mx", "full_name": "a" * 256, "password": "pass123456"},
+        headers=admin_h,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_update_user_rechaza_full_name_mayor_a_255(client, admin_token, admin_user):
+    """El mismo piso aplica al PATCH."""
+    resp = client.patch(
+        f"/users/{admin_user['id']}",
+        json={"full_name": "a" * 256},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 422, resp.text
+
+
 def test_update_user_rechaza_password_mayor_a_72_bytes(client, admin_token, admin_user):
     resp = client.patch(
         f"/users/{admin_user['id']}",
