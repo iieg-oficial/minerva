@@ -90,9 +90,11 @@ async def _resolve_token(
     if await is_revoked(redis, payload.get("jti")):
         raise ValueError("Token revocado")
     # Invalidación por usuario: si cambió su contraseña/correo/status, los tokens
-    # emitidos antes del corte dejan de valer aunque su firma siga siendo válida.
+    # emitidos hasta el corte (inclusive) dejan de valer aunque su firma siga siendo
+    # válida. El corte es un epoch en segundos: uno emitido en su mismo segundo debe
+    # invalidarse también, no solo los estrictamente anteriores.
     cutoff = await user_tokens_invalid_before(redis, payload.get("sub"))
-    if cutoff is not None and payload.get("iat", 0) < cutoff:
+    if cutoff is not None and payload.get("iat", 0) <= cutoff:
         raise ValueError("Sesión invalidada; vuelve a iniciar sesión")
     return payload
 
