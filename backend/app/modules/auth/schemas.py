@@ -1,15 +1,19 @@
-from pydantic import BaseModel, EmailStr, Field
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, EmailStr, Field
+
+from app.shared.validators import validate_password_max_bytes
 
 
 class AuthRegister(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1)
-    password: str = Field(min_length=8)
+    password: Annotated[str, Field(min_length=8), AfterValidator(validate_password_max_bytes)]
 
 
 class AuthLogin(BaseModel):
     email: str
-    password: str
+    password: Annotated[str, AfterValidator(validate_password_max_bytes)]
 
 
 class AuthTokenResponse(BaseModel):
