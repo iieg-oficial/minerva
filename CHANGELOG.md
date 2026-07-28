@@ -9,6 +9,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **Las respuestas exitosas de `/auth/token` no impedían su caché.** Ni el canje de código ni el
+  refresh traían `Cache-Control`/`Pragma`, así que un proxy o el navegador podían guardar una
+  respuesta con `access_token`/`refresh_token` (RFC 6749 §5.1). Ahora ambos grants responden con
+  `Cache-Control: no-store` y `Pragma: no-cache`; el resto de los endpoints no se ve afectado.
+
 - **BREAKING · `GET {panel}/logout?redirect_uri=...` solo acepta rutas internas del panel.**
   La página aceptaba cualquier URL absoluta `http(s)`, así que un consumidor —o un enlace
   fabricado— podía usar el logout de Minerva como *open redirect* hacia un dominio ajeno, con la
@@ -60,6 +65,19 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   403: un access token solo puede consultar la app de su `aud`, y un token dev solo las de su
   claim `applications`. **Migración:** un consumidor que hoy consulte una aplicación distinta a la
   suya recibirá 403 en vez de los permisos ajenos.
+- **`/.well-known/openid-configuration` no coincidía con el runtime.** No anunciaba
+  `revocation_endpoint` aunque `/auth/revoke` ya existe, y `claims_supported` listaba `roles`/
+  `permissions` (que solo viven en el access token, nunca en el id_token ni en `/userinfo`) y
+  omitía `preferred_username`, `email_verified`, `auth_time` y `nonce` (que sí se emiten). Ahora
+  el documento de descubrimiento describe exactamente lo que el servidor soporta.
+- **Dos altas concurrentes podían dejar un rol, permiso o redirect URI duplicado dentro de
+  la misma aplicación.** Las altas por API y la importación de manifiestos comprobaban con un
+  `SELECT` antes de insertar, sin que la base garantizara la unicidad: dos requests (o dos
+  importaciones del mismo manifiesto) podían pasar ambas la comprobación antes de que ninguna
+  confirmara. Ahora `roles`, `permissions` y `redirect_uris` tienen un constraint único por
+  `(aplicación, slug/uri)`; una migración concilia primero los duplicados que ya existieran
+  (conserva la fila más antigua y repunta sus asignaciones), y las cuatro rutas de escritura
+  traducen la carrera restante a 409 en vez de un 500 sin manejar.
 
 ## [0.4.0] - 2026-07-22
 
