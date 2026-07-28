@@ -51,6 +51,14 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   `full_name` mayor a 255 caracteres pasaba sin error en el registro, el alta admin o el `PATCH`
   de usuarios. Ahora los tres esquemas de entrada rechazan con 422 lo que exceda los 255
   caracteres de `User.full_name`, y también exigen un mínimo de 6 caracteres.
+- **Dos altas concurrentes podían dejar un rol, permiso o redirect URI duplicado dentro de
+  la misma aplicación.** Las altas por API y la importación de manifiestos comprobaban con un
+  `SELECT` antes de insertar, sin que la base garantizara la unicidad: dos requests (o dos
+  importaciones del mismo manifiesto) podían pasar ambas la comprobación antes de que ninguna
+  confirmara. Ahora `roles`, `permissions` y `redirect_uris` tienen un constraint único por
+  `(aplicación, slug/uri)`; una migración concilia primero los duplicados que ya existieran
+  (conserva la fila más antigua y repunta sus asignaciones), y las cuatro rutas de escritura
+  traducen la carrera restante a 409 en vez de un 500 sin manejar.
 
 ## [0.4.0] - 2026-07-22
 
