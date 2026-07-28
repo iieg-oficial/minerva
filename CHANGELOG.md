@@ -51,6 +51,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   `full_name` mayor a 255 caracteres pasaba sin error en el registro, el alta admin o el `PATCH`
   de usuarios. Ahora los tres esquemas de entrada rechazan con 422 lo que exceda los 255
   caracteres de `User.full_name`, y también exigen un mínimo de 6 caracteres.
+- **`/.well-known/openid-configuration` no coincidía con el runtime.** No anunciaba
+  `revocation_endpoint` aunque `/auth/revoke` ya existe, y `claims_supported` listaba `roles`/
+  `permissions` (que solo viven en el access token, nunca en el id_token ni en `/userinfo`) y
+  omitía `preferred_username`, `email_verified`, `auth_time` y `nonce` (que sí se emiten). Ahora
+  el documento de descubrimiento describe exactamente lo que el servidor soporta.
 
 ## [0.4.0] - 2026-07-22
 
