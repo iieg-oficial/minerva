@@ -45,9 +45,15 @@ def require_test_database_url(url: str) -> None:
 
 def grant_role(session: Session, application_id: str, user_id: str, slug: str = "member") -> None:
     """Asigna un rol al usuario en la aplicación indicada. Helper de fixtures:
-    desde el issue #11 /authorize exige al menos un rol en la app del client_id."""
-    role = Role(application_id=application_id, name="Member", slug=slug)
-    session.add(role)
+    desde el issue #11 /authorize exige al menos un rol en la app del client_id.
+
+    Get-or-create por (application_id, slug): dos llamadas para la misma app y el
+    mismo slug (p. ej. dos usuarios con el rol "member" por defecto) comparten la
+    fila en vez de duplicarla, ya inválido desde el constraint del issue #76."""
+    role = session.exec(select(Role).where(Role.application_id == application_id, Role.slug == slug)).first()
+    if not role:
+        role = Role(application_id=application_id, name="Member", slug=slug)
+        session.add(role)
     session.add(UserRole(user_id=user_id, role_id=role.id))
 
 
