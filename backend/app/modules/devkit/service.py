@@ -97,10 +97,13 @@ class DevKitService:
             raise ForbiddenError(detail="El token no está autorizado para esta aplicación")
 
     def get_me_permissions(self, current_user: dict, application_code: str) -> MePermissionsResponse:
+        # Autorizar antes de resolver la app: así un token ajeno recibe 403 tanto si la
+        # app existe como si no, y no puede usar la diferencia 404/403 para descubrir
+        # qué slugs hay registrados.
+        self._require_application_access(current_user, application_code)
         app = self.app_repo.get_by_slug(application_code)
         if not app:
             raise NotFoundError(detail="Aplicación no encontrada")
-        self._require_application_access(current_user, application_code)
 
         roles = [r for r in self._effective_roles(current_user["sub"]) if r.application_id == app.id]
         permissions: set[str] = set()
