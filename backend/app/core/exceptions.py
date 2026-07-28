@@ -22,8 +22,8 @@ class NotFoundError(AppException):
 
 
 class UnauthorizedError(AppException):
-    def __init__(self, detail: str = "No autenticado"):
-        super().__init__(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
+    def __init__(self, detail: str = "No autenticado", oauth_error: str | None = None):
+        super().__init__(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail, oauth_error=oauth_error)
 
 
 class ForbiddenError(AppException):
