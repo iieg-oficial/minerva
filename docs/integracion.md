@@ -227,6 +227,21 @@ El refresh token devuelto en la respuesta **reemplaza** al anterior (rotación):
 siempre el más reciente. Si reutilizas uno ya rotado, Minerva revoca toda la familia de
 tokens — trátalo como de un solo uso.
 
+### 3.4 Errores del canje
+
+Los errores de `/auth/token` siguen el contrato de RFC 6749 §5.2: status 400 y un cuerpo con
+`error` (uno de `invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type`) y
+`error_description`. Programa contra `error`, no contra `detail` (que se conserva por
+compatibilidad, pero es solo texto para humanos):
+
+```json
+{
+  "error": "invalid_grant",
+  "error_description": "Código de autorización inválido o ya usado",
+  "detail": "Código de autorización inválido o ya usado"
+}
+```
+
 > **Revocación server-side al cambiar credenciales.** Si el administrador cambia la
 > contraseña o el correo del usuario, o lo desactiva, Minerva revoca de inmediato sus
 > refresh tokens vigentes. El siguiente intento de refresh recibe **`400`** con
