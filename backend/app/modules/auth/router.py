@@ -435,6 +435,7 @@ def _oauth_error_response(exc: AppException) -> JSONResponse:
 @router.post("/token", response_model=AuthTokenResponse)
 async def token_exchange(
     request: Request,
+    response: Response,
     service: AuthService = Depends(get_auth_service),
     audit: AuditService = Depends(get_audit_service),
     redis: Redis = Depends(get_redis),
@@ -473,34 +474,36 @@ async def token_exchange(
             audit.log(
                 "token_refresh_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent")
             )
-            return result
-
-        if grant_type != "authorization_code":
+        elif grant_type == "authorization_code":
+            client_id = body.get("client_id")
+            client_secret = body.get("client_secret")  # opcional: ausente en clientes públicos
+            code = body.get("code")
+            redirect_uri = body.get("redirect_uri")
+            if not all([client_id, code, redirect_uri]):
+                raise BadRequestError(
+                    detail="Faltan parámetros requeridos para el canje del código", oauth_error="invalid_request"
+                )
+            result = service.exchange_token(
+                client_id, code, redirect_uri, client_secret=client_secret, code_verifier=body.get("code_verifier")
+            )
+            audit.log(
+                "token_exchange_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent")
+            )
+        else:
             raise BadRequestError(
                 detail="grant_type no soportado; use authorization_code o refresh_token",
                 oauth_error="unsupported_grant_type",
             )
-
-        client_id = body.get("client_id")
-        client_secret = body.get("client_secret")  # opcional: ausente en clientes públicos
-        code = body.get("code")
-        redirect_uri = body.get("redirect_uri")
-        if not all([client_id, code, redirect_uri]):
-            raise BadRequestError(
-                detail="Faltan parámetros requeridos para el canje del código", oauth_error="invalid_request"
-            )
-
-        result = service.exchange_token(
-            client_id, code, redirect_uri, client_secret=client_secret, code_verifier=body.get("code_verifier")
-        )
-        audit.log(
-            "token_exchange_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent")
-        )
-        return result
     except AppException as exc:
         if exc.oauth_error is None:
             raise
         return _oauth_error_response(exc)
+
+    # RFC 6749 §5.1: toda respuesta exitosa del token endpoint lleva tokens y no debe
+    # cachearse (issue #79). Un solo punto para ambos grants, tras converger aquí.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return result
 
 
 @router.post("/revoke")

@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -26,6 +27,9 @@ class Application(SQLModel, table=True):
 
 class RedirectURI(SQLModel, table=True):
     __tablename__ = "redirect_uris"
+
+    # Una URI por aplicación: mismo invariante que `Role`/`Permission` (issue #76).
+    __table_args__ = (UniqueConstraint("application_id", "uri", name="uq_redirect_uris_application_id_uri"),)
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     application_id: str = Field(foreign_key="applications.id", index=True)

@@ -127,3 +127,53 @@ def test_token_rejects_unsupported_grant_type(client, app_ctx):
 def test_token_missing_params_rejected(client):
     resp = client.post("/auth/token", data={"grant_type": "authorization_code"})
     assert resp.status_code == 400
+
+
+def test_token_exchange_incluye_headers_no_cache(client, app_ctx):
+    code = _mint_code(app_ctx)
+    resp = client.post(
+        "/auth/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": app_ctx["client_id"],
+            "client_secret": CLIENT_SECRET,
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "no-store"
+    assert resp.headers["pragma"] == "no-cache"
+
+
+def test_token_refresh_incluye_headers_no_cache(client, app_ctx):
+    code = _mint_code(app_ctx)
+    first = client.post(
+        "/auth/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": app_ctx["client_id"],
+            "client_secret": CLIENT_SECRET,
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+        },
+    )
+    resp = client.post(
+        "/auth/token",
+        data={
+            "grant_type": "refresh_token",
+            "client_id": app_ctx["client_id"],
+            "client_secret": CLIENT_SECRET,
+            "refresh_token": first.json()["refresh_token"],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "no-store"
+    assert resp.headers["pragma"] == "no-cache"
+
+
+def test_otros_endpoints_no_reciben_headers_no_cache_por_accidente(client):
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert "cache-control" not in resp.headers
+    assert "pragma" not in resp.headers

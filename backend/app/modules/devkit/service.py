@@ -85,12 +85,27 @@ class DevKitService:
             raise NotFoundError(detail="Usuario no encontrado")
         return MeResponse(id=user.id, email=user.email, full_name=user.full_name, status=user.status)
 
-    def get_me_permissions(self, user_id: str, application_code: str) -> MePermissionsResponse:
+    def _require_application_access(self, current_user: dict, application_code: str) -> None:
+        """El token solo puede consultar la app para la que fue emitido: `aud` en
+        access tokens de consumidor, `applications` en tokens dev (issue #64). Sin
+        esto, un token con aud=A podía leer permisos reales de una app B ajena."""
+        if current_user.get("typ") == "dev":
+            allowed = application_code in current_user.get("applications", [])
+        else:
+            allowed = current_user.get("aud") == application_code
+        if not allowed:
+            raise ForbiddenError(detail="El token no está autorizado para esta aplicación")
+
+    def get_me_permissions(self, current_user: dict, application_code: str) -> MePermissionsResponse:
+        # Autorizar antes de resolver la app: así un token ajeno recibe 403 tanto si la
+        # app existe como si no, y no puede usar la diferencia 404/403 para descubrir
+        # qué slugs hay registrados.
+        self._require_application_access(current_user, application_code)
         app = self.app_repo.get_by_slug(application_code)
         if not app:
             raise NotFoundError(detail="Aplicación no encontrada")
 
-        roles = [r for r in self._effective_roles(user_id) if r.application_id == app.id]
+        roles = [r for r in self._effective_roles(current_user["sub"]) if r.application_id == app.id]
         permissions: set[str] = set()
         for role in roles:
             for perm in self.role_perm_repo.list_permissions_by_role(role.id):

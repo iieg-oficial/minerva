@@ -15,6 +15,10 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   (`invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type`) y
   `error_description` con status 400, conforme a [RFC 6749 §5.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-5.2).
   `detail` se conserva con el mismo texto por compatibilidad con quien ya lo leía.
+- **Las respuestas exitosas de `/auth/token` no impedían su caché.** Ni el canje de código ni el
+  refresh traían `Cache-Control`/`Pragma`, así que un proxy o el navegador podían guardar una
+  respuesta con `access_token`/`refresh_token` (RFC 6749 §5.1). Ahora ambos grants responden con
+  `Cache-Control: no-store` y `Pragma: no-cache`; el resto de los endpoints no se ve afectado.
 
 - **BREAKING · `GET {panel}/logout?redirect_uri=...` solo acepta rutas internas del panel.**
   La página aceptaba cualquier URL absoluta `http(s)`, así que un consumidor —o un enlace
@@ -58,6 +62,28 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   `full_name` mayor a 255 caracteres pasaba sin error en el registro, el alta admin o el `PATCH`
   de usuarios. Ahora los tres esquemas de entrada rechazan con 422 lo que exceda los 255
   caracteres de `User.full_name`, y también exigen un mínimo de 6 caracteres.
+- **BREAKING · `GET /api/v1/me/permissions` ya no filtra los permisos de otra aplicación.**
+  El parámetro `application` de la query nunca se comparaba contra la audiencia del token, así que
+  un access token emitido para la aplicación A podía pedir `application=B` y recibir los
+  permisos/roles reales del usuario en B —una aplicación para la que ese token nunca fue
+  autorizado— si el usuario los tenía asignados aparte
+  ([RFC 9700 §2.3](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.3)). Ahora se rechaza con
+  403: un access token solo puede consultar la app de su `aud`, y un token dev solo las de su
+  claim `applications`. **Migración:** un consumidor que hoy consulte una aplicación distinta a la
+  suya recibirá 403 en vez de los permisos ajenos.
+- **`/.well-known/openid-configuration` no coincidía con el runtime.** No anunciaba
+  `revocation_endpoint` aunque `/auth/revoke` ya existe, y `claims_supported` listaba `roles`/
+  `permissions` (que solo viven en el access token, nunca en el id_token ni en `/userinfo`) y
+  omitía `preferred_username`, `email_verified`, `auth_time` y `nonce` (que sí se emiten). Ahora
+  el documento de descubrimiento describe exactamente lo que el servidor soporta.
+- **Dos altas concurrentes podían dejar un rol, permiso o redirect URI duplicado dentro de
+  la misma aplicación.** Las altas por API y la importación de manifiestos comprobaban con un
+  `SELECT` antes de insertar, sin que la base garantizara la unicidad: dos requests (o dos
+  importaciones del mismo manifiesto) podían pasar ambas la comprobación antes de que ninguna
+  confirmara. Ahora `roles`, `permissions` y `redirect_uris` tienen un constraint único por
+  `(aplicación, slug/uri)`; una migración concilia primero los duplicados que ya existieran
+  (conserva la fila más antigua y repunta sus asignaciones), y las cuatro rutas de escritura
+  traducen la carrera restante a 409 en vez de un 500 sin manejar.
 
 ## [0.4.0] - 2026-07-22
 

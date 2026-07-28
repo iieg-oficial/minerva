@@ -1,3 +1,4 @@
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.exceptions import ConflictError, NotFoundError
@@ -37,7 +38,13 @@ class RoleService:
             raise ConflictError(detail="Ya existe un rol con ese slug en esta aplicación")
 
         role = Role(application_id=app_id, name=data.name, slug=data.slug, description=data.description)
-        role = self.repo.create(role)
+        try:
+            role = self.repo.create(role)
+        except IntegrityError:
+            # La comprobación previa no cierra la carrera entre dos altas concurrentes;
+            # el constraint de BD (issue #76) sí, y aquí se traduce a un 409 legible.
+            self.session.rollback()
+            raise ConflictError(detail="Ya existe un rol con ese slug en esta aplicación")
         return RoleRead.model_validate(role)
 
     def update_role(self, role_id: str, data: RoleUpdate) -> RoleRead:
