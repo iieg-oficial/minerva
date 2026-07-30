@@ -9,6 +9,12 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **`/auth/token` no devolvía un error OAuth programable.** Sus errores (grant desconocido, código
+  ya usado, `client_secret` inválido, parámetros faltantes) solo traían un `detail` genérico, así
+  que un cliente no podía distinguir casos sin parsear texto en español. Ahora responde `error`
+  (`invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type`) y
+  `error_description` con status 400, conforme a [RFC 6749 §5.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-5.2).
+  `detail` se conserva con el mismo texto por compatibilidad con quien ya lo leía.
 - **Las respuestas exitosas de `/auth/token` no impedían su caché.** Ni el canje de código ni el
   refresh traían `Cache-Control`/`Pragma`, así que un proxy o el navegador podían guardar una
   respuesta con `access_token`/`refresh_token` (RFC 6749 §5.1). Ahora ambos grants responden con

@@ -3,7 +3,7 @@
 import pytest
 from sqlmodel import Session, select
 
-from app.core.exceptions import ForbiddenError
+from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import hash_secret, hash_token
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.auth.repository import RefreshTokenRepository
@@ -106,7 +106,7 @@ def test_canje_rechaza_app_inactiva(app_ctx):
     _set_app_status(app_ctx["client_id"], "inactive")
 
     with Session(test_engine) as session:
-        with pytest.raises(ForbiddenError):
+        with pytest.raises(UnauthorizedError):
             AuthService(session).exchange_token(app_ctx["client_id"], code, REDIRECT_URI, client_secret=CLIENT_SECRET)
 
     # El código sigue sin usarse: la app inactiva se rechaza antes del reclamo.
@@ -156,5 +156,5 @@ def test_refresh_rechaza_app_inactiva(app_ctx):
     _set_app_status(app_ctx["client_id"], "inactive")
 
     with Session(test_engine) as session:
-        with pytest.raises(ForbiddenError):
+        with pytest.raises(UnauthorizedError):
             AuthService(session).rotate_refresh_token(app_ctx["client_id"], raw_refresh, client_secret=CLIENT_SECRET)
