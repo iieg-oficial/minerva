@@ -7,17 +7,100 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-31
+
+> **Estado del release.** 0.5.0 publica el trabajo ya integrado desde 0.4.0 como un checkpoint
+> previo a 1.0.0. Incluye correcciones de seguridad, atomicidad, concurrencia y conformidad
+> OAuth/OIDC; no implica que los pendientes del milestone 1.0.0 estén cerrados.
+
+### Fixed
+
+- **`/auth/token` no devolvía un error OAuth programable.** Sus errores (grant desconocido, código
+  ya usado, `client_secret` inválido, parámetros faltantes) solo traían un `detail` genérico, así
+  que un cliente no podía distinguir casos sin parsear texto en español. Ahora responde `error`
+  (`invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type`) y
+  `error_description` con status 400, conforme a [RFC 6749 §5.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-5.2).
+  `detail` se conserva con el mismo texto por compatibilidad con quien ya lo leía.
+- **Las respuestas exitosas de `/auth/token` no impedían su caché.** Ni el canje de código ni el
+  refresh traían `Cache-Control`/`Pragma`, así que un proxy o el navegador podían guardar una
+  respuesta con `access_token`/`refresh_token` (RFC 6749 §5.1). Ahora ambos grants responden con
+  `Cache-Control: no-store` y `Pragma: no-cache`; el resto de los endpoints no se ve afectado.
+
+- **BREAKING · `GET {panel}/logout?redirect_uri=...` solo acepta rutas internas del panel.**
+  La página aceptaba cualquier URL absoluta `http(s)`, así que un consumidor —o un enlace
+  fabricado— podía usar el logout de Minerva como *open redirect* hacia un dominio ajeno, con la
+  credibilidad del dominio institucional detrás. Ahora el destino se resuelve contra el origen
+  actual y se descarta si no coincide: cualquier URL externa cae en `/login`. Un destino externo
+  legítimo requiere registro previo de `post_logout_redirect_uris`
+  ([OIDC RP-Initiated Logout §2](https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout)),
+  que Minerva todavía no implementa. **Migración:** un consumidor que hoy pase su propia URL debe
+  invertir el orden — cerrar primero su sesión y redirigir al final a `{panel}/logout`, o dejar que
+  el usuario termine en el login de Minerva.
+- **El logout ya no aparenta éxito cuando falla.** La navegación colgaba de `.finally()`, así que un
+  `POST /auth/logout` fallido redirigía igual y el usuario se iba creyendo que había cerrado sesión
+  mientras la cookie seguía viva. Ahora solo se navega en la resolución exitosa; ante un fallo la
+  página se conserva y ofrece reintentar.
+- **Un token emitido en el mismo segundo del corte de invalidación seguía siendo válido.** Al
+  cambiar contraseña/correo/status, el rechazo comparaba `iat < corte`, así que un token con
+  `iat` igual al corte (mismo segundo epoch) sobrevivía a una invalidación que prometía cerrarlo.
+  La comparación ahora es inclusiva (`iat <= corte`).
+- **Contraseñas mayores a 72 bytes UTF-8 causaban un 500 en vez de un rechazo.** bcrypt 5 lanza
+  `ValueError` en vez de truncar más allá de ese límite, y ni el registro, el login, el alta de
+  usuario ni el `PATCH` lo validaban antes de llamar a bcrypt. Ahora las cuatro rutas comparten un
+  único validador que rechaza con 422 antes de llegar al hash/check.
+- **Un `code_verifier` PKCE no-ASCII causaba un 500 en vez de un rechazo.** `verify_pkce` codificaba
+  el verifier directamente como ASCII, así que un valor con caracteres fuera de ese rango lanzaba
+  `UnicodeEncodeError` sin capturar. Ahora se valida primero contra el alfabeto y la longitud de
+  [RFC 7636 §4.1](https://www.rfc-editor.org/rfc/rfc7636.html#section-4.1) (43–128 caracteres
+  "unreserved"): fuera de ese formato, el canje responde 400 igual que un verifier incorrecto.
+- **Un fallo al borrar un rol podía dejarlo a medias.** `RoleService.delete_role` confirmaba por
+  separado cada limpieza de relaciones (permisos, usuarios, grupos) y el borrado del rol; si algo
+  fallaba entre medio, las relaciones ya borradas no se recuperaban aunque el rol siguiera vivo (o
+  viceversa). Ahora las cuatro operaciones comparten una sola transacción: si algo falla, el
+  rollback automático revierte todo y no queda ningún estado intermedio.
+- **Un fallo al emitir tokens dejaba el authorization code quemado sin entregar nada.** El canje
+  confirmaba el reclamo del código (`used=True`) en un commit separado de la emisión y persistencia
+  del refresh token; si algo fallaba entre medio, el código quedaba consumido para siempre sin que
+  el cliente recibiera tokens. Ahora ambas operaciones comparten una sola transacción: si falla la
+  emisión, el reclamo también se revierte y el código sigue disponible.
+- **Un `full_name` más largo que la columna de BD no se rechazaba en el borde.** Los modelos
+  SQLModel `table=True` no validan `max_length` en runtime (solo lo usan para el DDL), así que un
+  `full_name` mayor a 255 caracteres pasaba sin error en el registro, el alta admin o el `PATCH`
+  de usuarios. Ahora los tres esquemas de entrada rechazan con 422 lo que exceda los 255
+  caracteres de `User.full_name`, y también exigen un mínimo de 6 caracteres.
+- **BREAKING · `GET /api/v1/me/permissions` ya no filtra los permisos de otra aplicación.**
+  El parámetro `application` de la query nunca se comparaba contra la audiencia del token, así que
+  un access token emitido para la aplicación A podía pedir `application=B` y recibir los
+  permisos/roles reales del usuario en B —una aplicación para la que ese token nunca fue
+  autorizado— si el usuario los tenía asignados aparte
+  ([RFC 9700 §2.3](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.3)). Ahora se rechaza con
+  403: un access token solo puede consultar la app de su `aud`, y un token dev solo las de su
+  claim `applications`. **Migración:** un consumidor que hoy consulte una aplicación distinta a la
+  suya recibirá 403 en vez de los permisos ajenos.
+- **`/.well-known/openid-configuration` no coincidía con el runtime.** No anunciaba
+  `revocation_endpoint` aunque `/auth/revoke` ya existe, y `claims_supported` listaba `roles`/
+  `permissions` (que solo viven en el access token, nunca en el id_token ni en `/userinfo`) y
+  omitía `preferred_username`, `email_verified`, `auth_time` y `nonce` (que sí se emiten). Ahora
+  el documento de descubrimiento describe exactamente lo que el servidor soporta.
+- **Dos altas concurrentes podían dejar un rol, permiso o redirect URI duplicado dentro de
+  la misma aplicación.** Las altas por API y la importación de manifiestos comprobaban con un
+  `SELECT` antes de insertar, sin que la base garantizara la unicidad: dos requests (o dos
+  importaciones del mismo manifiesto) podían pasar ambas la comprobación antes de que ninguna
+  confirmara. Ahora `roles`, `permissions` y `redirect_uris` tienen un constraint único por
+  `(aplicación, slug/uri)`; una migración concilia primero los duplicados que ya existieran
+  (conserva la fila más antigua y repunta sus asignaciones), y las cuatro rutas de escritura
+  traducen la carrera restante a 409 en vez de un 500 sin manejar.
+
 ## [0.4.0] - 2026-07-22
 
 > **Estado del release.** 0.4.0 es un checkpoint de integración, **no** la versión 1.0.0
 > publicable. Cierra riesgos graves que seguían vivos en `main` (escalada administrativa vía
 > `/api/v1`, revocación volátil en Redis, JWT del panel en `localStorage`, confusión de clases
-> de token). Quedan pendientes conocidos, documentados en `docs/auditoria-claude.md`,
-> `docs/auditoria-codex.md` y `docs/retrospectiva-remediacion-1.0.0.md`: entre ellos el
-> `redirect_uri` de logout sin validar, el cruce de audiencia en `/api/v1/me/permissions`,
-> `max_age` no transportado por la SPA, la invalidación por usuario en el mismo segundo y la
-> unificación de la URL de base de datos entre runtime y Alembic. No debe leerse este tag como
-> cierre del contrato 1.0.
+> de token). Quedan pendientes conocidos de endurecimiento —entre ellos el `redirect_uri` de
+> logout sin validar, el cruce de audiencia en `/api/v1/me/permissions`, `max_age` no
+> transportado por la SPA, la invalidación por usuario emitida en el mismo segundo y la
+> unificación de la URL de base de datos entre runtime y Alembic—, por lo que este tag no debe
+> leerse como cierre del contrato 1.0.
 
 ### Changed
 

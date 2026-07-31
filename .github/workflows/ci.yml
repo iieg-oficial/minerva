@@ -38,8 +38,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: ruff check .
-      - run: ruff format --check .
+      - run: ruff check minerva_sdk tests
+      - run: ruff format --check minerva_sdk tests
       - run: pytest tests/ -v # doble de httpx, sin red
 
   frontend:

@@ -1,5 +1,6 @@
 import uuid
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.exceptions import ConflictError, NotFoundError
@@ -124,7 +125,13 @@ class ApplicationService:
             raise ConflictError(detail="Esa URI ya está registrada para esta aplicación")
 
         uri = RedirectURI(application_id=app_id, uri=data.uri, environment=data.environment)
-        uri = self.redirect_repo.create(uri)
+        try:
+            uri = self.redirect_repo.create(uri)
+        except IntegrityError:
+            # Ver RoleService.create_role: la comprobación previa no cierra la carrera
+            # entre dos altas concurrentes; el constraint de BD sí (issue #76).
+            self.session.rollback()
+            raise ConflictError(detail="Esa URI ya está registrada para esta aplicación")
         return RedirectURIRead.model_validate(uri)
 
     def list_redirect_uris(self, app_id: str) -> list[RedirectURIRead]:

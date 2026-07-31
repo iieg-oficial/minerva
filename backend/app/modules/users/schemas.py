@@ -1,22 +1,25 @@
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+
+from app.shared.validators import validate_password_max_bytes
 
 
 class UserBase(BaseModel):
     email: str
-    full_name: str
+    full_name: str = Field(min_length=6, max_length=255)
 
 
 class UserCreate(UserBase):
-    password: str = Field(min_length=8)
+    password: Annotated[str, Field(min_length=8), AfterValidator(validate_password_max_bytes)]
     domain: str | None = None
 
 
 class UserUpdate(BaseModel):
-    full_name: str | None = None
+    full_name: str | None = Field(default=None, min_length=6, max_length=255)
     email: str | None = None
-    password: str | None = Field(default=None, min_length=8)
+    password: Annotated[str | None, Field(min_length=8), AfterValidator(validate_password_max_bytes)] = None
     status: str | None = None
     domain: str | None = None
 

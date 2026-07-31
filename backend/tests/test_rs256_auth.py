@@ -87,3 +87,33 @@ def test_garbage_token_rejected(client):
         headers={"Authorization": "Bearer no-es-un-jwt"},
     )
     assert resp.status_code == 401
+
+
+def test_access_token_rejects_permissions_for_other_application(client, ctx):
+    """Issue #64: un access token con aud=A no debe poder consultar permisos de B,
+    aunque el usuario SÍ tenga un rol/permiso real ahí (fuga de entitlements)."""
+    from app.modules.groups.models import UserRole
+    from app.modules.permissions.models import Permission, RolePermission
+    from app.modules.roles.models import Role
+
+    with Session(test_engine) as session:
+        app_b = Application(name="RS256 App B", slug="rs256-app-b", status="active")
+        session.add(app_b)
+        session.flush()
+        role_b = Role(application_id=app_b.id, name="Member B", slug="member-b")
+        session.add(role_b)
+        session.flush()
+        session.add(UserRole(user_id=ctx["user_id"], role_id=role_b.id))
+        perm_b = Permission(application_id=app_b.id, name="Secreto", slug="rs256-app-b.secreto.view")
+        session.add(perm_b)
+        session.flush()
+        session.add(RolePermission(role_id=role_b.id, permission_id=perm_b.id))
+        session.commit()
+
+    tokens = _tokens(client, ctx)
+    resp = client.get(
+        "/api/v1/me/permissions?application=rs256-app-b",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 403
+    assert "rs256-app-b.secreto.view" not in resp.text

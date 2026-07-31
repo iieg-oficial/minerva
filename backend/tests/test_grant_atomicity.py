@@ -3,7 +3,7 @@
 import pytest
 from sqlmodel import Session, select
 
-from app.core.exceptions import ForbiddenError
+from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import hash_secret, hash_token
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.auth.repository import RefreshTokenRepository
@@ -106,7 +106,7 @@ def test_canje_rechaza_app_inactiva(app_ctx):
     _set_app_status(app_ctx["client_id"], "inactive")
 
     with Session(test_engine) as session:
-        with pytest.raises(ForbiddenError):
+        with pytest.raises(UnauthorizedError):
             AuthService(session).exchange_token(app_ctx["client_id"], code, REDIRECT_URI, client_secret=CLIENT_SECRET)
 
     # El código sigue sin usarse: la app inactiva se rechaza antes del reclamo.
@@ -126,6 +126,25 @@ def test_canje_rechaza_usuario_inactivo(app_ctx):
         assert AuthService(session).auth_code_repo.get_by_code(code) is not None
 
 
+def test_fallo_al_emitir_tokens_revierte_el_reclamo_del_codigo(app_ctx, monkeypatch):
+    """Issue #74: si algo falla entre mark_used y la persistencia del refresh, el
+    código no debe quedar quemado sin haber entregado tokens."""
+    code = _issue_code(app_ctx)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("fallo simulado tras el reclamo")
+
+    monkeypatch.setattr("app.modules.auth.service.create_access_token_rs256", _boom)
+
+    with Session(test_engine) as session:
+        with pytest.raises(RuntimeError):
+            AuthService(session).exchange_token(app_ctx["client_id"], code, REDIRECT_URI, client_secret=CLIENT_SECRET)
+
+    # El rollback automático de session.close() revierte used=True: el código sigue vivo.
+    with Session(test_engine) as session:
+        assert AuthService(session).auth_code_repo.get_by_code(code) is not None
+
+
 def test_refresh_rechaza_app_inactiva(app_ctx):
     code = _issue_code(app_ctx)
     with Session(test_engine) as session:
@@ -137,5 +156,5 @@ def test_refresh_rechaza_app_inactiva(app_ctx):
     _set_app_status(app_ctx["client_id"], "inactive")
 
     with Session(test_engine) as session:
-        with pytest.raises(ForbiddenError):
+        with pytest.raises(UnauthorizedError):
             AuthService(session).rotate_refresh_token(app_ctx["client_id"], raw_refresh, client_secret=CLIENT_SECRET)

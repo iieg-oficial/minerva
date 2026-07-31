@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from redis.asyncio import Redis
 from sqlmodel import Session
 
@@ -16,7 +16,7 @@ from app.core.dependencies.auth import (
     get_panel_session,
 )
 from app.core.dependencies.db import get_db
-from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError, TooManyRequestsError
+from app.core.exceptions import AppException, BadRequestError, ForbiddenError, NotFoundError, TooManyRequestsError
 from app.core.rate_limit import enforce_rate_limit
 from app.core.redis import get_redis
 from app.core.token_blacklist import revoke_jti
@@ -421,9 +421,21 @@ async def _blacklist_jtis_then_commit(service: AuthService, redis: Redis, jtis: 
     await asyncio.to_thread(service.session.commit)
 
 
+def _oauth_error_response(exc: AppException) -> JSONResponse:
+    """Contrato de error OAuth de /auth/token (RFC 6749 §5.2, issue #78): siempre 400
+    (aquí el cliente nunca se autentica vía header Authorization, así que el 401
+    opcional de invalid_client no aplica). `detail` se conserva junto a
+    `error`/`error_description` para no romper a quien ya parseaba solo `detail`."""
+    return JSONResponse(
+        status_code=400,
+        content={"error": exc.oauth_error, "error_description": exc.detail, "detail": exc.detail},
+    )
+
+
 @router.post("/token", response_model=AuthTokenResponse)
 async def token_exchange(
     request: Request,
+    response: Response,
     service: AuthService = Depends(get_auth_service),
     audit: AuditService = Depends(get_audit_service),
     redis: Redis = Depends(get_redis),
@@ -431,48 +443,66 @@ async def token_exchange(
     body = await _read_token_request(request)
     grant_type = body.get("grant_type", "authorization_code")
 
-    if grant_type == "refresh_token":
-        client_id = body.get("client_id")
-        client_secret = body.get("client_secret")  # opcional: ausente en clientes públicos
-        refresh_token = body.get("refresh_token")
-        if not client_id or not refresh_token:
-            raise BadRequestError(detail="Faltan parámetros requeridos para refrescar el token")
-        # Fail-closed: la rotación (marcar rotado + emitir el nuevo refresh) queda pendiente
-        # en PG; se blacklistea el access_jti viejo en Redis y solo entonces se confirma. Si
-        # Redis falla, rollback → el refresh original NO queda rotado a medias (el cliente
-        # reintenta limpio). En reúso, se blacklistean los jtis de la familia antes de confirmar.
-        # A threadpool: el reclamo (FOR UPDATE NOWAIT + UPDATE) toma un lock de fila en PG que
-        # queda abierto hasta el commit posterior a Redis; ejecutarlo síncrono sobre el event
-        # loop bloquearía TODO el loop mientras espera ese lock, impidiendo que la request que
-        # ya lo tiene (esperando en el await a Redis de arriba) pueda avanzar a comitear. NOWAIT
-        # hace además que un contendiente concurrente falle al instante (RefreshRotationInProgressError,
-        # 409, sin tocar la familia) en vez de bloquear su propio hilo del threadpool esperando
-        # el lock; solo un reúso genuino de un token ya rotado revoca la familia (RefreshReuseError).
-        try:
-            result, revoked_jtis = await asyncio.to_thread(
-                service.rotate_refresh_token, client_id, refresh_token, client_secret=client_secret, commit=False
+    try:
+        if grant_type == "refresh_token":
+            client_id = body.get("client_id")
+            client_secret = body.get("client_secret")  # opcional: ausente en clientes públicos
+            refresh_token = body.get("refresh_token")
+            if not client_id or not refresh_token:
+                raise BadRequestError(
+                    detail="Faltan parámetros requeridos para refrescar el token", oauth_error="invalid_request"
+                )
+            # Fail-closed: la rotación (marcar rotado + emitir el nuevo refresh) queda pendiente
+            # en PG; se blacklistea el access_jti viejo en Redis y solo entonces se confirma. Si
+            # Redis falla, rollback → el refresh original NO queda rotado a medias (el cliente
+            # reintenta limpio). En reúso, se blacklistean los jtis de la familia antes de confirmar.
+            # A threadpool: el reclamo (FOR UPDATE NOWAIT + UPDATE) toma un lock de fila en PG que
+            # queda abierto hasta el commit posterior a Redis; ejecutarlo síncrono sobre el event
+            # loop bloquearía TODO el loop mientras espera ese lock, impidiendo que la request que
+            # ya lo tiene (esperando en el await a Redis de arriba) pueda avanzar a comitear. NOWAIT
+            # hace además que un contendiente concurrente falle al instante (RefreshRotationInProgressError,
+            # 409, sin tocar la familia) en vez de bloquear su propio hilo del threadpool esperando
+            # el lock; solo un reúso genuino de un token ya rotado revoca la familia (RefreshReuseError).
+            try:
+                result, revoked_jtis = await asyncio.to_thread(
+                    service.rotate_refresh_token, client_id, refresh_token, client_secret=client_secret, commit=False
+                )
+            except RefreshReuseError as reuse:
+                await _blacklist_jtis_then_commit(service, redis, reuse.blacklist_jtis)
+                raise
+            await _blacklist_jtis_then_commit(service, redis, revoked_jtis)
+            audit.log(
+                "token_refresh_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent")
             )
-        except RefreshReuseError as reuse:
-            await _blacklist_jtis_then_commit(service, redis, reuse.blacklist_jtis)
+        elif grant_type == "authorization_code":
+            client_id = body.get("client_id")
+            client_secret = body.get("client_secret")  # opcional: ausente en clientes públicos
+            code = body.get("code")
+            redirect_uri = body.get("redirect_uri")
+            if not all([client_id, code, redirect_uri]):
+                raise BadRequestError(
+                    detail="Faltan parámetros requeridos para el canje del código", oauth_error="invalid_request"
+                )
+            result = service.exchange_token(
+                client_id, code, redirect_uri, client_secret=client_secret, code_verifier=body.get("code_verifier")
+            )
+            audit.log(
+                "token_exchange_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent")
+            )
+        else:
+            raise BadRequestError(
+                detail="grant_type no soportado; use authorization_code o refresh_token",
+                oauth_error="unsupported_grant_type",
+            )
+    except AppException as exc:
+        if exc.oauth_error is None:
             raise
-        await _blacklist_jtis_then_commit(service, redis, revoked_jtis)
-        audit.log("token_refresh_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
-        return result
+        return _oauth_error_response(exc)
 
-    if grant_type != "authorization_code":
-        raise BadRequestError(detail="grant_type no soportado; use authorization_code o refresh_token")
-
-    client_id = body.get("client_id")
-    client_secret = body.get("client_secret")  # opcional: ausente en clientes públicos
-    code = body.get("code")
-    redirect_uri = body.get("redirect_uri")
-    if not all([client_id, code, redirect_uri]):
-        raise BadRequestError(detail="Faltan parámetros requeridos para el canje del código")
-
-    result = service.exchange_token(
-        client_id, code, redirect_uri, client_secret=client_secret, code_verifier=body.get("code_verifier")
-    )
-    audit.log("token_exchange_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
+    # RFC 6749 §5.1: toda respuesta exitosa del token endpoint lleva tokens y no debe
+    # cachearse (issue #79). Un solo punto para ambos grants, tras converger aquí.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return result
 
 

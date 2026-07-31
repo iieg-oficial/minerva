@@ -32,6 +32,14 @@ def test_discovery_document_shape(client):
     # Anuncia lo que el servidor realmente soporta: PKCE S256 y refresh tokens.
     assert doc["code_challenge_methods_supported"] == ["S256"]
     assert "refresh_token" in doc["grant_types_supported"]
+    # /auth/revoke existe (RFC 7009): debe descubrirse, no quedar implícito.
+    assert doc["revocation_endpoint"].endswith("/auth/revoke")
+    # claims_supported debe reflejar lo que realmente emiten id_token/userinfo.
+    for claim in ("preferred_username", "email_verified", "auth_time", "nonce"):
+        assert claim in doc["claims_supported"]
+    # roles/permissions son del access token, nunca del id_token ni de /userinfo.
+    assert "roles" not in doc["claims_supported"]
+    assert "permissions" not in doc["claims_supported"]
 
 
 def test_jwks_endpoint_publishes_public_key(client):

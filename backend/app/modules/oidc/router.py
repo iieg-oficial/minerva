@@ -34,6 +34,7 @@ def _build_discovery() -> OpenIDConfiguration:
         token_endpoint=f"{issuer}/auth/token",
         userinfo_endpoint=f"{issuer}/userinfo",
         jwks_uri=f"{issuer}/.well-known/jwks.json",
+        revocation_endpoint=f"{issuer}/auth/revoke",
         response_types_supported=["code"],
         grant_types_supported=["authorization_code", "refresh_token"],
         subject_types_supported=["public"],
@@ -41,7 +42,19 @@ def _build_discovery() -> OpenIDConfiguration:
         scopes_supported=["openid", "profile", "email"],
         token_endpoint_auth_methods_supported=["client_secret_post", "none"],
         code_challenge_methods_supported=["S256"],
-        claims_supported=["sub", "iss", "aud", "exp", "iat", "email", "name", "roles", "permissions"],
+        claims_supported=[
+            "sub",
+            "iss",
+            "aud",
+            "exp",
+            "iat",
+            "auth_time",
+            "name",
+            "preferred_username",
+            "email",
+            "email_verified",
+            "nonce",
+        ],
     )
 
 

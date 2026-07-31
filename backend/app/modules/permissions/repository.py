@@ -72,8 +72,8 @@ class RolePermissionRepository:
         statement = select(RolePermission).where(RolePermission.permission_id == perm_id)
         return self.session.exec(statement).all()
 
-    def remove_all_for_role(self, role_id: str) -> None:
+    def remove_all_for_role(self, role_id: str, commit: bool = True) -> None:
         links = self.session.exec(select(RolePermission).where(RolePermission.role_id == role_id)).all()
         for link in links:
             self.session.delete(link)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()

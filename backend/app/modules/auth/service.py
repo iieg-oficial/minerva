@@ -79,7 +79,7 @@ class RefreshReuseError(BadRequestError):
     confirmar la revocación en PG (fail-closed), y luego devuelva el error 400."""
 
     def __init__(self, blacklist_jtis: list[str], detail: str):
-        super().__init__(detail=detail)
+        super().__init__(detail=detail, oauth_error="invalid_grant")
         self.blacklist_jtis = blacklist_jtis
 
 
@@ -305,6 +305,57 @@ class AuthService:
         )
         return build_callback_url(redirect_uri, code=auth_code.code, state=state), None
 
+    def _authenticate_client(self, client_id: str, client_secret: str | None):
+        """Autentica al cliente OAuth y devuelve su aplicación: existencia, estado y
+        `client_secret`. Los tres fallos son `invalid_client` (RFC 6749 §5.2), así que
+        comparten clase y código. Lo usan el canje del código y la rotación del refresh,
+        que exigen exactamente lo mismo; `/auth/revoke` no, porque es idempotente por
+        diseño y no valida el estado de la aplicación."""
+        app = self.app_service.get_application_by_client_id(client_id)
+        if not app:
+            raise UnauthorizedError(detail="Aplicación no encontrada", oauth_error="invalid_client")
+        if app.status != "active":
+            raise UnauthorizedError(detail="Aplicación inactiva", oauth_error="invalid_client")
+        if app.client_secret_hash is not None:
+            if not client_secret or not verify_secret(client_secret, app.client_secret_hash):
+                raise UnauthorizedError(detail="client_secret inválido", oauth_error="invalid_client")
+        return app
+
+    def _validate_auth_code(self, code: str, client_id: str, redirect_uri: str, code_verifier: str | None):
+        """Valida el authorization code y lo devuelve sin reclamarlo: existencia,
+        pertenencia al cliente y al `redirect_uri` con que se emitió (RFC 6749 §4.1.3),
+        vigencia y PKCE."""
+        auth_code = self.auth_code_repo.get_by_code(code)
+        if not auth_code:
+            raise BadRequestError(detail="Código de autorización inválido o ya usado", oauth_error="invalid_grant")
+
+        # El código está ligado al client y al redirect_uri con que se emitió:
+        # ambos deben coincidir exactamente en el canje (RFC 6749 §4.1.3).
+        if auth_code.client_id != client_id:
+            raise BadRequestError(detail="El código no pertenece a esta aplicación", oauth_error="invalid_grant")
+        if auth_code.redirect_uri != redirect_uri:
+            raise BadRequestError(detail="redirect_uri no coincide con el del código", oauth_error="invalid_grant")
+
+        if datetime.now(timezone.utc) > as_utc(auth_code.expires_at):
+            raise BadRequestError(detail="Código de autorización expirado", oauth_error="invalid_grant")
+
+        # PKCE: si el código se emitió con challenge, exige un verifier válido.
+        if auth_code.code_challenge is not None:
+            if not code_verifier:
+                raise BadRequestError(detail="code_verifier requerido (PKCE)", oauth_error="invalid_request")
+            if not verify_pkce(code_verifier, auth_code.code_challenge):
+                raise BadRequestError(detail="code_verifier inválido (PKCE)", oauth_error="invalid_grant")
+        return auth_code
+
+    def _get_active_user(self, user_id: str):
+        """Usuario vigente del grant. Un usuario borrado y uno inactivo invalidan el
+        grant igual y no se distinguen en la respuesta: la diferencia solo serviría
+        para sondear qué cuentas existen."""
+        user = self.user_repo.get_by_id(user_id)
+        if not user or user.status != "active":
+            raise ForbiddenError(detail="Usuario inválido o inactivo", oauth_error="invalid_grant")
+        return user
+
     def exchange_token(
         self,
         client_id: str,
@@ -313,48 +364,18 @@ class AuthService:
         client_secret: str | None = None,
         code_verifier: str | None = None,
     ) -> dict:
-        app = self.app_service.get_application_by_client_id(client_id)
-        if not app:
-            raise BadRequestError(detail="Aplicación no encontrada")
-        if app.status != "active":
-            raise ForbiddenError(detail="Aplicación inactiva")
-
-        if app.client_secret_hash is not None:
-            if not client_secret or not verify_secret(client_secret, app.client_secret_hash):
-                raise ForbiddenError(detail="client_secret inválido")
-        elif not code_verifier:
+        app = self._authenticate_client(client_id, client_secret)
+        if app.client_secret_hash is None and not code_verifier:
             # Cliente público: sin secret, PKCE es obligatorio en el canje.
-            raise BadRequestError(detail="code_verifier requerido (PKCE) para clientes públicos")
+            raise BadRequestError(
+                detail="code_verifier requerido (PKCE) para clientes públicos", oauth_error="invalid_request"
+            )
 
-        auth_code = self.auth_code_repo.get_by_code(code)
-        if not auth_code:
-            raise BadRequestError(detail="Código de autorización inválido o ya usado")
+        auth_code = self._validate_auth_code(code, client_id, redirect_uri, code_verifier)
+        user = self._get_active_user(auth_code.user_id)
 
-        # El código está ligado al client y al redirect_uri con que se emitió:
-        # ambos deben coincidir exactamente en el canje (RFC 6749 §4.1.3).
-        if auth_code.client_id != client_id:
-            raise BadRequestError(detail="El código no pertenece a esta aplicación")
-        if auth_code.redirect_uri != redirect_uri:
-            raise BadRequestError(detail="redirect_uri no coincide con el del código")
-
-        if datetime.now(timezone.utc) > as_utc(auth_code.expires_at):
-            raise BadRequestError(detail="Código de autorización expirado")
-
-        # PKCE: si el código se emitió con challenge, exige un verifier válido.
-        if auth_code.code_challenge is not None:
-            if not code_verifier:
-                raise BadRequestError(detail="code_verifier requerido (PKCE)")
-            if not verify_pkce(code_verifier, auth_code.code_challenge):
-                raise BadRequestError(detail="code_verifier inválido (PKCE)")
-
-        user = self.user_repo.get_by_id(auth_code.user_id)
-        if not user:
-            raise NotFoundError(detail="Usuario no encontrado")
-        if user.status != "active":
-            raise ForbiddenError(detail="Usuario inactivo")
-
-        if not self.auth_code_repo.mark_used(auth_code):
-            raise BadRequestError(detail="Código de autorización inválido o ya usado")
+        if not self.auth_code_repo.mark_used(auth_code, commit=False):
+            raise BadRequestError(detail="Código de autorización inválido o ya usado", oauth_error="invalid_grant")
 
         all_perms, all_role_slugs = self._get_user_permissions(user.id, app.slug)
         return self._issue_tokens(
@@ -448,14 +469,7 @@ class AuthService:
         revocado (posible robo), revoca toda la familia y lanza RefreshReuseError.
         commit=False deja la rotación (o la revocación de familia) pendiente para que el
         router la confirme tras blacklistear en Redis (fail-closed)."""
-        app = self.app_service.get_application_by_client_id(client_id)
-        if not app:
-            raise BadRequestError(detail="Aplicación no encontrada")
-        if app.status != "active":
-            raise ForbiddenError(detail="Aplicación inactiva")
-        if app.client_secret_hash is not None:
-            if not client_secret or not verify_secret(client_secret, app.client_secret_hash):
-                raise ForbiddenError(detail="client_secret inválido")
+        app = self._authenticate_client(client_id, client_secret)
 
         # FOR UPDATE NOWAIT (no-op en SQLite): si otra rotación de ESTE MISMO token está
         # en curso ahora mismo, falla rápido en vez de esperar su commit. Eso es
@@ -465,9 +479,9 @@ class AuthService:
         except RefreshTokenRowLocked:
             raise RefreshRotationInProgressError()
         if not refresh:
-            raise BadRequestError(detail="refresh token inválido")
+            raise BadRequestError(detail="refresh token inválido", oauth_error="invalid_grant")
         if refresh.client_id != client_id:
-            raise BadRequestError(detail="El refresh token no pertenece a esta aplicación")
+            raise BadRequestError(detail="El refresh token no pertenece a esta aplicación", oauth_error="invalid_grant")
 
         if refresh.status != "active":
             # Con el lock ya adquirido arriba, esto no es una carrera en curso: es un
@@ -479,11 +493,9 @@ class AuthService:
 
         if datetime.now(timezone.utc) > as_utc(refresh.expires_at):
             self.refresh_repo.revoke(refresh)
-            raise BadRequestError(detail="refresh token expirado")
+            raise BadRequestError(detail="refresh token expirado", oauth_error="invalid_grant")
 
-        user = self.user_repo.get_by_id(refresh.user_id)
-        if not user or user.status != "active":
-            raise ForbiddenError(detail="Usuario inválido o inactivo")
+        user = self._get_active_user(refresh.user_id)
 
         if not self.refresh_repo.mark_rotated(refresh, commit=False):
             # Inalcanzable en la práctica: ya tenemos el lock de fila desde

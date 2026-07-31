@@ -227,7 +227,7 @@ app.mount("/userinfo", userinfo_app)
 def root():
     return {
         "name": settings.APP_NAME,
-        "version": "0.4.0",
+        "version": "0.5.0",
     }
 
 

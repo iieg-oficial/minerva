@@ -1,3 +1,4 @@
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.exceptions import ConflictError, NotFoundError
@@ -37,7 +38,13 @@ class RoleService:
             raise ConflictError(detail="Ya existe un rol con ese slug en esta aplicación")
 
         role = Role(application_id=app_id, name=data.name, slug=data.slug, description=data.description)
-        role = self.repo.create(role)
+        try:
+            role = self.repo.create(role)
+        except IntegrityError:
+            # La comprobación previa no cierra la carrera entre dos altas concurrentes;
+            # el constraint de BD (issue #76) sí, y aquí se traduce a un 409 legible.
+            self.session.rollback()
+            raise ConflictError(detail="Ya existe un rol con ese slug en esta aplicación")
         return RoleRead.model_validate(role)
 
     def update_role(self, role_id: str, data: RoleUpdate) -> RoleRead:
@@ -57,10 +64,12 @@ class RoleService:
         role = self.repo.get_by_id(role_id)
         if not role:
             raise NotFoundError(detail="Rol no encontrado")
-        # Elimina primero las relaciones para no violar llaves foráneas
-        self.role_perm_repo.remove_all_for_role(role_id)
-        self.user_role_repo.remove_all_for_role(role_id)
-        self.group_role_repo.remove_all_for_role(role_id)
+        # Elimina primero las relaciones para no violar llaves foráneas. Sin confirmar
+        # (commit=False): si algo falla antes del borrado final, el rollback automático de
+        # session.close() revierte todo el borrado en bloque (issue #75).
+        self.role_perm_repo.remove_all_for_role(role_id, commit=False)
+        self.user_role_repo.remove_all_for_role(role_id, commit=False)
+        self.group_role_repo.remove_all_for_role(role_id, commit=False)
         self.repo.delete(role)
 
     def list_users_for_role(self, role_id: str) -> list[UserRead]:

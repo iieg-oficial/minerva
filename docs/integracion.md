@@ -178,6 +178,16 @@ Sobre la respuesta de `/authorize`:
 > **Logout de Minerva.** `POST /auth/logout` (con el `access_token` en el header) revoca el token
 > del lado del servidor: a partir de ese momento Minerva ya no lo acepta, así que un `/authorize`
 > posterior no re-autentica en silencio con esa sesión. Es independiente del logout de tu propia app.
+>
+> **Logout redirigido (`GET {panel}/logout?redirect_uri=...`).** Cierra la cuenta activa del panel
+> (logout **suave**: no revoca el token, a diferencia de `POST /auth/logout`) y luego navega al
+> destino. `redirect_uri` acepta **solo rutas internas del panel** (`/login`, `/admin/users`…):
+> cualquier URL externa —absoluta, protocol-relative o con caracteres de escape— se descarta y el
+> usuario termina en `/login`. Los destinos externos exigen registro previo de
+> `post_logout_redirect_uris` ([RP-Initiated Logout §2](https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout)),
+> que Minerva aún no implementa. Si tu app necesita volver a sí misma, cierra primero tu sesión y
+> redirige al panel al final. Además, si el logout falla, la página **no** redirige: muestra el error
+> y ofrece reintentar, para no aparentar un cierre de sesión que no ocurrió.
 
 ### 3.2 Canjear el código (tu backend → Minerva, servidor-a-servidor)
 
@@ -216,6 +226,21 @@ curl -X POST {MINERVA_ISSUER}/auth/token \
 El refresh token devuelto en la respuesta **reemplaza** al anterior (rotación): guarda
 siempre el más reciente. Si reutilizas uno ya rotado, Minerva revoca toda la familia de
 tokens — trátalo como de un solo uso.
+
+### 3.4 Errores del canje
+
+Los errores de `/auth/token` siguen el contrato de RFC 6749 §5.2: status 400 y un cuerpo con
+`error` (uno de `invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type`) y
+`error_description`. Programa contra `error`, no contra `detail` (que se conserva por
+compatibilidad, pero es solo texto para humanos):
+
+```json
+{
+  "error": "invalid_grant",
+  "error_description": "Código de autorización inválido o ya usado",
+  "detail": "Código de autorización inválido o ya usado"
+}
+```
 
 > **Revocación server-side al cambiar credenciales.** Si el administrador cambia la
 > contraseña o el correo del usuario, o lo desactiva, Minerva revoca de inmediato sus

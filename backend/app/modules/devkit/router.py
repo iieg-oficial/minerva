@@ -50,4 +50,4 @@ def me_permissions(
     discovery OIDC. Para la vista interna del panel admin (objetos completos) ver
     `GET /authorization/me/permissions`.
     """
-    return service.get_me_permissions(current_user["sub"], application)
+    return service.get_me_permissions(current_user, application)
