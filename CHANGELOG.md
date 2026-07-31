@@ -7,6 +7,12 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-31
+
+> **Estado del release.** 0.5.0 publica el trabajo ya integrado desde 0.4.0 como un checkpoint
+> previo a 1.0.0. Incluye correcciones de seguridad, atomicidad, concurrencia y conformidad
+> OAuth/OIDC; no implica que los pendientes del milestone 1.0.0 estén cerrados.
+
 ### Fixed
 
 - **`/auth/token` no devolvía un error OAuth programable.** Sus errores (grant desconocido, código
