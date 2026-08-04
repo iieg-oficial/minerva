@@ -118,7 +118,8 @@ Implicaciones:
 - `MINERVA_ISSUER` / `MINERVA_JWT_ISSUER`: URL pública real de Minerva = **el host de nginx, sin
   `:9000`** (p. ej. `http://minerva.jalisco.gob.mx`; `https://…` al tener certificado). Aparece como
   `iss` en cada token y en el discovery; debe coincidir con lo que ven los consumidores.
-- `FRONTEND_URL`: mismo host público del panel (entra en la whitelist de CORS).
+- `FRONTEND_URL`: **debe ser el mismo host público** que `MINERVA_ISSUER`/`MINERVA_JWT_ISSUER`. La
+  cookie `__Host-` es host-only: dos dominios distintos rompen el BFF (401 silencioso).
 - `MINERVA_ACCESS_TOKEN_TTL_MINUTES` / `MINERVA_REFRESH_TOKEN_TTL_DAYS`: ciclo de vida
   de los tokens OIDC emitidos a consumidores.
 - `RATE_LIMIT_LOGIN_MAX` / `RATE_LIMIT_LOGIN_WINDOW` / `RATE_LIMIT_AUTHORIZE_MAX` /
