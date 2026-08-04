@@ -159,9 +159,7 @@ class Settings(BaseSettings):
             problems.append("JWT_SECRET_KEY sigue en su valor default")
         if not self.MINERVA_KEY_ENCRYPTION_KEY:
             problems.append("MINERVA_KEY_ENCRYPTION_KEY vacía (obligatoria fuera de modo dev)")
-        # La cookie de sesión del panel usa el prefijo `__Host-`, que es host-only: si el
-        # panel y el issuer viven en hosts distintos, la cookie nunca viaja al API y el
-        # login falla con un 401 mudo. Un solo origen público (nginx consolidado) o nada.
+        # La cookie `__Host-` es host-only: con hosts distintos no viaja al API (401 mudo).
         frontend_host = _public_host(self.FRONTEND_URL)
         for name, url in (("MINERVA_ISSUER", self.MINERVA_ISSUER), ("MINERVA_JWT_ISSUER", self.effective_jwt_issuer)):
             if _public_host(url) != frontend_host:
