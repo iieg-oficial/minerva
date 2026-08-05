@@ -60,6 +60,18 @@ servidor compartido — compatible con la futura Minerva Central del instituto.
 | [`examples/godin-consumer/`](examples/godin-consumer) | Integración de referencia completa con el SDK |
 | [`docs/`](docs) | Arquitectura, glosario OIDC, despliegue e integración — ver abajo |
 
+## 🏷️ Versionado
+
+La versión del proyecto es la de [`backend/pyproject.toml`](backend/pyproject.toml), y es la misma
+que el tag de release (`vX.Y.Z`) y la etiqueta de las imágenes en ghcr. El backend la reporta en
+`GET /` y en `/openapi.json` leyéndola del paquete instalado; el badge de arriba,
+`.env.production.example` y `frontend/package.json` la repiten, y
+`backend/tests/test_version_alignment.py` falla si alguna se queda atrás.
+
+**`minerva_sdk` versiona por su cuenta** ([`sdk/pyproject.toml`](sdk/pyproject.toml)): lo instalan
+sistemas consumidores con su propio ritmo de actualización, así que su número no sigue al del
+servidor. La diferencia es deliberada, no un descuido.
+
 ## 📚 Guías
 
 Este README es la portada; el detalle técnico vive en `docs/` para no duplicarse ni quedar viejo:

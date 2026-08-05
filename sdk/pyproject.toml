@@ -4,6 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minerva-sdk"
+# Ciclo de versionado propio, independiente del servidor (ver "Versionado" en el README
+# raíz): no tiene por qué coincidir con backend/pyproject.toml.
 version = "0.2.0"
 description = "SDK mínimo de Minerva para sistemas consumidores (FastAPI)"
 requires-python = ">=3.10"

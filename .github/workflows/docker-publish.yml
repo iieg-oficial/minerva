@@ -21,8 +21,21 @@ jobs:
     permissions:
       contents: read # el CI no necesita `packages: write`; no se le hereda
 
+  version:
+    # El tag es la fuente de la versión publicada: si no coincide con la del paquete, las
+    # imágenes saldrían etiquetadas con una versión que el propio backend no reporta.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          pkg=$(grep -m1 '^version = ' backend/pyproject.toml | cut -d'"' -f2)
+          echo "tag=$TAG  backend/pyproject.toml=$pkg"
+          test "v$pkg" = "$TAG"
+
   publish:
-    needs: validate # si cualquier job del CI falla, no se sube nada a ghcr
+    needs: [validate, version] # si cualquier job del CI falla, no se sube nada a ghcr
     runs-on: ubuntu-latest
     strategy:
       matrix:

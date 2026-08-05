@@ -41,7 +41,7 @@ curl -O https://raw.githubusercontent.com/iieg-oficial/minerva/main/docker-compo
 ```bash
 # Elige versión y org (o usa los defaults del compose)
 export MINERVA_ORG=iieg-oficial
-export MINERVA_VERSION=latest     # o una versión fija: 0.2.1
+export MINERVA_VERSION=latest     # o una versión fija (recomendado en prod): X.Y.Z
 
 docker compose -f docker-compose.deploy.yml up -d
 ```
@@ -58,7 +58,8 @@ Las migraciones de base de datos se aplican solas al arrancar el contenedor del 
 Para actualizar a una versión nueva:
 
 ```bash
-export MINERVA_VERSION=0.2.2
+export MINERVA_VERSION=X.Y.Z      # la versión a la que quieres subir; los tags publicados
+                                  # están en https://github.com/iieg-oficial/minerva/releases
 docker compose -f docker-compose.deploy.yml pull
 docker compose -f docker-compose.deploy.yml up -d
 ```
