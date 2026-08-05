@@ -5,6 +5,9 @@ on:
     branches: [develop, main]
   push:
     branches: [develop, main]
+  # Reutilizable: `docker-publish.yml` lo invoca como gate antes de subir imágenes a ghcr,
+  # así la publicación de un tag corre estos mismos jobs sobre el commit etiquetado.
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.ref }}

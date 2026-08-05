@@ -13,7 +13,16 @@ permissions:
   packages: write
 
 jobs:
+  validate:
+    # Gate del release: corre el CI completo (backend, PostgreSQL, audit, SDK, frontend y
+    # docker) sobre el MISMO commit del tag — al invocarse con una ruta local, el workflow
+    # reutilizable se ejecuta en el ref del llamador. Antes el tag publicaba sin verde.
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read # el CI no necesita `packages: write`; no se le hereda
+
   publish:
+    needs: validate # si cualquier job del CI falla, no se sube nada a ghcr
     runs-on: ubuntu-latest
     strategy:
       matrix:
