@@ -18,6 +18,10 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = SQLModel.metadata
+if not target_metadata.tables:
+    # Con la metadata vacía, `--autogenerate` no ve ninguna tabla y propone
+    # borrarlas todas. Mejor detener el tooling aquí que revisar ese diff.
+    raise RuntimeError("SQLModel.metadata quedó vacía: revisa los imports de app/core/models.py")
 
 
 def run_migrations_offline() -> None:
