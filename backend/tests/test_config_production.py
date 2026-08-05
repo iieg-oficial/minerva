@@ -8,6 +8,8 @@ from app.core.config import Settings
 def _settings(**overrides) -> Settings:
     base = {
         "MINERVA_MODE": "production",
+        "APP_ENV": "production",
+        "APP_DEBUG": False,
         "MINERVA_ENABLE_DEV_LOGIN": False,
         "ADMIN_PASSWORD": "una-password-real-y-larga",
         "SECRET_KEY": "valor-generado-aleatorio",
@@ -21,11 +23,46 @@ def _settings(**overrides) -> Settings:
 
 
 def test_dev_mode_never_raises():
-    Settings(MINERVA_MODE="dev", ADMIN_PASSWORD="changeme123").validate_production_config()
+    Settings(MINERVA_MODE="dev", APP_ENV="development", ADMIN_PASSWORD="changeme123").validate_production_config()
 
 
 def test_production_with_safe_config_does_not_raise():
     _settings().validate_production_config()
+
+
+# --- Señal única de entorno: solo es dev si AMBAS variables lo dicen (issue #68) ---
+
+
+@pytest.mark.parametrize(
+    ("app_env", "minerva_mode", "expected_production"),
+    [
+        ("development", "dev", False),
+        ("production", "dev", True),  # antes pasaba como dev y se saltaba el fail-fast
+        ("development", "central", True),
+        ("production", "central", True),
+        ("prod", "dev", True),  # un typo cae del lado seguro
+        ("development", "devel", True),
+    ],
+)
+def test_environment_signal_is_production_only_when_both_agree(app_env, minerva_mode, expected_production):
+    assert Settings(APP_ENV=app_env, MINERVA_MODE=minerva_mode).is_production is expected_production
+
+
+def test_cookie_flags_follow_the_same_signal():
+    # Las cookies del panel y el fail-fast leen la MISMA propiedad: no pueden divergir.
+    ambiguous = Settings(APP_ENV="production", MINERVA_MODE="dev")
+    assert ambiguous.session_cookie_name == "__Host-minerva_sid"
+    assert ambiguous.session_cookie_secure is True
+
+
+def test_production_by_app_env_alone_still_validates():
+    with pytest.raises(RuntimeError, match="MINERVA_ENABLE_DEV_LOGIN"):
+        _settings(MINERVA_MODE="dev", MINERVA_ENABLE_DEV_LOGIN=True).validate_production_config()
+
+
+def test_production_rejects_debug_enabled():
+    with pytest.raises(RuntimeError, match="APP_DEBUG"):
+        _settings(APP_DEBUG=True).validate_production_config()
 
 
 def test_production_rejects_dev_login_enabled():

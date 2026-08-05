@@ -125,9 +125,16 @@ class Settings(BaseSettings):
         max_signed_token_minutes = max(self.MINERVA_ACCESS_TOKEN_TTL_MINUTES, self.effective_token_expire_minutes)
         return max_signed_token_minutes + self.MINERVA_CLOCK_SKEW_MINUTES
 
+    # --- Señal única de entorno --------------------------------------------
+    # `APP_ENV` y `MINERVA_MODE` marcan lo mismo desde dos lados. Se resuelven en
+    # UNA sola propiedad —la que consumen cookies y el fail-fast— y solo es
+    # desarrollo si AMBAS lo dicen: cualquier marca de producción, o un typo
+    # (`prod`, `devel`), cae del lado seguro y activa las validaciones.
     @property
-    def is_dev_mode(self) -> bool:
-        return self.MINERVA_MODE.lower() == "dev"
+    def is_production(self) -> bool:
+        mode_is_dev = self.MINERVA_MODE.strip().lower() == "dev"
+        env_is_dev = self.APP_ENV.strip().lower() in ("dev", "development")
+        return not (mode_is_dev and env_is_dev)
 
     # --- Cookie de sesión del panel (BFF) ----------------------------------
     # El panel usa una cookie opaca HttpOnly (solo un id de sesión, nunca el JWT).
@@ -136,19 +143,22 @@ class Settings(BaseSettings):
     # Secure para no romper el desarrollo local, sin debilitar producción.
     @property
     def session_cookie_secure(self) -> bool:
-        return not self.is_dev_mode
+        return self.is_production
 
     @property
     def session_cookie_name(self) -> str:
-        return "minerva_sid" if self.is_dev_mode else "__Host-minerva_sid"
+        return "__Host-minerva_sid" if self.is_production else "minerva_sid"
 
     def validate_production_config(self) -> None:
-        """Falla rápido al arrancar si MINERVA_MODE no es dev y quedó algún valor
-        de desarrollo sin cambiar. Sin esto, Minerva arranca "production-looking"
-        con login de dev habilitado o password default, sin avisar a nadie."""
-        if self.is_dev_mode:
+        """Falla rápido al arrancar si la configuración es de producción (ver
+        `is_production`) y quedó algún valor de desarrollo sin cambiar. Sin esto,
+        Minerva arranca "production-looking" con debug, login de dev o password
+        default, sin avisar a nadie."""
+        if not self.is_production:
             return
         problems = []
+        if self.APP_DEBUG:
+            problems.append("APP_DEBUG=true (expone trazas y detalle interno; debe ser false en producción)")
         if self.MINERVA_ENABLE_DEV_LOGIN:
             problems.append("MINERVA_ENABLE_DEV_LOGIN=true (debe ser false en producción)")
         if self.ADMIN_PASSWORD == "changeme123":
@@ -170,7 +180,7 @@ class Settings(BaseSettings):
         if problems:
             detail = "\n  - ".join(problems)
             raise RuntimeError(
-                f"Configuración insegura para MINERVA_MODE={self.MINERVA_MODE!r}. "
+                f"Configuración insegura para APP_ENV={self.APP_ENV!r} / MINERVA_MODE={self.MINERVA_MODE!r}. "
                 f"Corrige antes de arrancar:\n  - {detail}"
             )
 

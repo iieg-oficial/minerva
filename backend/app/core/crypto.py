@@ -23,7 +23,7 @@ logger = logging.getLogger("minerva.crypto")
 def _master_key() -> bytes:
     if settings.MINERVA_KEY_ENCRYPTION_KEY:
         return settings.MINERVA_KEY_ENCRYPTION_KEY.encode()
-    if not settings.is_dev_mode:
+    if settings.is_production:
         raise RuntimeError(
             "MINERVA_KEY_ENCRYPTION_KEY es obligatoria en producción para cifrar la clave privada en reposo."
         )

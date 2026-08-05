@@ -55,13 +55,21 @@ Se crea automáticamente al primer arranque si no existe:
 
 ### 2.1 Variables obligatorias
 
+**Qué cuenta como producción:** una sola propiedad, `Settings.is_production`, resuelve las dos
+señales que existen (`APP_ENV` y `MINERVA_MODE`). Es desarrollo **solo si ambas lo dicen**
+(`APP_ENV=development` y `MINERVA_MODE=dev`); cualquier otro valor —incluido un typo— se trata como
+producción y activa las validaciones. La misma propiedad gobierna la cookie del panel, así que no
+puede haber un despliegue con cookie de producción y validaciones de dev.
+
 `Settings.validate_production_config()` (`backend/app/core/config.py`) se ejecuta en el
-`lifespan` del backend y **aborta el arranque** si `MINERVA_MODE != dev` y detecta
+`lifespan` del backend y **aborta el arranque** si la configuración es de producción y detecta
 cualquiera de estos problemas:
 
 | Variable | Requisito en producción |
 |---|---|
-| `MINERVA_MODE` | distinto de `dev` (p. ej. `production`) |
+| `APP_ENV` | `production` (o cualquier valor distinto de `development`/`dev`) |
+| `MINERVA_MODE` | distinto de `dev` (p. ej. `central`) |
+| `APP_DEBUG` | debe ser `false` |
 | `MINERVA_ENABLE_DEV_LOGIN` | debe ser `false` |
 | `ADMIN_PASSWORD` | distinto del default `changeme123` |
 | `SECRET_KEY` | sin la cadena `change-me-in-production` |
@@ -106,7 +114,7 @@ Implicaciones:
   `add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;` — **sin
   `preload`** por defecto (es difícil de revertir y exige HTTPS en todos los subdominios). La cookie de
   sesión del panel usa el prefijo `__Host-` (exige HTTPS): en HTTP local se usa `minerva_sid` sin
-  `Secure`, derivado de `MINERVA_MODE`.
+  `Secure`, derivado de la misma señal de entorno (`APP_ENV` + `MINERVA_MODE`, ver §2.1).
 - **Redis es control de seguridad, no solo caché.** Además del rate limit, guarda la blacklist de
   `jti`, los cortes de invalidación por usuario y el **contenedor de sesión del panel**. Por eso corre
   con persistencia AOF (`appendonly yes`) y `maxmemory-policy noeviction` (ver §3.4): sobrevive
@@ -263,7 +271,7 @@ volumen nombrado `minerva_redis_data:/data`. Consecuencias:
 
 ### 3.5 Checklist rápido antes de exponer Minerva a producción
 
-1. `MINERVA_MODE` ≠ `dev` y `MINERVA_ENABLE_DEV_LOGIN=false`.
+1. `APP_ENV=production`, `MINERVA_MODE` ≠ `dev`, `APP_DEBUG=false` y `MINERVA_ENABLE_DEV_LOGIN=false`.
 2. `ADMIN_PASSWORD`, `SECRET_KEY`, `JWT_SECRET_KEY` cambiados de su valor default.
 3. `MINERVA_KEY_ENCRYPTION_KEY` generada y guardada en un secret manager.
 4. `MINERVA_ISSUER` apunta a la URL pública real (HTTPS).

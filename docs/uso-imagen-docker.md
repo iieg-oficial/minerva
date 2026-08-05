@@ -85,15 +85,15 @@ equivalentes heredadas (`DATABASE_URL`, `JWT_SECRET_KEY`, etc.).
 | Variable | Default | Descripción |
 |---|---|---|
 | `APP_NAME` | `Minerva` | Nombre de la aplicación. |
-| `APP_ENV` | `development` | Entorno lógico. En producción: `production`. |
-| `APP_DEBUG` | `true` | Modo debug. **Ponlo en `false` en producción.** |
+| `APP_ENV` | `development` | Entorno lógico. En producción: `production`. Junto con `MINERVA_MODE` forma **una sola señal**: es desarrollo solo si ambas lo dicen. |
+| `APP_DEBUG` | `true` | Modo debug. **Debe ser `false` en producción**: si no, el backend aborta el arranque. |
 | `SECRET_KEY` | — | Cadena aleatoria larga. **Cámbiala en producción.** |
 
 ### Minerva Dev Kit / modo de operación
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `MINERVA_MODE` | `dev` | `dev` o `central`. En despliegues reales normalmente `central`. |
+| `MINERVA_MODE` | `dev` | `dev` o `central`. En despliegues reales normalmente `central`. Cualquier valor distinto de `dev` (o un `APP_ENV` distinto de `development`) activa las validaciones de producción. |
 | `MINERVA_DB_URL` | `postgresql://minerva:minerva@minerva-db:5432/minerva` | Conexión a PostgreSQL. Tiene prioridad sobre `DATABASE_URL`. |
 | `MINERVA_ENABLE_DEV_LOGIN` | `true` | Habilita el login de desarrollo. **`false` en producción.** |
 | `MINERVA_ENABLE_PUBLIC_REGISTER` | `false` | Habilita el registro público self-service en `/auth/register`. Cerrado por defecto: las cuentas las provisiona un admin. |
