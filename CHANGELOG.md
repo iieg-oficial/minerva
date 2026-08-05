@@ -7,6 +7,20 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **BREAKING · El despliegue de producción exige un único origen público.** La plantilla
+  `.env.production.example` proponía dos dominios (`<dominio-panel>` y `<dominio-api>`), pero la
+  cookie de sesión del panel usa el prefijo `__Host-`, que es *host-only*: con hosts distintos la
+  cookie nunca viaja al API y el login falla con un **401 mudo**, sin rastro en los logs. La
+  plantilla ahora usa un solo `<dominio-publico>` para `FRONTEND_URL`, `MINERVA_ISSUER` y
+  `MINERVA_JWT_ISSUER`, y `docs/despliegue.md` explica el porqué. Además, `validate_production_config()`
+  **falla al arrancar** si esos hosts no coinciden, en vez de dejar que Minerva levante rota; la
+  comparación ignora el esquema (el TLS puede terminar fuera del contenedor) pero sí distingue el
+  puerto. La plantilla ya no sugiere `BACKEND_PORT` en el deploy: el backend no se publica, nginx
+  lo proxea por la red interna. **Migración:** un despliegue pre-1.0 con dos hosts debe consolidarse
+  en el origen único de nginx antes de actualizar. (#69)
+
 ## [0.5.0] - 2026-07-31
 
 > **Estado del release.** 0.5.0 publica el trabajo ya integrado desde 0.4.0 como un checkpoint
