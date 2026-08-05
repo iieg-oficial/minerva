@@ -66,6 +66,7 @@ export async function authorizeUrl({
     codeChallengeMethod,
     nonce,
     prompt,
+    maxAge,
 }) {
     const response = await client.get('/auth/authorize/url', {
         params: {
@@ -79,6 +80,7 @@ export async function authorizeUrl({
             ...(codeChallengeMethod ? { code_challenge_method: codeChallengeMethod } : {}),
             ...(nonce ? { nonce } : {}),
             ...(prompt ? { prompt } : {}),
+            ...(maxAge !== undefined ? { max_age: maxAge } : {}),
         },
     });
     return response.data.redirect_url;

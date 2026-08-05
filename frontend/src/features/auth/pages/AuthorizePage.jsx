@@ -49,6 +49,8 @@ export default function AuthorizePage() {
     const codeChallengeMethod = params.get('code_challenge_method');
     const nonce = params.get('nonce');
     const prompt = params.get('prompt');
+    const maxAgeRaw = params.get('max_age');
+    const maxAge = maxAgeRaw !== null && /^\d+$/.test(maxAgeRaw) ? Number(maxAgeRaw) : undefined;
     const popupMode = params.get('response_mode') === 'web_message' && !!window.opener;
     const resumePath = `/authorize?${params.toString()}`;
     const loginNext = (extra = '') => `/login?next=${encodeURIComponent(resumePath)}${extra}`;
@@ -67,6 +69,7 @@ export default function AuthorizePage() {
             codeChallengeMethod,
             nonce,
             prompt: prompt === 'none' ? 'none' : undefined,
+            maxAge,
         })
             .then((redirectUrl) => {
                 if (popupMode && redirectUrl.startsWith(redirectUri)) {
@@ -102,6 +105,7 @@ export default function AuthorizePage() {
         codeChallengeMethod,
         nonce,
         prompt,
+        maxAge,
         popupMode,
     ]);
 
