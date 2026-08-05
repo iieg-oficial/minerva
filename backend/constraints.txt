@@ -5,8 +5,11 @@
 # incluidas las transitivas— para que CI y la imagen Docker construyan con el mismo
 # árbol y un cambio de dependencia se vea en el diff.
 #
-# Lo consumen: .github/workflows/ci.yml (job `backend`) y backend/Dockerfile.
+# Lo consumen: .github/workflows/ci.yml (jobs `backend` y `audit`) y backend/Dockerfile.
 # Cómo regenerarlo: ver "Dependencias congeladas" en backend/CLAUDE.md.
+#
+# `ecdsa` arrastra PYSEC-2026-1325 sin fix upstream: la excepción, con el motivo de no
+# alcanzabilidad y la fecha de revisión, está en el job `audit` de ci.yml.
 alembic==1.19.0
 annotated-doc==0.0.5
 annotated-types==0.8.0

@@ -27,6 +27,29 @@ jobs:
       - run: mypy app # gate de tipos: falla ante errores nuevos (deuda actual en cuarentena, ver pyproject)
       - run: pytest tests/ -v # SQLite + fakeredis, sin servicios externos
 
+  audit:
+    # Escaneo de vulnerabilidades sobre la resolución congelada. Corre en su propio job
+    # para no meter pip-audit (ni sus dependencias) en el entorno que valida el backend.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      # EXCEPCIÓN ACOTADA — PYSEC-2026-1325 (CVE-2024-23342), ecdsa 0.19.2:
+      #   Minerva timing attack contra P-256 al FIRMAR con `ecdsa`. Upstream declara los
+      #   side channels fuera de alcance y no hay versión corregida (afecta a todas).
+      #   No alcanzable aquí: `ecdsa` entra solo como transitiva de `python-jose`, que con
+      #   `[cryptography]` instalado usa el backend de `cryptography` para claves EC; y
+      #   Minerva firma y valida SOLO RS256 (`algorithms=["RS256"]`), sin curvas EC.
+      #   Revisar el 2027-02-05, o antes si `python-jose` suelta `ecdsa` o aparece un fix.
+      # El scan sigue vivo: cualquier alerta distinta a esta rompe el job.
+      - run: pip-audit -r constraints.txt --no-deps --ignore-vuln PYSEC-2026-1325
+
   sdk:
     runs-on: ubuntu-latest
     defaults:
