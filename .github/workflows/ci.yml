@@ -27,6 +27,43 @@ jobs:
       - run: mypy app # gate de tipos: falla ante errores nuevos (deuda actual en cuarentena, ver pyproject)
       - run: pytest tests/ -v # SQLite + fakeredis, sin servicios externos
 
+  backend-postgres:
+    # Las garantías que SQLite no reproduce (advisory lock del seed, trigger PL/pgSQL,
+    # índices únicos parciales, lock de fila del refresh) solo se prueban con PostgreSQL
+    # real. Sin este job esos tests se saltan y el verde no dice nada de ellos.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: minerva
+          POSTGRES_PASSWORD: minerva
+          # El nombre DEBE terminar en `_test`: `require_test_database_url` aborta si no,
+          # porque estos tests dropean y recrean el esquema public.
+          POSTGRES_DB: minerva_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      MINERVA_TEST_POSTGRES_URL: postgresql+psycopg://minerva:minerva@localhost:5432/minerva_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]" -c constraints.txt
+      # Sin la variable los tests se saltan en silencio y el job quedaría verde sin haber
+      # probado nada: es justo el agujero que este job viene a cerrar.
+      - run: test -n "$MINERVA_TEST_POSTGRES_URL"
+      - run: pytest tests/test_*_pg.py -v # solo los PG-only; Redis sigue siendo fakeredis
+
   audit:
     # Escaneo de vulnerabilidades sobre la resolución congelada. Corre en su propio job
     # para no meter pip-audit (ni sus dependencias) en el entorno que valida el backend.
