@@ -20,8 +20,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]" -c constraints.txt # misma resolución que la imagen Docker
@@ -96,8 +96,8 @@ jobs:
       run:
         working-directory: sdk
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
@@ -111,8 +111,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           # Vite 8 exige ^20.19.0 || >=22.12.0; 22 es además la de `frontend/Dockerfile`,
           # así que el CI y la imagen compilan con el mismo runtime.
@@ -127,7 +127,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: cp .env.example .env # compose exige el .env (gitignored)
       - run: docker compose config
       - run: docker compose build
