@@ -19,12 +19,18 @@ Servicios:
 | PostgreSQL | `5433` | `POSTGRES_PORT` (mapeado a 5432 dentro del contenedor) |
 | Redis | `6379` | `REDIS_PORT` |
 
-Al arrancar (`lifespan` en `backend/app/main.py`), el backend:
-1. Valida la configuración (`validate_production_config()` — no falla en modo dev).
-2. Aplica migraciones Alembic (`alembic upgrade head`, en el entrypoint).
-3. Siembra (`_seed_data`) el usuario administrador y la aplicación `minerva` si no existen.
-4. Garantiza una clave de firma RS256 activa (`_seed_signing_key`, idempotente).
-5. Auto-importa manifiestos desde `MINERVA_MANIFESTS_PATH` si `MINERVA_AUTO_IMPORT_MANIFESTS=true`.
+Al arrancar, el entrypoint (`backend/scripts/backend-entrypoint.sh`) corre **una sola vez**,
+antes de levantar el servidor:
+1. Aplica migraciones Alembic (`alembic upgrade head`).
+2. Importa los manifiestos de `MINERVA_MANIFESTS_PATH` si `MINERVA_AUTO_IMPORT_MANIFESTS=true`
+   (`python -m app.cli import-manifests`). Si un manifiesto falla, **el arranque se aborta**:
+   no queda en un warning silencioso.
+
+Después, el `lifespan` (`backend/app/main.py`) corre en cada worker:
+
+3. Valida la configuración (`validate_production_config()` — no falla en modo dev).
+4. Siembra (`_seed_data`) el usuario administrador y la aplicación `minerva` si no existen.
+5. Garantiza una clave de firma RS256 activa (`_seed_signing_key`, idempotente).
 
 ### ⚠️ Gotcha de puertos: 8000 vs 9000
 

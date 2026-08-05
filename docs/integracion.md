@@ -102,7 +102,8 @@ regenera secrets de una aplicación ya existente.
 **Automático al arrancar Minerva (dev):** coloca el archivo en `manifests/` con alguno
 de estos nombres/patrones: `*.minerva.yml`, `*.minerva.yaml`, `manifest.yml`,
 `manifest.yaml`. Si `MINERVA_AUTO_IMPORT_MANIFESTS=true` (default en dev), se importa en
-cada arranque del backend.
+cada arranque del backend, como paso único previo al servidor
+(`python -m app.cli import-manifests`). Un manifiesto inválido aborta el arranque.
 
 **Manual, vía API:**
 
