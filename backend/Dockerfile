@@ -4,9 +4,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 FROM base AS builder
-COPY pyproject.toml ./
+COPY pyproject.toml constraints.txt ./
 COPY app/ ./app/
-RUN pip install --prefix=/install .
+# `-c constraints.txt`: la imagen se construye con la misma resolución que valida CI.
+RUN pip install --prefix=/install -c constraints.txt .
 
 FROM base AS runtime
 COPY --from=builder /install /usr/local

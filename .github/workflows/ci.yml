@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" -c constraints.txt # misma resolución que la imagen Docker
       - run: ruff check app alembic tests
       - run: ruff format --check app alembic tests
       - run: mypy app # gate de tipos: falla ante errores nuevos (deuda actual en cuarentena, ver pyproject)
