@@ -1,7 +1,7 @@
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import ForbiddenError, InsufficientScopeError, NotFoundError
 from app.modules.applications.repository import ApplicationRepository
 from app.modules.devkit.manifest import ManifestLoader
 from app.modules.devkit.schemas import (
@@ -94,7 +94,13 @@ class DevKitService:
         else:
             allowed = current_user.get("aud") == application_code
         if not allowed:
-            raise ForbiddenError(detail="El token no está autorizado para esta aplicación")
+            # Credencial válida pero insuficiente (RFC 6750 §3.1). En Minerva la
+            # frontera de acceso es la audiencia, así que el alcance requerido que se
+            # anuncia es el código de la app para la que hay que pedir el token.
+            raise InsufficientScopeError(
+                detail="El token no está autorizado para esta aplicación",
+                required_scope=application_code,
+            )
 
     def get_me_permissions(self, current_user: dict, application_code: str) -> MePermissionsResponse:
         # Autorizar antes de resolver la app: así un token ajeno recibe 403 tanto si la

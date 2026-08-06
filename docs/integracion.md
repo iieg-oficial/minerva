@@ -401,6 +401,28 @@ Minerva (con el Bearer del usuario) en tiempo real, con una caché corta. Si Min
 responde `401` (token revocado), el SDK propaga `401` a tu cliente; si el usuario no
 tiene el permiso, responde `403`.
 
+### Cabecera `WWW-Authenticate` en endpoints Bearer
+
+Los endpoints que se autentican con Bearer (`/userinfo`, `/api/v1/me`, `/api/v1/me/permissions`)
+emiten el challenge de RFC 6750 §3 para que puedas distinguir el motivo sin parsear el cuerpo:
+
+| Situación | Status | `WWW-Authenticate` |
+|---|---|---|
+| Sin `Authorization` | 401 | `Bearer realm="minerva"` |
+| Token inválido, expirado o revocado | 401 | `Bearer realm="minerva", error="invalid_token", error_description="..."` |
+| Token válido pero de otra aplicación | 403 | `Bearer realm="minerva", error="insufficient_scope", error_description="...", scope="<application_code>"` |
+
+Ramifica por `error`, **nunca** por `error_description`: la descripción es informativa,
+está en español y puede cambiar sin previo aviso. El motivo exacto del rechazo (expirado,
+revocado, firma inválida) **no** se distingue en el header: es deliberado, para que nadie
+pueda sondear tokens ajenos con el challenge. Si necesitas el detalle, lee el cuerpo JSON.
+
+En `insufficient_scope`, el atributo `scope` nombra el `application_code` para el que hay
+que pedir el token: en Minerva la frontera de acceso es la audiencia del token.
+
+El panel admin (sesión por cookie, patrón BFF) **no** emite este challenge: sus 401 son de sesión,
+no de Bearer.
+
 **Nunca** valides permisos comparando `roles` localmente — el contrato es: el SDK
 pregunta a Minerva, Minerva decide.
 
