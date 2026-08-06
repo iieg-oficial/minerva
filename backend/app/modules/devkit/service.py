@@ -94,9 +94,7 @@ class DevKitService:
         else:
             allowed = current_user.get("aud") == application_code
         if not allowed:
-            # Credencial válida pero insuficiente (RFC 6750 §3.1). En Minerva la
-            # frontera de acceso es la audiencia, así que el alcance requerido que se
-            # anuncia es el código de la app para la que hay que pedir el token.
+            # Credencial válida pero insuficiente: el scope anunciado es la app requerida (RFC 6750 §3.1).
             raise InsufficientScopeError(
                 detail="El token no está autorizado para esta aplicación",
                 required_scope=application_code,

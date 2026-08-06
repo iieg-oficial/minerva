@@ -1,6 +1,5 @@
 from fastapi import HTTPException, status
 
-
 BEARER_REALM: str = "minerva"
 # Contrato público: fijas (no derivadas del `detail`), sin revelar la causa y sin acentos (header ASCII).
 BEARER_ERROR_DESCRIPTIONS: dict[str, str] = {
