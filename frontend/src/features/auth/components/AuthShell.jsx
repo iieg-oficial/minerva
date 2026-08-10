@@ -134,7 +134,7 @@ export default function AuthShell({ appName, brandColor = BRAND.purple, logoUrl,
                     style={{ height: 52, width: 'auto' }}
                 />
                 <TypoLink
-                    href="https://iieg.gob.mx/ns/wp-content/uploads/2025/06/Aviso_de_Privacidad_Integral_IIEG_06_2025.pdf"
+                    href="https://iieg.jalisco.gob.mx/acervo/iieg/avisos-de-privacidad.pdf"
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{

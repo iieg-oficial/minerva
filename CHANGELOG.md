@@ -7,6 +7,19 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **El aviso de privacidad del login apuntaba a un PDF con fecha en la URL.** El enlace del pie
+  llevaba a `iieg.gob.mx/ns/wp-content/uploads/2025/06/Aviso_de_Privacidad_Integral_IIEG_06_2025.pdf`,
+  así que el día que el instituto publique una versión nueva el enlace queda apuntando a la vieja o
+  responde 404, y arreglarlo obliga a tocar este repo y desplegar. Es el mismo problema que ya
+  corrigieron los otros consumidores.
+
+  Ahora apunta a `https://iieg.jalisco.gob.mx/acervo/iieg/avisos-de-privacidad.pdf`, servido desde
+  el Acervo del instituto: la URL no lleva versión, así que publicar un aviso nuevo es reemplazar el
+  objeto en el bucket, sin tocar este repo ni desplegar. Es el mismo destino que usan mariachi y
+  sieej, así que el usuario ve el mismo aviso en las tres pantallas.
+
 ## [0.5.0] - 2026-07-31
 
 > **Estado del release.** 0.5.0 publica el trabajo ya integrado desde 0.4.0 como un checkpoint
