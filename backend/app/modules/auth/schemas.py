@@ -65,6 +65,9 @@ class TokenExchange(BaseModel):
 
 
 class AuthorizeQuery(BaseModel):
+    """Parámetros del Authorization Endpoint. Los comparten los tres handlers: el GET,
+    el POST form (OIDC Core 3.1.2.1) y la variante JSON que consume el panel."""
+
     client_id: str
     redirect_uri: str
     state: str
@@ -73,3 +76,5 @@ class AuthorizeQuery(BaseModel):
     code_challenge: str | None = None
     code_challenge_method: str | None = None
     nonce: str | None = None
+    prompt: str | None = None
+    max_age: int | None = None
