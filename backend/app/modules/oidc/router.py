@@ -109,7 +109,9 @@ userinfo_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["GET"],
+    # Los dos métodos que OIDC Core 5.3 exige: sin el POST aquí, el preflight lo
+    # rechazaría desde navegador y el endpoint solo sería equivalente server-to-server.
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -132,7 +134,11 @@ def _userinfo_claims(payload: dict) -> dict:
 
 @userinfo_app.get("")
 @userinfo_app.get("/")
+@userinfo_app.post("")
+@userinfo_app.post("/")
 def userinfo(current_user: dict = Depends(get_current_access_user)) -> dict:
     """OIDC UserInfo (Core 5.3): claims de identidad filtrados por el scope del
-    access token presentado como Bearer."""
+    access token presentado como Bearer. Los dos métodos que exige la spec resuelven
+    con la misma función: el token siempre viaja en el header `Authorization`, así que
+    el POST no cambia nada más que el verbo."""
     return _userinfo_claims(current_user)
