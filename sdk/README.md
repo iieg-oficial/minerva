@@ -28,6 +28,22 @@ pip install -e ./sdk          # desde la raíz del repo Minerva
 La firma se valida con **RS256 contra el JWKS público** de Minerva: no necesitas
 ningún secreto compartido, solo `MINERVA_ISSUER_URL`.
 
+### Qué URLs arma el SDK
+
+El SDK **no lee el documento de discovery**: concatena dos rutas fijas a
+`MINERVA_ISSUER_URL`, y son las únicas dos llamadas que hace a Minerva.
+
+| Para qué | URL | Dónde |
+|---|---|---|
+| Claves de firma | `{MINERVA_ISSUER_URL}/.well-known/jwks.json` | `minerva_sdk/fastapi.py` |
+| Permisos efectivos | `{MINERVA_ISSUER_URL}/api/v1/me/permissions?application={code}` | `minerva_sdk/fastapi.py` |
+
+Consecuencia práctica: si pones Minerva detrás de un proxy, **esas dos rutas tienen que
+seguir colgando de `MINERVA_ISSUER_URL`**; cambiar `userinfo_endpoint` o `jwks_uri` en el
+discovery no mueve al SDK. Y si el host desde el que descargas el JWKS no es el mismo que
+Minerva pone en el claim `iss` de los tokens, fija `MINERVA_EXPECTED_ISSUER` al issuer
+público: el `iss` se valida siempre y no se puede desactivar.
+
 ## Uso
 
 ```python
@@ -91,9 +107,13 @@ Nada más cambia: `get_current_user` y `require_permission` conservan su firma.
 
 ## Migración a Minerva Central
 
-Solo cambia la URL; el JWKS y los endpoints se descubren solos:
+Solo cambia la URL base: las dos rutas que consulta el SDK cuelgan de ella
+(ver [Qué URLs arma el SDK](#qué-urls-arma-el-sdk)).
 
 ```env
 MINERVA_ISSUER_URL=https://minerva.iieg.gob.mx
 MINERVA_APPLICATION_CODE=godin
 ```
+
+Si el `iss` de los tokens emitidos por Minerva Central no coincide con esa URL, agrega
+`MINERVA_EXPECTED_ISSUER` con el issuer público.
