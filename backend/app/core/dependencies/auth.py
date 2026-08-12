@@ -9,7 +9,7 @@ from sqlmodel import Session
 from app.core import panel_session
 from app.core.config import settings
 from app.core.dependencies.db import get_db
-from app.core.exceptions import UnauthorizedError
+from app.core.exceptions import BearerUnauthorizedError, UnauthorizedError
 from app.core.redis import get_redis
 from app.core.security import decode_token_rs256
 from app.core.token_blacklist import is_revoked, user_tokens_invalid_before
@@ -116,7 +116,8 @@ def _bearer_user_dependency(
         if credentials is None:
             if optional:
                 return None
-            raise UnauthorizedError(detail="Token no proporcionado")
+            # Sin credencial: challenge sin código de error (RFC 6750 §3.1).
+            raise BearerUnauthorizedError(detail="Token no proporcionado")
         try:
             return await _resolve_token(
                 credentials.credentials, session, redis, expected_types=expected_types, audience=audience
@@ -124,7 +125,7 @@ def _bearer_user_dependency(
         except ValueError as e:
             if optional:
                 return None
-            raise UnauthorizedError(detail=str(e))
+            raise BearerUnauthorizedError(detail=str(e), error="invalid_token")
 
     return dependency
 
