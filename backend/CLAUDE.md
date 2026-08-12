@@ -26,6 +26,31 @@ pip install -e ".[dev]"               # instala el backend + dependencias de des
 Para correr sin Docker necesitas un PostgreSQL accesible y `DATABASE_URL` configurado.
 La opción recomendada para desarrollo integral sigue siendo `docker compose up` desde la raíz.
 
+### Dependencias congeladas (`constraints.txt`)
+
+`pyproject.toml` declara las dependencias **directas** con rangos; `backend/constraints.txt` fija la
+versión exacta de todo lo que esos rangos resuelven (incluidas las transitivas). Lo consumen el job
+`backend` de `.github/workflows/ci.yml` y `backend/Dockerfile`, así que CI valida el mismo árbol que
+se construye en la imagen y cualquier cambio de dependencia aparece en el diff.
+
+No es un gestor nuevo: es `pip install -c`. Para **actualizar** (subir versiones, agregar una
+dependencia nueva a `pyproject.toml`, o aplicar un parche de seguridad):
+
+```bash
+python -m venv /tmp/minerva-freeze              # entorno limpio, no el conda de trabajo
+/tmp/minerva-freeze/bin/pip install -e ".[dev]" # sin -c: resuelve libre dentro de los rangos
+# valida que la resolución es verde ANTES de congelarla:
+/tmp/minerva-freeze/bin/ruff check app alembic tests
+/tmp/minerva-freeze/bin/mypy app
+/tmp/minerva-freeze/bin/pytest tests/ -q
+# congela, conservando el encabezado de comentarios:
+grep '^#' constraints.txt > nuevo.txt
+/tmp/minerva-freeze/bin/pip freeze --exclude-editable >> nuevo.txt
+mv nuevo.txt constraints.txt
+```
+
+Para clavar una versión concreta (p. ej. una CVE), edita esa línea a mano y vuelve a correr la suite.
+
 ## Arquitectura modular en capas
 
 Cada dominio vive en `app/modules/<nombre>/` y respeta **estrictamente** esta separación de

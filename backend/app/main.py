@@ -1,5 +1,6 @@
 import uuid
 from contextlib import asynccontextmanager
+from importlib.metadata import version as package_version
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -189,8 +190,14 @@ async def lifespan(app: FastAPI):
         await close_redis()
 
 
+# Fuente única de la versión: `version` de backend/pyproject.toml, que es la del tag de
+# release. Se lee de la metadata del paquete instalado en vez de repetirla como literal;
+# tras cambiarla hay que reinstalar (`pip install -e .`) para que se refleje.
+APP_VERSION = package_version("minerva")
+
 app = FastAPI(
     title=settings.APP_NAME,
+    version=APP_VERSION,  # sin esto, /openapi.json reportaba el 0.1.0 por defecto de FastAPI
     debug=settings.APP_DEBUG,
     lifespan=lifespan,
 )
@@ -227,7 +234,7 @@ app.mount("/userinfo", userinfo_app)
 def root():
     return {
         "name": settings.APP_NAME,
-        "version": "0.5.0",
+        "version": APP_VERSION,
     }
 
 
