@@ -109,8 +109,24 @@ completas (no se repiten aquí).
 | `redis.py` | Cliente Redis async |
 | `rate_limit.py` | Ventana deslizante para `/auth/login` y `/auth/authorize` |
 | `token_blacklist.py` | Revocación de `jti` (access tokens) |
-| `dependencies/auth.py` | `get_current_user` / `get_optional_user` — valida RS256 contra JWKS + blacklist |
+| `dependencies/auth.py` | Dependencias de autenticación **por clase de token** (ver tabla abajo); `_resolve_token` es el validador común (RS256 contra JWKS + `jti` blacklisteado + corte de invalidación por usuario) |
 | `exceptions.py` | Jerarquía de `AppException` con mensajes en español |
+
+#### Dependencias de autenticación por clase de token
+
+No hay una dependencia genérica: cada endpoint declara qué `typ` de token acepta, para que
+un JWT firmado por Minerva no sirva automáticamente en cualquier puerta.
+
+| Dependencia | Credencial | Clases (`typ`) aceptadas | La usan |
+|---|---|---|---|
+| `get_current_panel_user` | Cookie opaca de panel → cuenta activa del contenedor | `session` | Panel/admin |
+| `get_optional_panel_user` | Igual, pero sin sesión no falla | `session` | `/auth/authorize` (el consumidor puede llegar sin sesión) |
+| `get_panel_session` | Cookie opaca, **sin** exigir cuenta activa válida | — | Selector de cuentas, logout |
+| `get_current_access_user` | `Authorization: Bearer` | `access` | `/userinfo` y endpoints de consumidor |
+| `get_current_devkit_user` | `Authorization: Bearer` | `access`, `dev` | Self-service del Dev Kit (`/api/v1/me*`) |
+
+Las tres primeras resuelven **qué** token usar (el de la cuenta activa en Redis) y luego lo
+validan con `_resolve_token`, igual que las de Bearer.
 
 ### Por qué `.well-known` y `/userinfo` son sub-apps aparte
 
@@ -157,6 +173,11 @@ Ver [`integracion.md`](integracion.md) para el detalle paso a paso y
 Toda la firma es **RS256** (no hay HS256 en el sistema: un solo mecanismo de firma para
 tokens de consumidores y de sesión interna del panel).
 
+La rotación es de **dos fases (publish-before-use)** y son **dos comandos**, no uno: firmar
+con una clave recién creada cortaría el servicio, porque los verificadores (el propio backend
+vía Redis, el SDK con su caché de 1 h, cualquier consumidor OIDC) todavía no la tienen en su
+JWKS cacheado.
+
 ```mermaid
 flowchart TD
     A[Arranque del backend] --> B{¿Existe clave activa?}
@@ -164,11 +185,30 @@ flowchart TD
     B -- sí --> D[Usa la clave activa]
     C --> D
     D --> E[Firma tokens con kid de la clave activa]
-    F[python -m app.cli rotate-key<br/>cron periódico] --> G[Retira clave activa → status=retired]
-    G --> H[Genera nueva clave activa]
-    H --> I[Purga claves retiradas más viejas que<br/>MINERVA_ACCESS_TOKEN_TTL_MINUTES]
-    E -.publica JWKS con activa + retiradas.-> J["/.well-known/jwks.json"]
+
+    F["Fase 1 · python -m app.cli rotate-key"] --> G["Genera clave nueva → status=pending<br/>se publica en el JWKS pero NO firma nada"]
+    G -.espera MINERVA_KEY_PROPAGATION_MINUTES.-> H["Fase 2 · python -m app.cli promote-key"]
+    H --> I[pending → active<br/>la anterior pasa a retired]
+    I --> J["Purga las retiradas más viejas que<br/>key_retirement_overlap_minutes"]
+
+    E -.publica JWKS con activa + pendiente + retiradas.-> K["/.well-known/jwks.json"]
 ```
+
+- **Fase 1 — `rotate-key`.** Publica la clave nueva como `pending`. Solo puede haber una
+  pendiente a la vez (índice único parcial); intentar publicar otra da `409`.
+- **Fase 2 — `promote-key`.** Rechaza la promoción si no han pasado
+  `MINERVA_KEY_PROPAGATION_MINUTES` (default **60**) desde que se publicó la pendiente: en esa
+  ventana todavía hay verificadores con el JWKS viejo. `--force` la salta a propósito, para el
+  caso de clave comprometida (asumiendo el corte).
+- **Retención.** Al promover, la clave anterior queda `retired` y **sigue publicada** en el
+  JWKS `key_retirement_overlap_minutes` más. No es una variable de entorno: se **deriva** del
+  token firmado más longevo (`max(MINERVA_ACCESS_TOKEN_TTL_MINUTES, sesión del panel)`) más el
+  margen de reloj, precisamente para que no pueda quedar desincronizada del TTL de sesión.
+- El `Cache-Control: max-age` del JWKS se emite con esa misma ventana de propagación, así que
+  un verificador que respete la cabecera ya tiene la clave nueva cuando empieza a firmar.
+
+No hay scheduler ni reconciliación automática: las dos fases se disparan desde el CLI (cron o
+a mano) y es la operación quien decide cuándo.
 
 La clave privada nunca se expone: se cifra con Fernet (`MINERVA_KEY_ENCRYPTION_KEY`) y
 se guarda en la tabla `signing_keys`. El JWKS público solo expone la(s) clave(s) pública(s).
@@ -210,6 +250,21 @@ Cada sistema consumidor declara su aplicación, permisos y roles en un
 `manifest.minerva.yml` (formato y validaciones en [`integracion.md`](integracion.md)).
 Minerva los auto-importa al arrancar (`MINERVA_AUTO_IMPORT_MANIFESTS`) de forma
 **idempotente** (upsert: reimportar no borra datos ni regenera secrets).
+
+**El contrato es aditivo: el manifiesto no es el estado deseado.** El importador
+(`backend/app/modules/devkit/manifest.py`) solo crea o actualiza; **nunca borra**. En concreto:
+
+- Quitar un permiso o un rol del YAML y reimportar **no** lo elimina de la base de datos, ni
+  revoca las asignaciones que ya tenían los usuarios. El permiso sigue existiendo y sigue
+  concediéndose.
+- Quitar un permiso de la lista de un rol tampoco deshace esa relación.
+- Renombrar equivale a **crear uno nuevo**, y el viejo se queda: la identidad de un permiso
+  es su `key`, y la de un rol es el slug derivado de su `name`. Cambiar el `name` de un rol
+  crea otro rol y deja el anterior con sus usuarios asignados.
+
+Dar de baja un permiso, un rol o una asignación es una acción explícita desde el panel
+administrativo. No hay reconciliación ni proceso que compare el YAML con la base y borre la
+diferencia — y es deliberado: un manifiesto mal editado no debe poder tirar accesos vivos.
 
 ## Estado real de la implementación
 

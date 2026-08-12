@@ -80,6 +80,17 @@ def test_userinfo_accepts_access_token(client):
     assert client.get("/userinfo", headers=_auth(_consumer_access_token())).status_code == 200
 
 
+def test_hs256_token_rejected(client, admin_token):
+    """Anti-confusión de algoritmo: se reusan los claims EXACTOS de una sesión que sí
+    refresca (`test_session_token_can_refresh`, 200) y solo cambia la firma a HS256.
+    La validación fija `algorithms=["RS256"]`, así que se rechaza. Es lo que deja sin
+    superficie la alerta de `ecdsa`: aquí no entra ninguna firma que no sea RSA."""
+    claims = jwt.get_unverified_claims(admin_token)
+    kid = jwt.get_unverified_header(admin_token)["kid"]
+    token = jwt.encode(claims, "secreto-cualquiera", algorithm="HS256", headers={"kid": kid})
+    assert client.post("/auth/refresh", headers=_auth(token)).status_code == 401
+
+
 def test_wrong_issuer_rejected(client):
     """El backend verifica siempre el `iss`: un token bien firmado pero con issuer
     ajeno se rechaza (una sesión válida re-firmada con otro `iss` no pasa)."""

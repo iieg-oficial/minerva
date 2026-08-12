@@ -4,8 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minerva"
-version = "0.5.0"
+version = "0.6.0"
 description = "Sistema institucional de autenticacion, autorizacion y gestion de accesos del IIEG"
+# El texto completo vive en el `LICENSE` de la raiz del monorepo, fuera de este proyecto
+# hatchling: aqui solo se declara la expresion SPDX (PEP 639).
+license = "AGPL-3.0-only"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "fastapi>=0.136,<0.137",

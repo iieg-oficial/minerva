@@ -22,7 +22,12 @@ _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 # Rutas que NO exigen token CSRF aunque lleguen con cookie: crean/renuevan la sesión
 # (su autenticación son credenciales, no la sesión previa) o son OAuth de consumidor.
-_CSRF_EXEMPT_PREFIXES = ("/auth/login", "/auth/register", "/auth/token", "/auth/revoke")
+# `/auth/authorize` entra por su POST form (OIDC Core 3.1.2.1): lo emite el consumidor
+# desde su propia página, que no puede conocer nuestro token CSRF. No abre un hueco: la
+# cookie de panel es SameSite=Lax y no viaja en un POST cross-site, la comprobación de
+# `Origin` de arriba se sigue aplicando, y la defensa del consumidor contra login-CSRF
+# es su `state`.
+_CSRF_EXEMPT_PREFIXES = ("/auth/login", "/auth/register", "/auth/token", "/auth/revoke", "/auth/authorize")
 
 
 async def panel_csrf_middleware(request: Request, call_next):

@@ -7,7 +7,7 @@ para la visión y reglas globales. Este archivo cubre las reglas del frontend.
 
 - **React 19** + **react-dom 19**
 - **Ant Design 6** (`antd`) + `@ant-design/icons` 6 — librería de UI principal
-- **Vite 6** (build/dev) · **React Router DOM 7** (routing) · **axios 1.7** (HTTP)
+- **Vite 8** (build/dev, bundler Rolldown) · **Vitest 4** (tests) · **React Router DOM 7** (routing) · **axios 1.7** (HTTP)
 - `type: module` (ESM). No hay TypeScript: el código es `.jsx`.
 
 ## Entorno y comandos
@@ -71,4 +71,5 @@ Reglas:
 ```bash
 npm run lint     # debe pasar sin errores
 npm run build    # debe compilar sin errores
+npm test         # vitest; debe pasar sin fallos
 ```

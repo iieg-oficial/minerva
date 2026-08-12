@@ -69,7 +69,8 @@ def _alembic(*args: str) -> None:
     subprocess.run(
         [sys.executable, "-m", "alembic", *args],
         cwd=BACKEND_DIR,
-        env={**os.environ, "DATABASE_URL": PG_URL},
+        # Las dos: Alembic usa `effective_db_url` y MINERVA_DB_URL tiene prioridad.
+        env={**os.environ, "DATABASE_URL": PG_URL, "MINERVA_DB_URL": PG_URL},
         check=True,
     )
 

@@ -1,5 +1,6 @@
 import uuid
 from contextlib import asynccontextmanager
+from importlib.metadata import version as package_version
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -138,37 +139,6 @@ def _seed_data() -> None:
         session.commit()
 
 
-def _auto_import_manifests() -> None:
-    """Importa automáticamente los manifiestos encontrados en
-    MINERVA_MANIFESTS_PATH al arrancar (modo Dev Kit)."""
-    import logging
-    from pathlib import Path
-
-    from app.modules.devkit.service import DevKitService
-
-    logger = logging.getLogger("minerva.devkit")
-
-    if not settings.MINERVA_AUTO_IMPORT_MANIFESTS:
-        return
-
-    manifests_dir = Path(settings.MINERVA_MANIFESTS_PATH)
-    if not manifests_dir.exists():
-        return
-
-    patterns = ["*.minerva.yml", "*.minerva.yaml", "manifest.yml", "manifest.yaml"]
-    files: list[Path] = []
-    for pattern in patterns:
-        files.extend(sorted(manifests_dir.glob(pattern)))
-
-    for path in files:
-        try:
-            with Session(engine) as session:
-                result = DevKitService(session).import_manifest(path.read_text(encoding="utf-8"), path.name)
-            logger.info("Manifiesto importado: %s (app=%s)", path.name, result.application_code)
-        except Exception as exc:  # noqa: BLE001 - el arranque no debe fallar por un manifiesto
-            logger.warning("No se pudo importar el manifiesto %s: %s", path.name, exc)
-
-
 def _seed_signing_key() -> None:
     """Garantiza que exista una clave de firma RS256 activa al arrancar (idempotente)."""
     import_models()
@@ -178,10 +148,11 @@ def _seed_signing_key() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # El autoimport de manifiestos NO va aquí: el lifespan corre una vez por worker de
+    # gunicorn. Es un paso único del entrypoint (`python -m app.cli import-manifests`).
     settings.validate_production_config()
     _seed_data()
     _seed_signing_key()
-    _auto_import_manifests()
     await init_redis()
     try:
         yield
@@ -189,8 +160,14 @@ async def lifespan(app: FastAPI):
         await close_redis()
 
 
+# Fuente única de la versión: `version` de backend/pyproject.toml, que es la del tag de
+# release. Se lee de la metadata del paquete instalado en vez de repetirla como literal;
+# tras cambiarla hay que reinstalar (`pip install -e .`) para que se refleje.
+APP_VERSION = package_version("minerva")
+
 app = FastAPI(
     title=settings.APP_NAME,
+    version=APP_VERSION,  # sin esto, /openapi.json reportaba el 0.1.0 por defecto de FastAPI
     debug=settings.APP_DEBUG,
     lifespan=lifespan,
 )
@@ -227,7 +204,7 @@ app.mount("/userinfo", userinfo_app)
 def root():
     return {
         "name": settings.APP_NAME,
-        "version": "0.5.0",
+        "version": APP_VERSION,
     }
 
 
