@@ -8,6 +8,10 @@ name = "minerva-sdk"
 # raíz): no tiene por qué coincidir con backend/pyproject.toml.
 version = "0.2.0"
 description = "SDK mínimo de Minerva para sistemas consumidores (FastAPI)"
+# Apache-2.0, NO la AGPL-3.0 del resto del repo: esta librería la importan los sistemas
+# consumidores en su propio código y no debe imponerles el copyleft del servidor.
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",
