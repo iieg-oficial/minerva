@@ -16,7 +16,7 @@ término no es familiar, revisa primero [`glosario.md`](glosario.md).
 > **Requisito de acceso (importante):** el usuario debe tener **al menos un rol asignado
 > en tu aplicación** para que Minerva emita el código de autorización. Si no lo tiene,
 > Minerva **no** manda `code`: redirige a `redirect_uri?error=access_denied&state=...`.
-> Tu `/callback` debe manejar ese caso (ver [§3.5](#35-acceso-denegado-usuario-sin-rol-en-tu-aplicación)).
+> Tu `/callback` debe manejar ese caso (ver [§3.6](#36-acceso-denegado-usuario-sin-rol-en-tu-aplicación)).
 
 ## 1. Registrar tu aplicación
 
@@ -97,6 +97,13 @@ Validaciones que aplica Minerva al importar (`backend/app/modules/devkit/manifes
 *upsert* — actualiza nombres/descripciones, agrega permisos/roles nuevos, nunca borra ni
 regenera secrets de una aplicación ya existente.
 
+**El contrato es aditivo, no declarativo.** El manifiesto no describe el estado deseado:
+**quitar** un permiso o un rol del YAML y reimportar **no lo elimina** de Minerva ni revoca
+las asignaciones existentes, y sacar un permiso de la lista de un rol tampoco deshace esa
+relación. Renombrar tampoco: la identidad de un permiso es su `key` y la de un rol el slug
+de su `name`, así que un rename crea uno nuevo y deja el anterior. Dar de baja algo es una
+acción explícita en el panel administrativo.
+
 ### Cómo importarlo
 
 **Automático al arrancar Minerva (dev):** coloca el archivo en `manifests/` con alguno
@@ -151,7 +158,10 @@ GET {MINERVA_ISSUER}/auth/authorize
 
 Parámetros adicionales soportados (OIDC Core 3.1.2.1):
 - `prompt=none` → si no hay sesión, Minerva responde `error=login_required` en lugar de
-  mostrar login (útil para *silent renew* en iframes).
+  mostrar login. Sirve para **comprobar la sesión sin interrumpir al usuario**, pero mándalo
+  como una navegación normal: Minerva emite `Content-Security-Policy: frame-ancestors 'none'`
+  (ver `frontend/nginx.conf`), así que **el *silent renew* clásico en un `<iframe>` oculto no
+  funciona** — el navegador bloquea el marco.
 - `prompt=login` → fuerza re-autenticación aunque haya sesión (pide credenciales de nuevo).
 - `prompt=select_account` → muestra un **selector de cuentas** con las sesiones ya iniciadas en
   ese navegador, permite elegir otra o **agregar una cuenta nueva**. Úsalo cuando tu plataforma
@@ -176,12 +186,19 @@ Sobre la respuesta de `/authorize`:
   "rejuvenece"; y refrescar el token del panel no cuenta como re-autenticación. Es la misma
   referencia con la que Minerva evalúa `max_age`, así que lo que exige y lo que reporta coinciden.
 
-> **Logout de Minerva.** `POST /auth/logout` (con el `access_token` en el header) revoca el token
-> del lado del servidor: a partir de ese momento Minerva ya no lo acepta, así que un `/authorize`
-> posterior no re-autentica en silencio con esa sesión. Es independiente del logout de tu propia app.
+> **Logout de Minerva: no es un endpoint para consumidores.** `POST /auth/logout` pertenece al
+> panel, no a tu integración: se autentica con la **cookie de sesión del panel** (`__Host-minerva_sid`),
+> no con un Bearer, y es un logout **suave** — cierra la cuenta activa del navegador pero **no revoca
+> ningún token**. Mandarle tu `access_token` en el header no hace nada.
 >
-> **Logout redirigido (`GET {panel}/logout?redirect_uri=...`).** Cierra la cuenta activa del panel
-> (logout **suave**: no revoca el token, a diferencia de `POST /auth/logout`) y luego navega al
+> Si lo que quieres es invalidar credenciales ya emitidas, usa
+> [`POST /auth/revoke`](#35-revocar-un-refresh-token-rfc-7009) sobre el refresh token: eso sí revoca
+> la familia completa y blacklistea los access tokens asociados. Del lado del panel, la revocación
+> real vive en `DELETE /auth/session/accounts/{sub}` (quitar una cuenta del dispositivo) y
+> `POST /auth/logout-all` (cerrar todas las sesiones), que son acciones de la UI de Minerva.
+>
+> **Logout redirigido (`GET {panel}/logout?redirect_uri=...`).** Es la página del panel que llama a
+> ese mismo `POST /auth/logout` (por tanto igual de **suave**: no revoca) y luego navega al
 > destino. `redirect_uri` acepta **solo rutas internas del panel** (`/login`, `/admin/users`…):
 > cualquier URL externa —absoluta, protocol-relative o con caracteres de escape— se descarta y el
 > usuario termina en `/login`. Los destinos externos exigen registro previo de
@@ -257,15 +274,31 @@ compatibilidad, pero es solo texto para humanos):
 > `GET /api/v1/me/permissions` en tiempo real (sujeto a su caché corta,
 > `MINERVA_PERMISSIONS_CACHE_TTL`, desactivada por defecto) y por tanto responde `401` antes.
 
-### 3.4 Cerrar sesión / revocar (RFC 7009)
+### 3.5 Revocar un refresh token (RFC 7009)
+
+Este es **el** endpoint que usa tu backend para cerrar sesión de verdad del lado de Minerva
+(el logout del panel no revoca nada, ver la nota de §3.1). El parámetro `token` es un
+**refresh token**: Minerva revoca toda su familia y blacklistea los access tokens que se
+emitieron con ella.
 
 ```bash
+# client_secret solo si tu cliente es confidencial; omítelo en clientes públicos.
 curl -X POST {MINERVA_ISSUER}/auth/revoke \
+  -H "Content-Type: application/x-www-form-urlencoded" \
   -d "client_id={tu client_id}" \
+  -d "client_secret={tu client_secret}" \
   -d "token={refresh_token a revocar}"
 ```
 
-### 3.5 Acceso denegado: usuario sin rol en tu aplicación
+- Responde `200 {"revoked": true}` **aunque el token no exista o ya estuviera revocado**
+  (RFC 7009 §2.2: no filtra si la credencial era válida).
+- Falta `client_id` o `token` → `400`; `client_id` desconocido → `400`; `client_secret`
+  incorrecto en un cliente confidencial → `403`.
+- El `access_token` ya emitido deja de servir en cuanto su `jti` entra a la blacklist, pero
+  `get_current_user` del SDK valida la firma localmente: si no consultas permisos, tu proceso no
+  se entera hasta el siguiente `require_permission` o hasta que expire (≤15 min).
+
+### 3.6 Acceso denegado: usuario sin rol en tu aplicación
 
 Minerva solo emite el código si el usuario tiene **al menos un rol** en tu aplicación
 (directo o por grupo). Si no lo tiene, en lugar de `code` responde con un error OAuth2
@@ -298,7 +331,7 @@ aplicación (panel admin o al crear el usuario). El rol global `minerva.admin` s
 puede entrar. Otros valores de `error` posibles: `login_required` (con `prompt=none` sin
 sesión) — trátalos igual, leyendo `error` en el callback.
 
-### 3.6 Login en popup (opt-in, sin salir de tu pantalla)
+### 3.7 Login en popup (opt-in, sin salir de tu pantalla)
 
 Por defecto el login es un redirect full-page (§3.1): sacas al usuario a Minerva y
 regresa a tu `redirect_uri`. Si prefieres **no sacarlo de tu UI**, puedes abrir el login
@@ -348,7 +381,7 @@ en su lugar devuelve el resultado al opener vía `window.postMessage` y cierra e
 ```
 
 El mensaje que recibe el opener es `{ source: "minerva", code, state, error }`. El caso
-denegado (§3.5) llega como `{ error: "access_denied" }` por el mismo canal. Ver
+denegado (§3.6) llega como `{ error: "access_denied" }` por el mismo canal. Ver
 `examples/godin-consumer` (`/popup` y `/popup/exchange`) para un ejemplo completo.
 
 ## 4. Validar tokens y permisos con el SDK (`minerva_sdk`)
@@ -431,7 +464,7 @@ pregunta a Minerva, Minerva decide.
 
 `examples/godin-consumer/` es un consumidor mínimo funcional: cliente público + PKCE,
 `/login`, `/callback`, `/whoami` y `/protegido` (con `require_permission`), más `/popup`
-y `/popup/exchange` que demuestran el login en popup de §3.6. Su `README.md` trae el flujo
+y `/popup/exchange` que demuestran el login en popup de §3.7. Su `README.md` trae el flujo
 de prueba manual paso a paso, incluyendo los `curl` exactos para registrar la aplicación y
 probar el endpoint protegido.
 
