@@ -1,12 +1,15 @@
 """Comandos de mantenimiento operacional, sin necesidad de levantar el servidor HTTP.
 
 Uso (dentro del contenedor backend o con el entorno conda `minerva` activo):
-    python -m app.cli rotate-key      # fase 1: publica la clave nueva en el JWKS
-    python -m app.cli promote-key     # fase 2: empieza a firmar con ella
+    python -m app.cli rotate-key         # fase 1: publica la clave nueva en el JWKS
+    python -m app.cli promote-key        # fase 2: empieza a firmar con ella
+    python -m app.cli import-manifests   # importa los manifiestos del arranque
 """
 
 import argparse
 import logging
+import sys
+from pathlib import Path
 
 from sqlmodel import Session
 
@@ -66,6 +69,47 @@ def promote_key(force: bool = False) -> None:
     print(f"La anterior queda retirada y publicada {settings.key_retirement_overlap_minutes} min mas.")
 
 
+def import_manifests() -> int:
+    """Importa los manifiestos de `MINERVA_MANIFESTS_PATH`. Devuelve 1 si alguno falló.
+
+    Es un paso ÚNICO del arranque (`scripts/backend-entrypoint.sh`, antes de levantar
+    los workers). Vivía en el lifespan de FastAPI, así que con gunicorn corría una vez
+    por worker y cada fallo quedaba en un `logger.warning` que nadie mira.
+    """
+    from app.modules.devkit.service import DevKitService
+
+    if not settings.MINERVA_AUTO_IMPORT_MANIFESTS:
+        print("Autoimport deshabilitado (MINERVA_AUTO_IMPORT_MANIFESTS=false); no se importa nada.")
+        return 0
+
+    manifests_dir = Path(settings.MINERVA_MANIFESTS_PATH)
+    if not manifests_dir.exists():
+        print(f"Sin manifiestos que importar: {manifests_dir} no existe.")
+        return 0
+
+    import_models()
+    patterns = ("*.minerva.yml", "*.minerva.yaml", "manifest.yml", "manifest.yaml")
+    files = sorted({path for pattern in patterns for path in manifests_dir.glob(pattern)})
+
+    failures: list[str] = []
+    for path in files:
+        try:
+            with Session(engine) as session:
+                result = DevKitService(session).import_manifest(path.read_text(encoding="utf-8"), path.name)
+            logger.info("Manifiesto importado: %s (app=%s)", path.name, result.application_code)
+            print(f"Manifiesto importado: {path.name} (app={result.application_code})")
+        except Exception as exc:  # noqa: BLE001 - se reportan todos, no solo el primero
+            failures.append(f"{path.name}: {exc}")
+
+    for failure in failures:
+        print(f"ERROR: no se pudo importar el manifiesto {failure}")
+    if failures:
+        print(f"{len(failures)} de {len(files)} manifiestos fallaron; el arranque no debe continuar.")
+        return 1
+    print(f"{len(files)} manifiesto(s) importado(s) desde {manifests_dir}.")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Comandos de mantenimiento de Minerva")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -79,11 +123,15 @@ def main() -> None:
         help="Promueve aunque no haya terminado la ventana de propagacion",
     )
 
+    subparsers.add_parser("import-manifests", help="Importa los manifiestos de MINERVA_MANIFESTS_PATH")
+
     args = parser.parse_args()
     if args.command == "rotate-key":
         rotate_key()
     elif args.command == "promote-key":
         promote_key(force=args.force)
+    elif args.command == "import-manifests":
+        sys.exit(import_manifests())
 
 
 if __name__ == "__main__":

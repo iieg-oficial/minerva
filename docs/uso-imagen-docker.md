@@ -138,6 +138,14 @@ se montan en `/app/manifests` y, con `MINERVA_AUTO_IMPORT_MANIFESTS=true`, se im
 arrancar. Si la carpeta está vacía, Minerva arranca sin apps y puedes importarlas después
 desde el panel o la API.
 
+La importación es un paso único del entrypoint (`python -m app.cli import-manifests`), no del
+lifespan: corre una sola vez aunque haya varios workers, y **un manifiesto inválido aborta el
+arranque** en lugar de quedar en un warning. Puedes correrlo a mano en un contenedor ya levantado:
+
+```bash
+docker compose exec backend python -m app.cli import-manifests
+```
+
 ## 6. Checklist de producción
 
 Para un despliegue de producción, parte de **`.env.production.example`** (en la raíz del repo):
