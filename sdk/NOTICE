@@ -1,0 +1,10 @@
+minerva-sdk
+Copyright (C) 2026 Instituto de Información Estadística y Geográfica de Jalisco (IIEG)
+
+Este producto incluye software desarrollado por el IIEG.
+
+`sdk/` (el paquete `minerva_sdk`) se distribuye bajo la licencia Apache-2.0 — ver
+`sdk/LICENSE` — y NO bajo la AGPL-3.0 del resto del repositorio: es una librería que los
+sistemas consumidores importan en su propio código, y no debe imponerles el copyleft del
+servidor. El resto de Minerva (backend, frontend, documentación) está bajo AGPL-3.0-only,
+ver el archivo `LICENSE` en la raíz.

@@ -19,12 +19,18 @@ Servicios:
 | PostgreSQL | `5433` | `POSTGRES_PORT` (mapeado a 5432 dentro del contenedor) |
 | Redis | `6379` | `REDIS_PORT` |
 
-Al arrancar (`lifespan` en `backend/app/main.py`), el backend:
-1. Valida la configuración (`validate_production_config()` — no falla en modo dev).
-2. Aplica migraciones Alembic (`alembic upgrade head`, en el entrypoint).
-3. Siembra (`_seed_data`) el usuario administrador y la aplicación `minerva` si no existen.
-4. Garantiza una clave de firma RS256 activa (`_seed_signing_key`, idempotente).
-5. Auto-importa manifiestos desde `MINERVA_MANIFESTS_PATH` si `MINERVA_AUTO_IMPORT_MANIFESTS=true`.
+Al arrancar, el entrypoint (`backend/scripts/backend-entrypoint.sh`) corre **una sola vez**,
+antes de levantar el servidor:
+1. Aplica migraciones Alembic (`alembic upgrade head`).
+2. Importa los manifiestos de `MINERVA_MANIFESTS_PATH` si `MINERVA_AUTO_IMPORT_MANIFESTS=true`
+   (`python -m app.cli import-manifests`). Si un manifiesto falla, **el arranque se aborta**:
+   no queda en un warning silencioso.
+
+Después, el `lifespan` (`backend/app/main.py`) corre en cada worker:
+
+3. Valida la configuración (`validate_production_config()` — no falla en modo dev).
+4. Siembra (`_seed_data`) el usuario administrador y la aplicación `minerva` si no existen.
+5. Garantiza una clave de firma RS256 activa (`_seed_signing_key`, idempotente).
 
 ### ⚠️ Gotcha de puertos: 8000 vs 9000
 
@@ -55,13 +61,21 @@ Se crea automáticamente al primer arranque si no existe:
 
 ### 2.1 Variables obligatorias
 
+**Qué cuenta como producción:** una sola propiedad, `Settings.is_production`, resuelve las dos
+señales que existen (`APP_ENV` y `MINERVA_MODE`). Es desarrollo **solo si ambas lo dicen**
+(`APP_ENV=development` y `MINERVA_MODE=dev`); cualquier otro valor —incluido un typo— se trata como
+producción y activa las validaciones. La misma propiedad gobierna la cookie del panel, así que no
+puede haber un despliegue con cookie de producción y validaciones de dev.
+
 `Settings.validate_production_config()` (`backend/app/core/config.py`) se ejecuta en el
-`lifespan` del backend y **aborta el arranque** si `MINERVA_MODE != dev` y detecta
+`lifespan` del backend y **aborta el arranque** si la configuración es de producción y detecta
 cualquiera de estos problemas:
 
 | Variable | Requisito en producción |
 |---|---|
-| `MINERVA_MODE` | distinto de `dev` (p. ej. `production`) |
+| `APP_ENV` | `production` (o cualquier valor distinto de `development`/`dev`) |
+| `MINERVA_MODE` | distinto de `dev` (p. ej. `central`) |
+| `APP_DEBUG` | debe ser `false` |
 | `MINERVA_ENABLE_DEV_LOGIN` | debe ser `false` |
 | `ADMIN_PASSWORD` | distinto del default `changeme123` |
 | `SECRET_KEY` | sin la cadena `change-me-in-production` |
@@ -106,7 +120,7 @@ Implicaciones:
   `add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;` — **sin
   `preload`** por defecto (es difícil de revertir y exige HTTPS en todos los subdominios). La cookie de
   sesión del panel usa el prefijo `__Host-` (exige HTTPS): en HTTP local se usa `minerva_sid` sin
-  `Secure`, derivado de `MINERVA_MODE`.
+  `Secure`, derivado de la misma señal de entorno (`APP_ENV` + `MINERVA_MODE`, ver §2.1).
 - **Redis es control de seguridad, no solo caché.** Además del rate limit, guarda la blacklist de
   `jti`, los cortes de invalidación por usuario y el **contenedor de sesión del panel**. Por eso corre
   con persistencia AOF (`appendonly yes`) y `maxmemory-policy noeviction` (ver §3.4): sobrevive
@@ -118,7 +132,8 @@ Implicaciones:
 - `MINERVA_ISSUER` / `MINERVA_JWT_ISSUER`: URL pública real de Minerva = **el host de nginx, sin
   `:9000`** (p. ej. `http://minerva.jalisco.gob.mx`; `https://…` al tener certificado). Aparece como
   `iss` en cada token y en el discovery; debe coincidir con lo que ven los consumidores.
-- `FRONTEND_URL`: mismo host público del panel (entra en la whitelist de CORS).
+- `FRONTEND_URL`: **debe ser el mismo host público** que `MINERVA_ISSUER`/`MINERVA_JWT_ISSUER`. La
+  cookie `__Host-` es host-only: dos dominios distintos rompen el BFF (401 silencioso).
 - `MINERVA_ACCESS_TOKEN_TTL_MINUTES` / `MINERVA_REFRESH_TOKEN_TTL_DAYS`: ciclo de vida
   de los tokens OIDC emitidos a consumidores.
 - `RATE_LIMIT_LOGIN_MAX` / `RATE_LIMIT_LOGIN_WINDOW` / `RATE_LIMIT_AUTHORIZE_MAX` /
@@ -262,7 +277,7 @@ volumen nombrado `minerva_redis_data:/data`. Consecuencias:
 
 ### 3.5 Checklist rápido antes de exponer Minerva a producción
 
-1. `MINERVA_MODE` ≠ `dev` y `MINERVA_ENABLE_DEV_LOGIN=false`.
+1. `APP_ENV=production`, `MINERVA_MODE` ≠ `dev`, `APP_DEBUG=false` y `MINERVA_ENABLE_DEV_LOGIN=false`.
 2. `ADMIN_PASSWORD`, `SECRET_KEY`, `JWT_SECRET_KEY` cambiados de su valor default.
 3. `MINERVA_KEY_ENCRYPTION_KEY` generada y guardada en un secret manager.
 4. `MINERVA_ISSUER` apunta a la URL pública real (HTTPS).

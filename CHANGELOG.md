@@ -7,6 +7,146 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-12
+
+> **Estado del release.** 0.6.0 es un release de **desbloqueo para los consumidores OIDC**: publica
+> a `main` el contrato OAuth endurecido que hasta ahora solo existía en `develop`, para que los
+> sistemas que se están integrando trabajen contra una versión publicada. **No es el 1.0.0**; la
+> decisión de declarar 1.0 queda sujeta a la auditoría, que es posterior a este release.
+
+> ⚠️ **Antes de actualizar.** Este release incluye un **BREAKING de despliegue** (#69): un
+> despliegue con dos dominios públicos debe consolidarse en el origen único de nginx, o
+> `validate_production_config()` aborta el arranque. Ver la entrada al final de *Fixed*.
+
+### Added
+
+- **El Authorization Endpoint acepta `POST` con `application/x-www-form-urlencoded`.** OIDC Core
+  §3.1.2.1 obliga a soportar `GET` **y** `POST`, y `/auth/authorize` solo tenía `GET`: un RP que
+  siguiera la spec al pie de la letra —o una librería OIDC certificada— recibía un `405`. Ahora los
+  tres handlers (`GET`, `POST` form y la variante JSON que consume el panel) comparten un único
+  flujo y el mismo modelo de parámetros, así que éxito y error son equivalentes entre métodos,
+  incluido el `422` por parámetro faltante. El `POST` responde **303** para que el navegador siga
+  el destino con `GET`. `/auth/authorize` queda exento del CSRF del panel: la cookie es
+  `SameSite=Lax` y por tanto un `POST` cross-site nunca la lleva, la comprobación de `Origin` sigue
+  aplicándose, y la defensa del RP contra login-CSRF es su `state`. (#80)
+- **UserInfo acepta `POST`.** Mismo hueco de conformidad, esta vez OIDC Core §5.3: `/userinfo`
+  atiende ahora `GET` y `POST` sobre la misma función y la misma dependencia, sin cambios de claims
+  ni de scopes. Su política CORS pasa a `allow_methods: ["GET", "POST"]` — sin eso el preflight
+  rechazaba el `POST` desde navegador y el endpoint solo habría sido equivalente server-to-server.
+  El token sigue viajando como Bearer en el header. (#81)
+- **El repositorio se publica con licencia libre.** `LICENSE` en la raíz con la **GNU AGPL-3.0**
+  (`AGPL-3.0-only`) para el servidor —backend, frontend y documentación—, y `sdk/LICENSE` con
+  **Apache-2.0** más su `NOTICE` para `minerva_sdk`: el SDK es una librería que el sistema
+  consumidor importa en su propio proceso, y bajo AGPL arrastraría a cada plataforma del instituto
+  a publicar su código. La metadata SPDX de los tres paquetes queda alineada. (#93)
+- **`SECURITY.md`**: canal privado de reporte (GitHub Private Vulnerability Reporting), qué incluir
+  en un reporte, qué esperar, versiones soportadas y alcance —explícitamente sin SLA ni
+  recompensas. (#95)
+- **`CONTRIBUTING.md`**: entorno, flujo issue → rama → PR, modelo de ramas, convención de commits,
+  los comandos de validación idénticos a los del CI y la regla de revisar el diff completo contra
+  su merge-base tras aplicar correcciones. (#97)
+
+### Changed
+
+- **La imagen del frontend fija nginx en `1.30.4-alpine`.** La etiqueta flotante `nginx:alpine`
+  permitía que un `docker build` con capa cacheada siguiera levantando 1.29.8, vulnerable a
+  CVE-2026-42533 (CVSS 9.2), CVE-2026-60005 y CVE-2026-56434. Pesa más aquí que en otros
+  servicios: ese nginx es el **único punto público** del despliegue. `nginx.conf` no necesitó
+  cambios. (#138)
+- **El frontend sube a Vite 8, Vitest 4 y React 19.2.8.** Vite 8 cambia el bundler a Rolldown y el
+  minificador de CSS a Lightning CSS; el bundle no crece (1,263 kB frente a 1,303 kB) y el build
+  baja de 3.7 s a 0.4 s. El job `frontend` del CI pasa a Node 22 —la misma del `Dockerfile`— y
+  ejecuta `npm test`, que hasta ahora no corría en ningún lado. **Para quien despliegue:**
+  `build.target` sube a Chrome 111 / Edge 111 / Firefox 114 / Safari 16.4 / iOS 16.4, y cambian
+  todos los hashes de los assets, así que las pestañas del panel abiertas durante el despliegue
+  pueden quedarse en blanco hasta recargar. (#139)
+- **Una sola versión para todo el proyecto.** Circulaban cinco: `pyproject` 0.5.0, el literal de
+  `GET /`, el 0.1.0 por defecto de FastAPI en `/openapi.json`, `frontend/package.json` en 0.3.4 y
+  dos versiones citadas en la documentación que nunca existieron. La fuente única es ahora
+  `backend/pyproject.toml` —la misma del tag—, el backend la lee de la metadata del paquete
+  instalado y `tests/test_version_alignment.py` falla si alguna superficie se queda atrás. (#89)
+- **La resolución de dependencias del backend queda congelada** en `backend/constraints.txt` (76
+  paquetes), que consumen tanto el CI como el `Dockerfile`. Antes dos builds en fechas distintas
+  instalaban árboles distintos y un cambio de transitiva entraba sin aparecer en ningún diff.
+  Sigue siendo pip: no se introduce Poetry ni uv. (#85)
+- **La imagen del frontend se construye con `npm ci`** y el `package-lock.json` versionado, en vez
+  de `npm install` ignorando el lock: la imagen podía resolver un árbol distinto al que valida el
+  CI. (#86)
+- **Un tag ya no puede publicar imágenes con el CI en rojo.** `docker-publish.yml` disparaba con
+  `push: tags: v*` y sin ningún `needs`, así que subía a ghcr aunque el CI de ese commit hubiera
+  fallado —o nunca hubiera corrido—. Ahora invoca `ci.yml` como workflow reutilizable y la
+  publicación depende de que pase **sobre el mismo commit etiquetado**. (#87)
+- **El CI corre las pruebas que PostgreSQL sí reproduce.** Los tests del advisory lock del seed,
+  el trigger PL/pgSQL, los índices únicos parciales y el lock de fila del refresh estaban marcados
+  `skipif` sobre una variable que el CI nunca definía: se saltaban siempre y el verde no decía nada
+  de ellos. Job `backend-postgres` nuevo, con `postgres:16-alpine` y un paso que falla si la
+  variable desaparece. (#84)
+- **El CI escanea vulnerabilidades con `pip-audit`** sobre la resolución congelada, en su propio
+  job. Lleva una única excepción acotada y documentada (`PYSEC-2026-1325`, `ecdsa`: upstream
+  declara los side channels fuera de alcance y no hay versión corregida; no es alcanzable porque
+  Minerva firma y valida solo RS256), con fecha de revisión. Cualquier alerta distinta rompe el
+  job. (#88)
+
+### Fixed
+
+- **`GET /auth/authorize` propaga `max_age` desde el panel.** `AuthorizePage` no leía ni reenviaba
+  el parámetro, así que el backend nunca lo recibía y una sesión activa completaba SSO silencioso
+  ignorando la reautenticación que el RP había pedido. (#66)
+- **Los endpoints Bearer emiten `WWW-Authenticate` conforme a RFC 6750 §3.** `/userinfo`,
+  `/api/v1/me` y `/api/v1/me/permissions` respondían 401/403 sin el challenge, así que un cliente
+  no podía distinguir «falta credencial» de «token inválido» ni saber qué scope le faltaba. Ahora
+  el challenge se emite desde un único punto (`BearerUnauthorizedError` / `InsufficientScopeError`)
+  y sus descripciones son fijas: no filtran si el token estaba expirado, revocado o mal firmado. La
+  sesión por cookie del panel queda fuera, sin cambios. (#82)
+- **Producción se deriva de una sola señal.** Había dos interruptores de entorno y solo uno hacía
+  algo: `MINERVA_MODE` decidía todo y **`APP_ENV` no lo leía nadie**, así que
+  `APP_ENV=production` + `MINERVA_MODE=dev` pasaba `validate_production_config()` sin una queja,
+  con dev-login y contraseña por defecto activos. Ahora es desarrollo **solo si ambas** señales lo
+  dicen: cualquier marca de producción, o un typo como `prod`, cae del lado seguro. El fail-fast
+  además rechaza `APP_DEBUG=true`. (#68)
+- **Las migraciones ya no se aplican a otra base que la que sirve la aplicación.** El runtime abre
+  el engine con `settings.effective_db_url`, que da prioridad a `MINERVA_DB_URL`, mientras que
+  `alembic/env.py` leía `DATABASE_URL` directo: con ambas definidas y distintas, Alembic migraba
+  una base y Minerva servía otra. En `.env.production.example` coincidían por casualidad, lo que
+  enmascaraba el problema. (#72)
+- **`import_models()` estaba vacío**, así que Alembic recibía una metadata **sin ninguna tabla**:
+  un `alembic revision --autogenerate` habría propuesto borrar el esquema completo y
+  `alembic check` no vigilaba nada. Ahora importa explícitamente los 9 módulos con `table=True`
+  (15 tablas), `env.py` aborta si la metadata queda vacía, y un test detecta al que agregue un
+  modelo nuevo sin declararlo. (#73)
+- **El autoimport de manifiestos deja de correr dentro del `lifespan`.** Con `gunicorn -w 4` eran
+  cuatro importaciones en paralelo del mismo manifiesto sobre la misma base, y cada fallo se
+  degradaba a un `warning`, así que un manifiesto roto pasaba inadvertido. Ahora es un paso único
+  del entrypoint, después de `alembic upgrade head` y antes de arrancar el servidor: reporta todos
+  los fallos y aborta el arranque si alguno falló. (#77)
+- **BREAKING · El despliegue de producción exige un único origen público.** La plantilla
+  `.env.production.example` proponía dos dominios (`<dominio-panel>` y `<dominio-api>`), pero la
+  cookie de sesión del panel usa el prefijo `__Host-`, que es *host-only*: con hosts distintos la
+  cookie nunca viaja al API y el login falla con un **401 mudo**, sin rastro en los logs. La
+  plantilla ahora usa un solo `<dominio-publico>` para `FRONTEND_URL`, `MINERVA_ISSUER` y
+  `MINERVA_JWT_ISSUER`, y `docs/despliegue.md` explica el porqué. Además, `validate_production_config()`
+  **falla al arrancar** si esos hosts no coinciden, en vez de dejar que Minerva levante rota; la
+  comparación ignora el esquema (el TLS puede terminar fuera del contenedor) pero sí distingue el
+  puerto. La plantilla ya no sugiere `BACKEND_PORT` en el deploy: el backend no se publica, nginx
+  lo proxea por la red interna. **Migración:** un despliegue pre-1.0 con dos hosts debe consolidarse
+  en el origen único de nginx antes de actualizar. (#69)
+- **La documentación decía cosas que el runtime no hacía.** `docs/integracion.md` afirmaba que
+  `POST /auth/logout` con el `access_token` en el header revoca el token: el logout del panel es
+  **suave**, se autentica con la cookie de sesión y no revoca nada —la revocación real está en
+  `DELETE /auth/session/accounts/{sub}` y `POST /auth/logout-all`—. También proponía `prompt=none`
+  para *silent renew* en un iframe, imposible porque nginx emite `frame-ancestors 'none'`. Se
+  separó además la sección que mezclaba el logout del panel con `/auth/revoke` (RFC 7009, sobre el
+  refresh token). En `sdk/README.md`, el SDK **no** descubre endpoints: concatena
+  `{issuer}/.well-known/jwks.json` y `{issuer}/api/v1/me/permissions`, y ahora se documenta qué
+  implica. (#90)
+- **`docs/arquitectura.md` describía dependencias y rotación que no existen.** La tabla nombraba
+  `get_current_user` / `get_optional_user`, símbolos ya inexistentes, en vez de las cinco
+  dependencias reales y su validador común `_resolve_token`. El diagrama de rotación de claves
+  describía un solo paso, cuando el runtime es de **dos fases** (`rotate-key` publica la clave como
+  `pending` sin firmar nada; `promote-key` la asciende pasado `MINERVA_KEY_PROPAGATION_MINUTES` y
+  ahí purga las retiradas). Se documenta también que el contrato de manifiestos es **aditivo**:
+  quitar un permiso del YAML y reimportar no lo borra de la base. (#91)
+
 ## [0.5.0] - 2026-07-31
 
 > **Estado del release.** 0.5.0 publica el trabajo ya integrado desde 0.4.0 como un checkpoint

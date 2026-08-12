@@ -79,6 +79,29 @@ def test_userinfo_requires_bearer(client):
     assert resp.status_code == 401
 
 
+# --- POST (OIDC Core 5.3 exige los dos métodos) -----------------------------
+@pytest.mark.parametrize("scope", ["openid", "openid profile email"])
+def test_userinfo_post_returns_the_same_claims_as_get(client, app_ctx, scope):
+    token = _access_token(client, app_ctx, scope)
+    headers = {"Authorization": f"Bearer {token}"}
+    get_resp = client.get("/userinfo", headers=headers)
+    post_resp = client.post("/userinfo", headers=headers)
+    assert post_resp.status_code == get_resp.status_code == 200
+    assert post_resp.json() == get_resp.json()
+
+
+def test_userinfo_post_requires_bearer(client):
+    resp = client.post("/userinfo")
+    assert resp.status_code == 401
+    assert resp.headers["WWW-Authenticate"] == 'Bearer realm="minerva"'
+
+
+def test_userinfo_post_rejects_invalid_token(client):
+    resp = client.post("/userinfo", headers={"Authorization": "Bearer no-es-un-jwt"})
+    assert resp.status_code == 401
+    assert 'error="invalid_token"' in resp.headers["WWW-Authenticate"]
+
+
 def test_userinfo_rejects_revoked_token(client, app_ctx, fresh_redis):
     import asyncio
 

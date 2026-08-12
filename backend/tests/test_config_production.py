@@ -1,4 +1,4 @@
-"""Tests de validación fail-fast de configuración en modo no-dev (issue #6)."""
+"""Tests de validación fail-fast de configuración en modo no-dev (issues #6 y #69)."""
 
 import pytest
 
@@ -8,22 +8,61 @@ from app.core.config import Settings
 def _settings(**overrides) -> Settings:
     base = {
         "MINERVA_MODE": "production",
+        "APP_ENV": "production",
+        "APP_DEBUG": False,
         "MINERVA_ENABLE_DEV_LOGIN": False,
         "ADMIN_PASSWORD": "una-password-real-y-larga",
         "SECRET_KEY": "valor-generado-aleatorio",
         "JWT_SECRET_KEY": "valor-generado-aleatorio",
         "MINERVA_KEY_ENCRYPTION_KEY": "clave-fernet-real",
+        "MINERVA_ISSUER": "https://minerva.jalisco.gob.mx",
+        "FRONTEND_URL": "https://minerva.jalisco.gob.mx",
     }
     base.update(overrides)
     return Settings(**base)
 
 
 def test_dev_mode_never_raises():
-    Settings(MINERVA_MODE="dev", ADMIN_PASSWORD="changeme123").validate_production_config()
+    Settings(MINERVA_MODE="dev", APP_ENV="development", ADMIN_PASSWORD="changeme123").validate_production_config()
 
 
 def test_production_with_safe_config_does_not_raise():
     _settings().validate_production_config()
+
+
+# --- Señal única de entorno: solo es dev si AMBAS variables lo dicen (issue #68) ---
+
+
+@pytest.mark.parametrize(
+    ("app_env", "minerva_mode", "expected_production"),
+    [
+        ("development", "dev", False),
+        ("production", "dev", True),  # antes pasaba como dev y se saltaba el fail-fast
+        ("development", "central", True),
+        ("production", "central", True),
+        ("prod", "dev", True),  # un typo cae del lado seguro
+        ("development", "devel", True),
+    ],
+)
+def test_environment_signal_is_production_only_when_both_agree(app_env, minerva_mode, expected_production):
+    assert Settings(APP_ENV=app_env, MINERVA_MODE=minerva_mode).is_production is expected_production
+
+
+def test_cookie_flags_follow_the_same_signal():
+    # Las cookies del panel y el fail-fast leen la MISMA propiedad: no pueden divergir.
+    ambiguous = Settings(APP_ENV="production", MINERVA_MODE="dev")
+    assert ambiguous.session_cookie_name == "__Host-minerva_sid"
+    assert ambiguous.session_cookie_secure is True
+
+
+def test_production_by_app_env_alone_still_validates():
+    with pytest.raises(RuntimeError, match="MINERVA_ENABLE_DEV_LOGIN"):
+        _settings(MINERVA_MODE="dev", MINERVA_ENABLE_DEV_LOGIN=True).validate_production_config()
+
+
+def test_production_rejects_debug_enabled():
+    with pytest.raises(RuntimeError, match="APP_DEBUG"):
+        _settings(APP_DEBUG=True).validate_production_config()
 
 
 def test_production_rejects_dev_login_enabled():
@@ -44,6 +83,29 @@ def test_production_rejects_default_secret_key():
 def test_production_rejects_empty_key_encryption_key():
     with pytest.raises(RuntimeError, match="MINERVA_KEY_ENCRYPTION_KEY"):
         _settings(MINERVA_KEY_ENCRYPTION_KEY="").validate_production_config()
+
+
+# --- Origen público único: la cookie `__Host-` es host-only (issue #69) ---
+
+
+def test_production_rejects_frontend_url_on_a_different_host_than_the_issuer():
+    with pytest.raises(RuntimeError, match="FRONTEND_URL"):
+        _settings(FRONTEND_URL="https://panel.jalisco.gob.mx").validate_production_config()
+
+
+def test_production_rejects_jwt_issuer_on_a_different_host_than_the_frontend():
+    with pytest.raises(RuntimeError, match="MINERVA_JWT_ISSUER"):
+        _settings(MINERVA_JWT_ISSUER="https://api.jalisco.gob.mx").validate_production_config()
+
+
+def test_production_accepts_same_host_with_different_scheme_or_trailing_slash():
+    # El TLS puede terminar fuera del contenedor: nginx sirve HTTP con el mismo host público.
+    _settings(FRONTEND_URL="http://minerva.jalisco.gob.mx/").validate_production_config()
+
+
+def test_production_rejects_same_host_on_a_different_port():
+    with pytest.raises(RuntimeError, match="FRONTEND_URL"):
+        _settings(FRONTEND_URL="https://minerva.jalisco.gob.mx:9000").validate_production_config()
 
 
 def test_production_reports_all_problems_at_once():

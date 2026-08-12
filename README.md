@@ -4,7 +4,7 @@
 
 ### El sistema institucional de identidad, autenticación y autorización del IIEG
 
-[![CI](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml/badge.svg)](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml) [![Versión](https://img.shields.io/badge/versi%C3%B3n-0.5.0-5C2472)](CHANGELOG.md) ![OIDC](https://img.shields.io/badge/OIDC-OpenID%20Connect-5C2472) ![RS256](https://img.shields.io/badge/JWT-RS256%20%2F%20JWKS-2e4372) ![Python](https://img.shields.io/badge/python-3.12%2B-2e4372) ![Uso](https://img.shields.io/badge/uso-institucional-FF8300)
+[![CI](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml/badge.svg)](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml) [![Versión](https://img.shields.io/badge/versi%C3%B3n-0.6.0-5C2472)](CHANGELOG.md) ![OIDC](https://img.shields.io/badge/OIDC-OpenID%20Connect-5C2472) ![RS256](https://img.shields.io/badge/JWT-RS256%20%2F%20JWKS-2e4372) ![Python](https://img.shields.io/badge/python-3.12%2B-2e4372) [![Licencia](https://img.shields.io/badge/licencia-AGPL--3.0--only-FF8300)](LICENSE)
 
 </div>
 
@@ -60,6 +60,18 @@ servidor compartido — compatible con la futura Minerva Central del instituto.
 | [`examples/godin-consumer/`](examples/godin-consumer) | Integración de referencia completa con el SDK |
 | [`docs/`](docs) | Arquitectura, glosario OIDC, despliegue e integración — ver abajo |
 
+## 🏷️ Versionado
+
+La versión del proyecto es la de [`backend/pyproject.toml`](backend/pyproject.toml), y es la misma
+que el tag de release (`vX.Y.Z`) y la etiqueta de las imágenes en ghcr. El backend la reporta en
+`GET /` y en `/openapi.json` leyéndola del paquete instalado; el badge de arriba,
+`.env.production.example` y `frontend/package.json` la repiten, y
+`backend/tests/test_version_alignment.py` falla si alguna se queda atrás.
+
+**`minerva_sdk` versiona por su cuenta** ([`sdk/pyproject.toml`](sdk/pyproject.toml)): lo instalan
+sistemas consumidores con su propio ritmo de actualización, así que su número no sigue al del
+servidor. La diferencia es deliberada, no un descuido.
+
 ## 📚 Guías
 
 Este README es la portada; el detalle técnico vive en `docs/` para no duplicarse ni quedar viejo:
@@ -69,6 +81,8 @@ Este README es la portada; el detalle técnico vive en `docs/` para no duplicars
 - **[Despliegue](docs/despliegue.md)** — desarrollo, producción, endurecimiento y mantenimiento (rotación de claves, backups).
 - **[Uso por imagen Docker](docs/uso-imagen-docker.md)** — consumir Minerva desde `ghcr.io` sin clonar el repositorio.
 - **[Glosario OIDC/OAuth](docs/glosario.md)** — los términos del protocolo, explicados una sola vez.
+- **[Cómo contribuir](CONTRIBUTING.md)** — entorno, ramas, commits, validaciones y revisión.
+- **[Política de seguridad](SECURITY.md)** — cómo reportar una vulnerabilidad en privado.
 
 ## 🚀 Arrancar en local
 
@@ -83,4 +97,16 @@ usuario administrador por defecto, checklist de producción — está en
 
 ## 📄 Licencia
 
-Proyecto interno del IIEG. Uso institucional.
+Copyright (C) 2026 **Instituto de Información Estadística y Geográfica de Jalisco (IIEG)**.
+
+Minerva es software libre bajo la **[GNU Affero General Public License v3.0](LICENSE)**
+(`AGPL-3.0-only`). Puedes usarlo, estudiarlo, modificarlo y redistribuirlo; si lo despliegas
+como servicio accesible por red, la AGPL te obliga a ofrecer el código fuente —con tus
+modificaciones— a quienes lo usen.
+
+**Excepción: el SDK es Apache-2.0.** El paquete [`sdk/`](sdk/) (`minerva_sdk`) se distribuye
+bajo la **[Apache License 2.0](sdk/LICENSE)**, no bajo AGPL. Es una librería que los sistemas
+consumidores importan en su propio código: integrarse con Minerva no obliga a nadie a liberar
+su plataforma.
+
+Se distribuye **sin garantía** de ningún tipo, en los términos de cada licencia.

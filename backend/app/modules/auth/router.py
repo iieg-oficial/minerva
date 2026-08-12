@@ -1,9 +1,12 @@
 import asyncio
 from datetime import datetime, timezone
-from urllib.parse import parse_qs, quote
+from typing import Annotated
+from urllib.parse import parse_qs, quote, urlencode
 
 from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlmodel import Session
 
@@ -24,6 +27,7 @@ from app.modules.audit.service import AuditService
 from app.modules.auth.schemas import (
     AccountDescriptor,
     AuthLogin,
+    AuthorizeQuery,
     AuthRegister,
     AuthTokenResponse,
     PanelSessionResponse,
@@ -60,11 +64,14 @@ async def _enforce_rate_limit_audited(
         raise
 
 
-def _login_redirect_url(request: Request) -> str:
+def _login_redirect_url(query: str) -> str:
     """URL de login con `next=` apuntando al `/authorize` original. Reutiliza el
     patrón `next=` que ya soporta el frontend (`LoginPage.jsx`/`AuthorizePage.jsx`)
-    para retomar el flujo tras autenticar — sin sesión nueva en Redis."""
-    next_path = f"/authorize?{request.url.query}"
+    para retomar el flujo tras autenticar — sin sesión nueva en Redis.
+
+    `query` se recibe en vez de leerse del `Request` porque en el POST form la query
+    string está vacía: los parámetros vienen en el cuerpo y hay que re-serializarlos."""
+    next_path = f"/authorize?{query}"
     return f"{settings.FRONTEND_URL}/login?next={quote(next_path, safe='')}"
 
 
@@ -260,19 +267,74 @@ def me(
     return service.get_me(current_user["sub"])
 
 
+async def _authorize_target_url(
+    request: Request,
+    params: AuthorizeQuery,
+    service: AuthService,
+    current_user: dict | None,
+    redis: Redis,
+    audit: AuditService,
+    *,
+    endpoint: str,
+    login_query: str,
+) -> str:
+    """Flujo del Authorization Endpoint, compartido por los tres handlers (GET, POST
+    form y la variante JSON del panel). Devuelve la URL a la que hay que mandar al
+    navegador —el callback con `code`, el callback con `error=` o el login— y cada
+    handler decide si la envuelve en un redirect o en JSON.
+
+    `endpoint` es solo la etiqueta de rate limit/auditoría; `login_query` es lo que se
+    reinyecta en el `next=` cuando hay que pasar por el login."""
+    await _enforce_rate_limit_audited(
+        redis,
+        f"minerva:rl:authorize:{request.client.host}",
+        settings.RATE_LIMIT_AUTHORIZE_MAX,
+        settings.RATE_LIMIT_AUTHORIZE_WINDOW,
+        audit,
+        request,
+        endpoint,
+    )
+    # Valida client_id/redirect_uri ANTES de cualquier redirect (incluso sin
+    # sesión): nunca se redirige a un destino no confiable (evita open redirect).
+    service.validate_client_and_redirect(params.client_id, params.redirect_uri)
+
+    # Solo se soporta el flujo de código (lo que ya declara el discovery). El error
+    # vuelve al cliente por redirect, no como 400: para eso el destino se validó arriba.
+    if params.response_type != "code":
+        return build_callback_url(params.redirect_uri, error="unsupported_response_type", state=params.state)
+
+    if current_user is None:
+        if params.prompt == "none":
+            return build_callback_url(params.redirect_uri, error="login_required", state=params.state)
+        return _login_redirect_url(login_query)
+
+    redirect_url, reauth_reason = service.authorize(
+        params.client_id,
+        params.redirect_uri,
+        current_user["sub"],
+        params.state,
+        params.scope,
+        code_challenge=params.code_challenge,
+        code_challenge_method=params.code_challenge_method,
+        nonce=params.nonce,
+        prompt=params.prompt,
+        max_age=params.max_age,
+        auth_time=session_auth_time(current_user),
+    )
+    if reauth_reason == "access_denied":
+        return build_callback_url(params.redirect_uri, error="access_denied", state=params.state)
+    if reauth_reason is not None:
+        if params.prompt == "none":
+            return build_callback_url(params.redirect_uri, error="login_required", state=params.state)
+        return _login_redirect_url(login_query)
+    assert redirect_url is not None  # garantizado: solo es None junto con reauth_reason
+    return redirect_url
+
+
 @router.get("/authorize")
 async def authorize(
     request: Request,
-    client_id: str = Query(...),
-    redirect_uri: str = Query(...),
-    state: str = Query(...),
-    scope: str = Query("openid profile email"),
-    response_type: str = Query("code"),
-    code_challenge: str | None = Query(None),
-    code_challenge_method: str | None = Query(None),
-    nonce: str | None = Query(None),
-    prompt: str | None = Query(None),
-    max_age: int | None = Query(None),
+    params: Annotated[AuthorizeQuery, Query()],
     service: AuthService = Depends(get_auth_service),
     current_user: dict | None = Depends(get_optional_panel_user),
     redis: Redis = Depends(get_redis),
@@ -282,65 +344,47 @@ async def authorize(
     la navegación directa (SameSite=Lax) y resuelve la cuenta activa. Modo B: un
     sistema externo redirige aquí el navegador sin sesión — se redirige a login y se
     retoma con `?next=` tras autenticar (mismo patrón que ya usa `AuthorizePage.jsx`)."""
-    await _enforce_rate_limit_audited(
-        redis,
-        f"minerva:rl:authorize:{request.client.host}",
-        settings.RATE_LIMIT_AUTHORIZE_MAX,
-        settings.RATE_LIMIT_AUTHORIZE_WINDOW,
-        audit,
-        request,
-        "authorize",
+    url = await _authorize_target_url(
+        request, params, service, current_user, redis, audit, endpoint="authorize", login_query=request.url.query
     )
-    # Valida client_id/redirect_uri ANTES de cualquier redirect (incluso sin
-    # sesión): nunca se redirige a un destino no confiable (evita open redirect).
-    service.validate_client_and_redirect(client_id, redirect_uri)
+    return RedirectResponse(url)
 
-    # Solo se soporta el flujo de código (lo que ya declara el discovery). El error
-    # vuelve al cliente por redirect, no como 400: para eso el destino se validó arriba.
-    if response_type != "code":
-        return RedirectResponse(build_callback_url(redirect_uri, error="unsupported_response_type", state=state))
 
-    if current_user is None:
-        if prompt == "none":
-            return RedirectResponse(build_callback_url(redirect_uri, error="login_required", state=state))
-        return RedirectResponse(_login_redirect_url(request))
+@router.post("/authorize")
+async def authorize_post(
+    request: Request,
+    service: AuthService = Depends(get_auth_service),
+    current_user: dict | None = Depends(get_optional_panel_user),
+    redis: Redis = Depends(get_redis),
+    audit: AuditService = Depends(get_audit_service),
+):
+    """Mismo Authorization Endpoint por POST `form-urlencoded`: OIDC Core 3.1.2.1 lo
+    exige junto al GET. Los parámetros viajan en el cuerpo y siguen exactamente el
+    mismo camino; lo único propio del POST es de dónde salen.
 
-    redirect_url, reauth_reason = service.authorize(
-        client_id,
-        redirect_uri,
-        current_user["sub"],
-        state,
-        scope,
-        code_challenge=code_challenge,
-        code_challenge_method=code_challenge_method,
-        nonce=nonce,
-        prompt=prompt,
-        max_age=max_age,
-        auth_time=session_auth_time(current_user),
+    Se responde **303** (no el 307 por defecto del GET) para que el navegador siga el
+    callback con GET en vez de re-enviar el POST al consumidor.
+
+    Nota operativa: la cookie de panel es `SameSite=Lax`, así que un POST cross-site
+    —el caso real de un consumidor— **no la lleva** y el usuario pasa por el login con
+    `next=`, aunque tenga sesión abierta. Por eso el `next=` se arma con los parámetros
+    del form: la query string de un POST está vacía."""
+    form = await _read_form_body(request)
+    try:
+        params = AuthorizeQuery(**form)
+    except ValidationError as exc:
+        # Mismo 422 y mismo cuerpo que devuelve FastAPI cuando al GET le falta un parámetro.
+        raise RequestValidationError(exc.errors()) from exc
+    url = await _authorize_target_url(
+        request, params, service, current_user, redis, audit, endpoint="authorize", login_query=urlencode(form)
     )
-    if reauth_reason == "access_denied":
-        return RedirectResponse(build_callback_url(redirect_uri, error="access_denied", state=state))
-    if reauth_reason is not None:
-        if prompt == "none":
-            return RedirectResponse(build_callback_url(redirect_uri, error="login_required", state=state))
-        return RedirectResponse(_login_redirect_url(request))
-    assert redirect_url is not None  # garantizado: solo es None junto con reauth_reason
-    return RedirectResponse(redirect_url)
+    return RedirectResponse(url, status_code=303)
 
 
 @router.get("/authorize/url")
 async def authorize_url(
     request: Request,
-    client_id: str = Query(...),
-    redirect_uri: str = Query(...),
-    state: str = Query(...),
-    scope: str = Query("openid profile email"),
-    response_type: str = Query("code"),
-    code_challenge: str | None = Query(None),
-    code_challenge_method: str | None = Query(None),
-    nonce: str | None = Query(None),
-    prompt: str | None = Query(None),
-    max_age: int | None = Query(None),
+    params: Annotated[AuthorizeQuery, Query()],
     service: AuthService = Depends(get_auth_service),
     current_user: dict = Depends(get_current_panel_user),
     redis: Redis = Depends(get_redis),
@@ -352,50 +396,18 @@ async def authorize_url(
     porque un SPA no puede leer el header `Location` de un redirect cross-origin.
     El frontend hace `window.location` con esta URL. Es Modo A puro: la SPA ya tiene
     sesión de panel (cookie) antes de llamar aquí (la exige, no usa la variante opcional).
+    La SPA sigue la URL de login igual que la del `code`: mismo contrato de respuesta.
     """
-    await _enforce_rate_limit_audited(
-        redis,
-        f"minerva:rl:authorize:{request.client.host}",
-        settings.RATE_LIMIT_AUTHORIZE_MAX,
-        settings.RATE_LIMIT_AUTHORIZE_WINDOW,
-        audit,
-        request,
-        "authorize_url",
+    url = await _authorize_target_url(
+        request, params, service, current_user, redis, audit, endpoint="authorize_url", login_query=request.url.query
     )
-    # Mismo contrato que /authorize: valida el destino antes de devolver una URL de
-    # error hacia él. `service.authorize` lo revalida, pero corre demasiado tarde.
-    service.validate_client_and_redirect(client_id, redirect_uri)
-    if response_type != "code":
-        return {"redirect_url": build_callback_url(redirect_uri, error="unsupported_response_type", state=state)}
-
-    redirect_url, reauth_reason = service.authorize(
-        client_id,
-        redirect_uri,
-        current_user["sub"],
-        state,
-        scope,
-        code_challenge=code_challenge,
-        code_challenge_method=code_challenge_method,
-        nonce=nonce,
-        prompt=prompt,
-        max_age=max_age,
-        auth_time=session_auth_time(current_user),
-    )
-    if reauth_reason == "access_denied":
-        return {"redirect_url": build_callback_url(redirect_uri, error="access_denied", state=state)}
-    if reauth_reason is not None:
-        if prompt == "none":
-            return {"redirect_url": build_callback_url(redirect_uri, error="login_required", state=state)}
-        # La SPA sigue esta URL igual que ya hace con la del code: reusa el mismo
-        # contrato de respuesta ({"redirect_url": ...}), sin cambios en el frontend.
-        return {"redirect_url": _login_redirect_url(request)}
-    return {"redirect_url": redirect_url}
+    return {"redirect_url": url}
 
 
-async def _read_token_request(request: Request) -> dict:
-    """Lee el cuerpo del canje aceptando el estándar OIDC (form-urlencoded) y el
-    JSON legacy que ya usaba el frontend. El form-urlencoded se parsea a mano para
-    no depender de python-multipart."""
+async def _read_form_body(request: Request) -> dict:
+    """Lee el cuerpo de los endpoints OIDC que reciben `form-urlencoded` (`/authorize`
+    por POST, `/token`, `/revoke`), aceptando también el JSON legacy que ya usaba el
+    frontend. El form-urlencoded se parsea a mano para no depender de python-multipart."""
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
         return await request.json()
@@ -440,7 +452,7 @@ async def token_exchange(
     audit: AuditService = Depends(get_audit_service),
     redis: Redis = Depends(get_redis),
 ):
-    body = await _read_token_request(request)
+    body = await _read_form_body(request)
     grant_type = body.get("grant_type", "authorization_code")
 
     try:
@@ -515,7 +527,7 @@ async def revoke_token(
 ):
     """Revocación de refresh token (RFC 7009). Revoca toda la familia y blacklista
     los access tokens asociados. Responde 200 aunque el token no exista."""
-    body = await _read_token_request(request)
+    body = await _read_form_body(request)
     client_id = body.get("client_id")
     client_secret = body.get("client_secret")  # opcional: ausente en clientes públicos
     token = body.get("token") or body.get("refresh_token")
