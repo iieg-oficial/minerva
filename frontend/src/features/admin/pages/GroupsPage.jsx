@@ -21,7 +21,6 @@ export default function GroupsPage() {
     const [editForm] = Form.useForm();
     const [memberForm] = Form.useForm();
     const { message } = App.useApp();
-    const pagination = { offset: 0, limit: 10 };
     const [page, setPage] = useState({ offset: 0, limit: 10 });
 
     const fetchGroups = useCallback(async () => {
