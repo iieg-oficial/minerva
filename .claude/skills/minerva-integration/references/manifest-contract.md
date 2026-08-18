@@ -16,29 +16,29 @@ The consumer still validates only permissions with `require_permission(...)`.
 
 ```yaml
 application:
-  code: godin
-  name: Godin
-  description: Gestor de oficios y solicitudes
+  code: portal_demo
+  name: Portal Demo
+  description: Sistema documental de ejemplo
   base_url: http://localhost:8000
   redirect_uris:
     - http://localhost:8000/auth/callback
 
 permissions:
-  - key: godin.oficios.view
-    name: Ver oficios
-    description: Permite consultar oficios
-  - key: godin.oficios.create
-    name: Crear oficios
+  - key: portal_demo.documents.view
+    name: Ver documentos
+    description: Permite consultar documentos
+  - key: portal_demo.documents.create
+    name: Crear documentos
 
 roles:
   - name: Consulta
     description: Solo lectura
     permissions:
-      - godin.oficios.view
+      - portal_demo.documents.view
   - name: Capturista
     permissions:
-      - godin.oficios.view
-      - godin.oficios.create
+      - portal_demo.documents.view
+      - portal_demo.documents.create
 ```
 
 ## Validation Rules
@@ -58,30 +58,17 @@ view, create, update, delete, assign, approve, authorize, export, import, manage
 Prefer resource names that match domain concepts in the consumer project, for example:
 
 ```text
-godin.oficios.view
-godin.oficios.create
-godin.solicitudes.assign
-godin.reportes.export
+portal_demo.documents.view
+portal_demo.documents.create
+portal_demo.requests.assign
+portal_demo.reports.export
 ```
 
 ## Import Behavior
 
-Manual import:
-
-```bash
-curl -X POST http://localhost:9000/api/v1/manifests/import \
-  -H "Authorization: Bearer <token>" \
-  -F "file=@manifest.minerva.yml"
-```
-
-Or send raw YAML as the request body:
-
-```bash
-curl -X POST http://localhost:9000/api/v1/manifests/import \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: text/yaml" \
-  --data-binary @manifest.minerva.yml
-```
+Manual import: open **Applications → Import manifest** in the Minerva admin panel and
+upload the YAML. The internal `/applications/import-manifest` route uses the panel's BFF
+cookie session; there is no consumer Bearer endpoint at `/api/v1/manifests/import`.
 
 Development auto-import:
 
@@ -110,21 +97,8 @@ Public app:
 - Then import the manifest with the same `application.code` to upsert permissions and roles.
 - Public clients must use PKCE.
 
-API registration examples:
-
-```bash
-curl -X POST http://localhost:9000/applications \
-  -H "Authorization: Bearer <admin_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Godin", "slug": "godin", "is_public": true}'
-```
-
-```bash
-curl -X POST http://localhost:9000/applications/{application_id}/redirect-uris \
-  -H "Authorization: Bearer <admin_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"uri": "http://localhost:8000/auth/callback", "environment": "development"}'
-```
+Create the application and its exact redirect URIs in the admin panel. The `/applications`
+routes are panel BFF routes authenticated by cookie, not public automation endpoints.
 
 ## Assigning Access
 
@@ -142,7 +116,7 @@ curl -X POST http://localhost:9000/api/v1/access-assignments \
 To inspect effective permissions for the current token:
 
 ```bash
-curl "http://localhost:9000/api/v1/me/permissions?application=godin" \
+curl "http://localhost:9000/api/v1/me/permissions?application=portal_demo" \
   -H "Authorization: Bearer <access_token>"
 ```
 

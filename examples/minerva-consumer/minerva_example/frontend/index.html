@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Portal Demo · Minerva</title>
+    <link rel="stylesheet" href="/assets/app.css">
+    <script type="module" src="/assets/app.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="#/inicio" aria-label="Ir al inicio">
+        <span class="brand-mark">P</span>
+        <span>Portal Demo</span>
+      </a>
+      <nav aria-label="Navegación principal">
+        <a href="#/inicio" data-route="inicio">Inicio</a>
+        <a href="#/documentos" data-route="documentos">Documentos</a>
+        <a href="#/administracion" data-route="administracion">Administración</a>
+        <a href="#/cuenta" data-route="cuenta">Mi cuenta</a>
+      </nav>
+      <div class="session-actions">
+        <a class="button compact" data-login href="/login">Iniciar sesión</a>
+        <form data-logout method="post" action="/logout" hidden>
+          <button class="button secondary compact" type="submit">Cerrar sesión</button>
+        </form>
+      </div>
+    </header>
+
+    <main>
+      <aside id="configuration-warning" class="banner warning" hidden>
+        <strong>La integración todavía no está configurada.</strong>
+        <span>El login no puede comenzar hasta completar las credenciales.</span>
+        <a href="#/configuracion">Ver valores faltantes</a>
+      </aside>
+      <div id="global-error" class="banner error" role="alert" hidden></div>
+
+      <section id="view-loading" class="view empty-state">
+        <p>Cargando Portal Demo…</p>
+      </section>
+
+      <section id="view-inicio" class="view" hidden>
+        <div id="home-public" class="hero">
+          <p class="eyebrow">Consumidor de referencia</p>
+          <h1>Un sistema real protegido por Minerva</h1>
+          <p>Inicia sesión para consultar documentos, probar permisos y ver la identidad recibida.</p>
+          <div class="actions">
+            <a class="button" data-login href="/login">Iniciar sesión con Minerva</a>
+            <a class="button secondary" href="#/documentos">Intentar entrar sin sesión</a>
+          </div>
+        </div>
+
+        <div id="home-authenticated" hidden>
+          <p class="eyebrow">Sesión activa</p>
+          <h1>Bienvenido, <span id="home-user">usuario</span></h1>
+          <p>Estas son vistas normales del portal. Cada una consulta un endpoint protegido.</p>
+          <div class="card-grid">
+            <a class="card" href="#/documentos"><strong>Documentos</strong><span>Consultar y crear según tus permisos.</span></a>
+            <a class="card" href="#/administracion"><strong>Administración</strong><span>Área exclusiva para gestión del sistema.</span></a>
+            <a class="card" href="#/cuenta"><strong>Mi cuenta</strong><span>Identidad, roles y permisos efectivos.</span></a>
+          </div>
+        </div>
+
+        <div class="preview-panel">
+          <div>
+            <p class="eyebrow">Previsualización</p>
+            <h2>Estados que debe manejar un consumidor</h2>
+            <p>Estas vistas permiten revisar la UX sin inventar tokens ni modificar permisos.</p>
+          </div>
+          <div class="actions">
+            <a class="button ghost" href="#/demo/401">Sin sesión · 401</a>
+            <a class="button ghost" href="#/demo/403">Sin permiso · 403</a>
+            <a class="button ghost" href="#/demo/sin-acceso">Sin acceso al sistema</a>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-documentos" class="view" hidden>
+        <div class="page-heading">
+          <div><p class="eyebrow">Operación diaria</p><h1>Documentos</h1></div>
+          <button id="create-document" type="button">Crear documento</button>
+        </div>
+        <p id="documents-message" class="muted"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Folio</th><th>Asunto</th><th>Estado</th><th>Actualización</th></tr></thead>
+            <tbody id="documents-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-administracion" class="view" hidden>
+        <p class="eyebrow">Área restringida</p>
+        <h1>Administración del sistema</h1>
+        <p>Esta página exige <code>portal_demo.system.manage</code>.</p>
+        <div class="stats" id="admin-stats"></div>
+      </section>
+
+      <section id="view-cuenta" class="view" hidden>
+        <p class="eyebrow">Sesión</p>
+        <h1>Mi cuenta</h1>
+        <dl class="identity">
+          <div><dt>Nombre</dt><dd id="account-name">—</dd></div>
+          <div><dt>Correo</dt><dd id="account-email">—</dd></div>
+          <div><dt>Identificador</dt><dd id="account-sub">—</dd></div>
+        </dl>
+        <div class="two-columns">
+          <div><h2>Roles recibidos</h2><ul id="account-roles"></ul></div>
+          <div><h2>Permisos efectivos</h2><ul id="account-permissions"></ul></div>
+        </div>
+        <p class="note">Los roles solo se muestran como información. El portal autoriza cada acción usando permisos.</p>
+        <div class="actions">
+          <form method="post" action="/refresh"><button type="submit">Refrescar sesión</button></form>
+          <a class="button secondary" href="/login?prompt=select_account">Elegir otra cuenta</a>
+        </div>
+      </section>
+
+      <section id="view-configuracion" class="view" hidden>
+        <p class="eyebrow">Diagnóstico</p>
+        <h1>Configuración de integración</h1>
+        <p id="config-message"></p>
+        <table><tbody id="config-values"></tbody></table>
+        <div id="config-login-action" class="actions"><a class="button" data-login href="/login">Probar login</a></div>
+      </section>
+
+      <section id="view-error" class="view empty-state" hidden>
+        <span id="error-code" class="status-code"></span>
+        <p id="error-preview" class="eyebrow" hidden>Vista previa</p>
+        <h1 id="error-title">No fue posible abrir esta página</h1>
+        <p id="error-detail"></p>
+        <p id="error-permission" class="permission" hidden></p>
+        <div class="actions">
+          <a id="error-login" class="button" data-login href="/login">Iniciar sesión</a>
+          <a class="button secondary" href="#/inicio">Volver al inicio</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -104,6 +104,10 @@ jobs:
       - run: ruff check minerva_sdk tests
       - run: ruff format --check minerva_sdk tests
       - run: pytest tests/ -v # doble de httpx, sin red
+      - run: pip install -e "../examples/minerva-consumer[dev]"
+      - run: ruff check ../examples/minerva-consumer/minerva_example ../examples/minerva-consumer/tests
+      - run: ruff format --check ../examples/minerva-consumer/minerva_example ../examples/minerva-consumer/tests
+      - run: pytest ../examples/minerva-consumer/tests/ -v # referencia ejecutable, Minerva simulada
 
   frontend:
     runs-on: ubuntu-latest
@@ -121,6 +125,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: node --check ../examples/minerva-consumer/minerva_example/frontend/api.js
+      - run: node --check ../examples/minerva-consumer/minerva_example/frontend/app.js
+      - run: node --check ../examples/minerva-consumer/minerva_example/frontend/views.js
       - run: npm run build
       - run: npm test # vitest; sin esto los tests del panel existen pero no los corre nadie
 
@@ -131,3 +138,5 @@ jobs:
       - run: cp .env.example .env # compose exige el .env (gitignored)
       - run: docker compose config
       - run: docker compose build
+      - run: docker compose --env-file examples/minerva-consumer/.env.example -f examples/minerva-consumer/compose.yml config
+      - run: docker build -f examples/minerva-consumer/Dockerfile -t minerva-consumer-example:test .

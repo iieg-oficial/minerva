@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { App as AntApp, Button, Flex, Result, Spin, Typography } from 'antd';
 import { authorizeUrl } from '@/api/auth';
-import { isExpired, setActive } from '@/api/session';
+import { setActive } from '@/api/session';
 import { useSession } from '@features/auth/SessionContext';
 import { getAppBranding } from '@/api/public';
 import AccountSelector from '../components/AccountSelector';
@@ -26,7 +26,7 @@ function postToOpener(redirectUri, payload) {
     return true;
 }
 
-// Página de autorización OAuth2: un sistema consumidor (p. ej. Godín) redirige
+// Página de autorización OAuth2: un sistema consumidor redirige
 // aquí con client_id/redirect_uri/state. Comportamiento según `prompt` (OIDC):
 //  - select_account → muestra el selector de cuentas (multi-sesión de esta SPA).
 //  - login          → fuerza login fresco (formulario) aunque haya sesión.
@@ -35,7 +35,7 @@ export default function AuthorizePage() {
     const [params] = useSearchParams();
     const navigate = useNavigate();
     const { message } = AntApp.useApp();
-    const { loading: sessionLoading, active, accounts } = useSession();
+    const { loading: sessionLoading, active } = useSession();
     const ran = useRef(false);
     const [error, setError] = useState(null);
     const [selecting, setSelecting] = useState(false);
@@ -139,14 +139,6 @@ export default function AuthorizePage() {
         }
 
         if (prompt === 'select_account') {
-            // Si la única cuenta guardada es la activa y sigue vigente (login recién hecho),
-            // no tiene sentido pedir un "Continuar" extra: procede directo.
-            const onlyFreshAccount =
-                accounts.length === 1 && active?.sub === accounts[0].sub && !isExpired(active);
-            if (onlyFreshAccount) {
-                proceed();
-                return;
-            }
             if (clientId)
                 getAppBranding(clientId)
                     .then(setBranding)

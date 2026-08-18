@@ -21,7 +21,7 @@ export function safePath(value) {
 }
 
 // Cierra la sesión de Minerva (single logout). Un sistema consumidor (p. ej.
-// Godín) redirige aquí para que, además de cerrar su propia sesión, termine la
+// otra plataforma) redirige aquí para que, además de cerrar su propia sesión, termine la
 // de Minerva y no quede una cuenta activa que re-autorice en silencio.
 export default function LogoutPage() {
     const [params] = useSearchParams();

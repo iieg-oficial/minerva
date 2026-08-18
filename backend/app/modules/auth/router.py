@@ -75,6 +75,10 @@ def _login_redirect_url(query: str) -> str:
     return f"{settings.FRONTEND_URL}/login?next={quote(next_path, safe='')}"
 
 
+def _account_selector_url(query: str) -> str:
+    return f"{settings.FRONTEND_URL}/authorize?{query}"
+
+
 def get_auth_service(session: Session = Depends(get_db)) -> AuthService:
     return AuthService(session)
 
@@ -302,6 +306,9 @@ async def _authorize_target_url(
     # vuelve al cliente por redirect, no como 400: para eso el destino se validó arriba.
     if params.response_type != "code":
         return build_callback_url(params.redirect_uri, error="unsupported_response_type", state=params.state)
+
+    if params.prompt == "select_account":
+        return _account_selector_url(login_query)
 
     if current_user is None:
         if params.prompt == "none":
