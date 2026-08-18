@@ -40,13 +40,16 @@ export default function LoginPage() {
     const [searchParams] = useSearchParams();
     const { token } = useToken();
     const { message } = AntApp.useApp();
-    const { accounts, loading: sessionLoading, refresh } = useSession();
+    const { accounts, active, loading: sessionLoading, refresh } = useSession();
 
     const next = safeNext(searchParams.get('next'));
     const clientId = clientIdFromNext(searchParams.get('next'));
     // Modo "agregar cuenta": el selector manda aquí con ?add=1 para forzar el
     // formulario aunque ya haya una sesión activa. `email` prellena la cuenta.
     const addMode = !!searchParams.get('add');
+    // Re-autenticación (`prompt=login`): se queda en el selector y abre la tarjeta de
+    // la cuenta en cuestión para pedir sólo la contraseña.
+    const reauthMode = !!searchParams.get('reauth');
     const prefillEmail = reauthEmail || searchParams.get('email');
 
     // Sin cuentas guardadas → login_first siempre; con cuentas → selector
@@ -63,6 +66,12 @@ export default function LoginPage() {
             .then(setBranding)
             .catch(() => setBranding(null));
     }, [clientId]);
+
+    // `initialValues` solo se aplica al montar el Form: si el formulario ya estaba en
+    // pantalla, el correo prellenado no llegaba al campo. Se sincroniza a mano.
+    useEffect(() => {
+        if (showForm && prefillEmail) form.setFieldsValue({ email: prefillEmail });
+    }, [showForm, prefillEmail, form]);
 
     const appName = branding?.display_name || branding?.name;
     const brandColor = branding?.brand_color || BRAND.purple;
@@ -108,17 +117,18 @@ export default function LoginPage() {
         return (
             <AuthShell appName={appName} brandColor={brandColor} logoUrl={branding?.logo_url}>
                 <AccountSelector
-                    appName={appName}
                     brandColor={brandColor}
                     onSelect={async () => {
                         await refresh();
                         navigate(next, { replace: true });
                     }}
+                    abrirSub={reauthMode ? active?.sub || accounts[0]?.sub : null}
+                    exigeContrasena={reauthMode}
                     onAccountsChanged={refresh}
-                    onReauth={(s) => {
-                        setReauthEmail(s.email);
-                        setForceSelector(false);
-                        setForcedForm(true);
+                    onEntrar={async (email, password) => {
+                        await authAPI.login(email, password);
+                        await refresh();
+                        navigate(next, { replace: true });
                     }}
                     onAddAccount={() => {
                         setReauthEmail(null);

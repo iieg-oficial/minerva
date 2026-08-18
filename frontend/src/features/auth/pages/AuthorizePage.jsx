@@ -124,13 +124,16 @@ export default function AuthorizePage() {
         }
 
         if (prompt === 'login') {
-            // Re-autenticación forzada: formulario aunque exista sesión (add=1). Quitamos
-            // `prompt` del resume para que, tras el login fresco, esta rama no se
-            // vuelva a disparar (evita el loop formulario→authorize→formulario).
+            // Re-autenticación forzada. Si la cuenta ya está en el navegador no hace
+            // falta el formulario completo: `reauth=1` deja el selector y pide sólo la
+            // contraseña sobre su tarjeta. Sin cuentas guardadas, el propio selector
+            // cae al formulario. Quitamos `prompt` del resume para que, tras el login
+            // fresco, esta rama no se vuelva a disparar (evita el loop
+            // formulario→authorize→formulario).
             const resumeParams = new URLSearchParams(params);
             resumeParams.delete('prompt');
             navigate(
-                `/login?next=${encodeURIComponent(`/authorize?${resumeParams.toString()}`)}&add=1`,
+                `/login?next=${encodeURIComponent(`/authorize?${resumeParams.toString()}`)}&reauth=1`,
                 {
                     replace: true,
                 }

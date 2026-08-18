@@ -119,3 +119,35 @@ body {
     border-color: #5c2472 !important;
     box-shadow: 0 0 0 1px #5c2472 !important;
 }
+
+/* Aviso de credenciales en el selector de cuentas: la tarjeta no crece con un
+   texto de error, sólo se sacude y enrojece el borde. El motivo lo da un aviso
+   flotante, para no mover el resto de la lista. */
+@keyframes minerva-sacudida {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+    20% {
+        transform: translateX(-6px);
+    }
+    40% {
+        transform: translateX(6px);
+    }
+    60% {
+        transform: translateX(-4px);
+    }
+    80% {
+        transform: translateX(4px);
+    }
+}
+
+.minerva-sacudida {
+    animation: minerva-sacudida 0.4s ease;
+}
+
+/* La regla de arriba fuerza `border-color: transparent`, así que el estado de
+   error necesita ganarle explícitamente. */
+.login-form-minerva .ant-input-affix-wrapper-status-error {
+    border-color: #ff4d4f !important;
+}
