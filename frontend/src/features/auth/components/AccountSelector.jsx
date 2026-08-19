@@ -165,6 +165,10 @@ function AccountRow({
                 transition: 'background 0.15s, border-color 0.15s',
             }}
         >
+            <Flex align="center" gap={12} style={{ minWidth: 0 }}>
+            {/* El tache queda fuera de este bloque: un control interactivo dentro de otro
+                es HTML inválido y su etiqueta se colaba en el nombre que anuncia el lector
+                de pantalla para la cuenta. */}
             <Flex
                 align="center"
                 gap={12}
@@ -178,7 +182,7 @@ function AccountRow({
                         else onSelect(session);
                     }
                 }}
-                style={{ minWidth: 0 }}
+                style={{ minWidth: 0, flex: 1 }}
             >
             <Flex
                 align="center"
@@ -225,6 +229,7 @@ function AccountRow({
                     Pedirá tu contraseña
                 </Text>
             )}
+            </Flex>
 
             <Button
                 type="text"
