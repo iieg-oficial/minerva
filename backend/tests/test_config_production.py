@@ -55,6 +55,14 @@ def test_cookie_flags_follow_the_same_signal():
     assert ambiguous.session_cookie_secure is True
 
 
+def test_cors_origins_follow_the_same_signal():
+    assert _settings().cors_origins == ["https://minerva.jalisco.gob.mx"]
+    assert Settings(APP_ENV="development", MINERVA_MODE="dev").cors_origins == [
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
+
+
 def test_production_by_app_env_alone_still_validates():
     with pytest.raises(RuntimeError, match="MINERVA_ENABLE_DEV_LOGIN"):
         _settings(MINERVA_MODE="dev", MINERVA_ENABLE_DEV_LOGIN=True).validate_production_config()

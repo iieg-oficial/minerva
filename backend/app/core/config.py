@@ -136,6 +136,13 @@ class Settings(BaseSettings):
         env_is_dev = self.APP_ENV.strip().lower() in ("dev", "development")
         return not (mode_is_dev and env_is_dev)
 
+    @property
+    def cors_origins(self) -> list[str]:
+        origins = [self.FRONTEND_URL]
+        if not self.is_production and "http://localhost:5173" not in origins:
+            origins.append("http://localhost:5173")
+        return origins
+
     # --- Cookie de sesión del panel (BFF) ----------------------------------
     # El panel usa una cookie opaca HttpOnly (solo un id de sesión, nunca el JWT).
     # En producción usa el prefijo `__Host-` (exige Secure + Path=/ + sin Domain,
