@@ -20,6 +20,7 @@ class AuditService:
         ip_address: str | None = None,
         user_agent: str | None = None,
         event_metadata: dict | None = None,
+        commit: bool = True,
     ) -> AuditLog:
         log = AuditLog(
             action=action,
@@ -31,7 +32,7 @@ class AuditService:
             user_agent=user_agent,
             event_metadata=event_metadata or {},
         )
-        return self.repo.create(log)
+        return self.repo.create(log, commit=commit)
 
     def list_logs(
         self,
