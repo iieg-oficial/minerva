@@ -3,9 +3,10 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.core.security import create_access_token_rs256, decode_token_rs256
+from app.modules.audit.models import AuditLog
 from app.modules.oidc.service import OIDCService, _generate_rsa_keypair
 from tests.conftest import test_engine
 
@@ -150,3 +151,29 @@ def test_revoke_compromised_active_key_requires_confirmation_and_invalidates_tok
     assert compromised_kid not in {entry["kid"] for entry in jwks["keys"]}
     with pytest.raises(ValueError):
         decode_token_rs256(token, jwks)
+
+    logs = service.session.exec(select(AuditLog).where(AuditLog.action == "signing_key_revoke")).all()
+    assert sorted(log.event_metadata["result"] for log in logs) == ["failure", "success"]
+    assert all(log.actor_user_id is None and log.event_metadata["actor"] == "system" for log in logs)
+    assert all("PRIVATE KEY" not in str(log.event_metadata) for log in logs)
+
+
+def test_rotate_and_promote_key_audit_success_and_failure(service, monkeypatch):
+    from app import cli
+
+    service.ensure_active_signing_key()
+    monkeypatch.setattr(cli, "engine", test_engine)
+    monkeypatch.setattr(cli, "_drop_jwks_cache", lambda strict=False: True)
+
+    cli.rotate_key()
+    with pytest.raises(Exception):
+        cli.rotate_key()
+    cli.promote_key(force=True)
+    with pytest.raises(Exception):
+        cli.promote_key(force=True)
+
+    logs = service.session.exec(
+        select(AuditLog).where(AuditLog.action.in_(["signing_key_rotate", "signing_key_promote"]))
+    ).all()
+    assert sorted(log.event_metadata["result"] for log in logs) == ["failure", "failure", "success", "success"]
+    assert all(log.actor_user_id is None and log.event_metadata["process"] == "cli" for log in logs)

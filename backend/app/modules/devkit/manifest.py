@@ -107,7 +107,9 @@ class ManifestLoader:
         self.role_repo = RoleRepository(session)
         self.role_perm_repo = RolePermissionRepository(session)
 
-    def import_manifest(self, content: str, source: str = "manifest.minerva.yml") -> ManifestImportResult:
+    def import_manifest(
+        self, content: str, source: str = "manifest.minerva.yml", commit: bool = True
+    ) -> ManifestImportResult:
         data = parse_manifest(content)
         code = validate_manifest(data)
         checksum = hashlib.sha256(content.encode()).hexdigest()
@@ -227,7 +229,10 @@ class ManifestLoader:
                 roles_count=len(roles),
             )
             self.session.add(record)
-            self.session.commit()
+            if commit:
+                self.session.commit()
+            else:
+                self.session.flush()
         except IntegrityError:
             self.session.rollback()
             raise ConflictError(detail="Otra importación concurrente ya registró estos mismos datos; reintente")

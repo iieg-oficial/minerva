@@ -17,9 +17,36 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.database import engine
 from app.core.models import import_models
+from app.modules.audit.service import AuditService
 from app.modules.oidc.service import OIDCService
 
 logger = logging.getLogger("minerva.cli")
+
+
+def _audit_system_operation(
+    action: str,
+    target_type: str,
+    target_id: str | None,
+    result: str,
+    audit_session: Session | None = None,
+    **metadata: object,
+) -> None:
+    """Registra operaciones del CLI sin confundirlas con un usuario del panel."""
+    if audit_session is not None:
+        AuditService(audit_session).log(
+            action,
+            target_type=target_type,
+            target_id=target_id,
+            event_metadata={"actor": "system", "process": "cli", "result": result, **metadata},
+        )
+        return
+    with Session(engine) as session:
+        AuditService(session).log(
+            action,
+            target_type=target_type,
+            target_id=target_id,
+            event_metadata={"actor": "system", "process": "cli", "result": result, **metadata},
+        )
 
 
 def _drop_jwks_cache(strict: bool = False) -> bool:
@@ -56,9 +83,16 @@ def _drop_jwks_cache(strict: bool = False) -> bool:
 
 def rotate_key() -> None:
     import_models()
-    with Session(engine) as session:
-        key = OIDCService(session).stage_key()
-    _drop_jwks_cache()
+    try:
+        with Session(engine) as session:
+            key = OIDCService(session).stage_key()
+    except Exception as exc:
+        _audit_system_operation("signing_key_rotate", "signing_key", None, "failure", error=type(exc).__name__)
+        raise
+    cache_invalidated = _drop_jwks_cache()
+    _audit_system_operation(
+        "signing_key_rotate", "signing_key", key.kid, "success", cache_invalidated=cache_invalidated
+    )
 
     logger.info("Clave de firma publicada como pendiente: %s", key.kid)
     print(f"Clave {key.kid} publicada en el JWKS (aun no firma nada).")
@@ -67,9 +101,16 @@ def rotate_key() -> None:
 
 def promote_key(force: bool = False) -> None:
     import_models()
-    with Session(engine) as session:
-        key = OIDCService(session).promote_key(force=force)
-    _drop_jwks_cache()
+    try:
+        with Session(engine) as session:
+            key = OIDCService(session).promote_key(force=force)
+    except Exception as exc:
+        _audit_system_operation("signing_key_promote", "signing_key", None, "failure", error=type(exc).__name__)
+        raise
+    cache_invalidated = _drop_jwks_cache()
+    _audit_system_operation(
+        "signing_key_promote", "signing_key", key.kid, "success", cache_invalidated=cache_invalidated
+    )
     logger.info("Clave de firma promovida. Nuevo kid activo: %s", key.kid)
     print(f"Clave {key.kid} activa: ya firma los tokens nuevos.")
     print(f"La anterior queda retirada y publicada {settings.key_retirement_overlap_minutes} min mas.")
@@ -88,8 +129,20 @@ def revoke_key(kid: str | None, confirm: str | None = None) -> int:
         compromised = service.repo.get_by_kid(kid)
         if compromised is None:
             if confirm == kid and _drop_jwks_cache(strict=True):
+                _audit_system_operation(
+                    "signing_key_revoke",
+                    "signing_key",
+                    kid,
+                    "success",
+                    audit_session=session,
+                    already_absent=True,
+                    cache_invalidated=True,
+                )
                 print(f"El kid {kid} ya no existe; cache JWKS invalidado.")
                 return 0
+            _audit_system_operation(
+                "signing_key_revoke", "signing_key", kid, "failure", audit_session=session, error="not_found"
+            )
             print(f"ERROR: no existe el kid {kid}.")
             return 1
 
@@ -102,13 +155,33 @@ def revoke_key(kid: str | None, confirm: str | None = None) -> int:
             print(f"DRY-RUN: para ejecutar, agrega --confirm {kid}")
             return 0
         if confirm != kid:
+            _audit_system_operation(
+                "signing_key_revoke", "signing_key", kid, "failure", audit_session=session, error="confirmation"
+            )
             print("ERROR: --confirm debe repetir exactamente el kid comprometido.")
             return 1
 
-        active = service.revoke_compromised_key(kid)
+        try:
+            active = service.revoke_compromised_key(kid)
+        except Exception as exc:
+            _audit_system_operation(
+                "signing_key_revoke",
+                "signing_key",
+                kid,
+                "failure",
+                audit_session=session,
+                error=type(exc).__name__,
+            )
+            raise
 
     if not _drop_jwks_cache(strict=True):
+        _audit_system_operation(
+            "signing_key_revoke", "signing_key", kid, "failure", error="jwks_cache", cache_invalidated=False
+        )
         return 1
+    _audit_system_operation(
+        "signing_key_revoke", "signing_key", kid, "success", active_kid=active.kid, cache_invalidated=True
+    )
     logger.warning("Clave de firma comprometida retirada: %s; active=%s", kid, active.kid)
     print(f"Kid {kid} retirado. Nueva clave activa: {active.kid}.")
     return 0
@@ -140,10 +213,23 @@ def import_manifests() -> int:
     for path in files:
         try:
             with Session(engine) as session:
-                result = DevKitService(session).import_manifest(path.read_text(encoding="utf-8"), path.name)
+                result = DevKitService(session).import_manifest(
+                    path.read_text(encoding="utf-8"), path.name, commit=False
+                )
+                _audit_system_operation(
+                    "manifest_import",
+                    "application",
+                    result.application_id,
+                    "success",
+                    audit_session=session,
+                    source=path.name,
+                )
             logger.info("Manifiesto importado: %s (app=%s)", path.name, result.application_code)
             print(f"Manifiesto importado: {path.name} (app={result.application_code})")
         except Exception as exc:  # noqa: BLE001 - se reportan todos, no solo el primero
+            _audit_system_operation(
+                "manifest_import", "manifest", path.name, "failure", source=path.name, error=type(exc).__name__
+            )
             failures.append(f"{path.name}: {exc}")
 
     for failure in failures:
