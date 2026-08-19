@@ -9,7 +9,7 @@ from tests.conftest import test_engine
 
 _MANIFEST = """
 application:
-  code: audited-manifest
+  code: audited_manifest
   name: Audited Manifest
 permissions: []
 roles: []
@@ -80,7 +80,7 @@ def test_failed_audit_rolls_back_business_mutations(client, admin_token, monkeyp
     with Session(test_engine) as session:
         assert session.exec(select(User).where(User.email == "rolled-back@iieg.gob.mx")).first() is None
         assert session.exec(select(Application).where(Application.slug == "rolled-back-app")).first() is None
-        assert session.exec(select(Application).where(Application.slug == "audited-manifest")).first() is None
+        assert session.exec(select(Application).where(Application.slug == "audited_manifest")).first() is None
 
 
 def test_sensitive_application_operations_audit_success_and_failure_without_credentials(
