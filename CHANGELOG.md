@@ -7,6 +7,24 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-18
+
+### Added
+
+- **SDK 0.3.0 y consumidor de referencia.** `MinervaOIDC` construye el flujo Authorization
+  Code + PKCE, canje, refresh y revocación desde una sola `MINERVA_ISSUER_URL`; los helpers
+  públicos permiten validar sesiones server-side sin copiar funciones internas. El ejemplo
+  `minerva-consumer` demuestra login, acceso denegado, roles informativos, permisos, 401/403,
+  refresh y logout con tokens fuera del navegador. FastAPI compone módulos independientes de
+  autenticación, API y sesiones, y sirve un frontend HTML/CSS/JS separado. Incluye Docker/Compose
+  propio; Minerva y el mock ofrecen recetas `just` equivalentes para su ciclo operativo.
+
+### Changed
+
+- **Contrato de integración simplificado.** La guía separa las cinco variables del recorrido
+  normal de los ajustes avanzados, recomienda importar el manifiesto desde el panel y elimina
+  rutas, Bearers administrativos y URLs de frontend obsoletos de la documentación activa.
+
 ## [0.6.0] - 2026-08-12
 
 > **Estado del release.** 0.6.0 es un release de **desbloqueo para los consumidores OIDC**: publica

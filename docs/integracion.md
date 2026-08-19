@@ -3,6 +3,27 @@
 Esta guía es para equipos que quieren delegar login y autorización a Minerva. Si algún
 término no es familiar, revisa primero [`glosario.md`](glosario.md).
 
+## Inicio rápido recomendado
+
+El camino normal usa **una sola URL de Minerva** y cinco valores explícitos:
+
+```env
+MINERVA_ISSUER_URL=http://localhost:3100
+MINERVA_APPLICATION_CODE=portal_demo
+MINERVA_CLIENT_ID=<client_id mostrado por Minerva>
+MINERVA_CLIENT_SECRET=<vacío solo para clientes públicos>
+MINERVA_REDIRECT_URI=http://localhost:8100/callback
+```
+
+1. Importa tu `manifest.minerva.yml` desde **Aplicaciones → Importar manifiesto** en el
+   panel de Minerva.
+2. Copia el `client_id` y, si es confidencial, el `client_secret` que muestra Minerva.
+3. Instala `minerva-sdk` y usa `MinervaOIDC` para login/callback; no armes PKCE ni URLs a mano.
+4. Protege APIs con `get_current_user` o `require_permission`.
+
+El ejemplo ejecutable [`examples/minerva-consumer`](../examples/minerva-consumer) muestra el
+recorrido completo, incluidos login, logout, roles informativos, permisos y errores 401/403.
+
 ## Resumen del contrato
 
 1. Registras tu aplicación en Minerva (`client_id`, redirect URI, cliente público o
@@ -20,39 +41,30 @@ término no es familiar, revisa primero [`glosario.md`](glosario.md).
 
 ## 1. Registrar tu aplicación
 
-### Opción A: vía API (sesión de administrador)
+### Opción A: importar un manifiesto desde el panel (recomendada)
 
-```bash
-curl -X POST http://localhost:9000/applications \
-  -H "Authorization: Bearer <admin_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Godín", "slug": "godin", "is_public": true}'
-```
+Entra a **Aplicaciones → Importar manifiesto** y sube tu `manifest.minerva.yml`. Si el
+`application.code` es nuevo, Minerva crea la aplicación, registra sus redirect URIs y
+muestra el `client_id` y, para un cliente confidencial, el `client_secret` una sola vez.
+
+Usa cliente confidencial cuando tu backend pueda guardar un secreto. Usa cliente público
+solo para SPA/móvil sin backend seguro:
 
 - `is_public: true` → cliente público (SPA/móvil sin backend que pueda guardar un
   secreto): la respuesta no incluye `client_secret_hash` y el canje de token exige PKCE.
 - `is_public: false` (default) → cliente confidencial: Minerva genera y devuelve un
   `client_secret` (guárdalo de inmediato, no se vuelve a mostrar).
 
-Registra la(s) redirect URI(s) exactas:
-
-```bash
-curl -X POST http://localhost:9000/applications/{application_id}/redirect-uris \
-  -H "Authorization: Bearer <admin_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"uri": "http://localhost:8100/callback", "environment": "development"}'
-```
-
 Minerva rechaza cualquier `redirect_uri` en `/auth/authorize` que no coincida
 exactamente con una registrada (evita *open redirect*). Registra una entrada por
 entorno (`development`, `production`).
 
-### Opción B: vía manifiesto (recomendado si ya vas a declarar permisos)
+### Opción B: alta manual desde el panel
 
-Si subes un `manifest.minerva.yml` con `application.code` nuevo, Minerva crea la
-aplicación automáticamente al importarlo (ver sección 2) y devuelve el `client_id`/
-`client_secret` generados en la respuesta del import. Las redirect URIs declaradas en
-`application.redirect_uris` también se registran.
+Úsala si todavía no tienes manifiesto. Crea la aplicación y registra cada redirect URI
+exactamente como aparecerá en `MINERVA_REDIRECT_URI`; después importa el manifiesto para
+dar de alta permisos y roles. Las rutas `/applications` pertenecen al BFF del panel y se
+autentican con su cookie de sesión, no con un Bearer de consumidor.
 
 ## 2. Declarar permisos y roles (`manifest.minerva.yml`)
 
@@ -61,29 +73,29 @@ de `view, create, update, delete, assign, approve, authorize, export, import, ma
 
 ```yaml
 application:
-  code: godin                          # slug único, minúsculas/números/guion_bajo
-  name: Godín
-  description: Gestor de oficios y solicitudes
+  code: portal_demo                    # slug único, minúsculas/números/guion_bajo
+  name: Portal Demo
+  description: Sistema documental de ejemplo
   base_url: http://localhost:8000
   redirect_uris:
     - http://localhost:8000/auth/callback
 
 permissions:
-  - key: godin.oficios.view
-    name: Ver oficios
-    description: Permite consultar oficios
-  - key: godin.oficios.create
-    name: Crear oficios
+  - key: portal_demo.documents.view
+    name: Ver documentos
+    description: Permite consultar documentos
+  - key: portal_demo.documents.create
+    name: Crear documentos
 
 roles:
   - name: Consulta
     description: Solo lectura
     permissions:
-      - godin.oficios.view
+      - portal_demo.documents.view
   - name: Capturista
     permissions:
-      - godin.oficios.view
-      - godin.oficios.create
+      - portal_demo.documents.view
+      - portal_demo.documents.create
 ```
 
 Validaciones que aplica Minerva al importar (`backend/app/modules/devkit/manifest.py`):
@@ -112,16 +124,10 @@ de estos nombres/patrones: `*.minerva.yml`, `*.minerva.yaml`, `manifest.yml`,
 cada arranque del backend, como paso único previo al servidor
 (`python -m app.cli import-manifests`). Un manifiesto inválido aborta el arranque.
 
-**Manual, vía API:**
-
-```bash
-curl -X POST http://localhost:9000/applications/import-manifest \
-  -H "Authorization: Bearer <admin_token>" \
-  -F "file=@manifest.minerva.yml"
-```
-
-> El import por API vive en el panel admin (`/applications/import-manifest`, requiere rol
-> de administrador). El Dev Kit `/api/v1` es solo self-service (dev-login, `me`, `me/permissions`).
+**Manual:** súbelo en **Aplicaciones → Importar manifiesto**. El endpoint interno
+`/applications/import-manifest` pertenece al BFF del panel y requiere su cookie de sesión;
+no lo automatices con un supuesto `admin_token`. Para despliegues controlados usa el CLI
+`python -m app.cli import-manifests` con el manifiesto montado en `MINERVA_MANIFESTS_PATH`.
 
 ## 3. Flujo OIDC: Authorization Code + PKCE
 
@@ -308,8 +314,8 @@ estándar (RFC 6749 §4.1.2.1) sobre tu `redirect_uri`:
 {tu redirect_uri}?error=access_denied&state={el mismo state}
 ```
 
-Esto **no requiere cambios en el SDK** (el SDK valida tokens ya emitidos; aquí todavía no
-hay token). Se atiende en tu `/callback`: haz `code` opcional y maneja `error`.
+Se atiende en tu `/callback`: haz `code` opcional y maneja `error` antes de llamar a
+`MinervaOIDC.exchange_code()`.
 
 ```python
 from fastapi.responses import RedirectResponse
@@ -381,8 +387,8 @@ en su lugar devuelve el resultado al opener vía `window.postMessage` y cierra e
 ```
 
 El mensaje que recibe el opener es `{ source: "minerva", code, state, error }`. El caso
-denegado (§3.6) llega como `{ error: "access_denied" }` por el mismo canal. Ver
-`examples/godin-consumer` (`/popup` y `/popup/exchange`) para un ejemplo completo.
+denegado (§3.6) llega como `{ error: "access_denied" }` por el mismo canal. Este modo es
+avanzado; el ejemplo de referencia usa el redirect completo, que requiere menos código.
 
 ## 4. Validar tokens y permisos con el SDK (`minerva_sdk`)
 
@@ -396,6 +402,9 @@ Variables de entorno del SDK (`minerva_sdk/config.py`):
 |---|---|
 | `MINERVA_ISSUER_URL` | URL base de Minerva (de donde se descarga el JWKS) |
 | `MINERVA_APPLICATION_CODE` | tu `application_code` — **obligatorio**: se exige siempre como `aud` y se usa para consultar `/me/permissions` |
+| `MINERVA_CLIENT_ID` | requerido para login; lo muestra Minerva al registrar/importar la aplicación |
+| `MINERVA_CLIENT_SECRET` | requerido solo para clientes confidenciales; se omite en clientes públicos |
+| `MINERVA_REDIRECT_URI` | requerido para login; callback idéntica a la registrada en Minerva |
 | `MINERVA_EXPECTED_ISSUER` | issuer esperado del `iss`; si se deja vacío se usa `MINERVA_ISSUER_URL`. La validación de `iss` no se puede desactivar |
 | `MINERVA_JWKS_CACHE_TTL` | segundos de caché del JWKS (default 3600) |
 | `MINERVA_JWKS_REFRESH_COOLDOWN` | segundos mínimos entre refrescos del JWKS por `kid` desconocido (default 30) |
@@ -426,12 +435,12 @@ async def whoami(user: dict = Depends(get_current_user)):
     return {"sub": user["sub"], "email": user.get("email")}
 
 @app.get("/oficios")
-def crear_oficio(user: dict = Depends(require_permission("godin.oficios.create"))):
+def create_document(user: dict = Depends(require_permission("portal_demo.documents.create"))):
     ...
 ```
 
 `require_permission` consulta `GET /api/v1/me/permissions?application={code}` en
-Minerva (con el Bearer del usuario) en tiempo real, con una caché corta. Si Minerva
+Minerva (con el Bearer del usuario) en tiempo real, sin caché por defecto. Si Minerva
 responde `401` (token revocado), el SDK propaga `401` a tu cliente; si el usuario no
 tiene el permiso, responde `403`.
 
@@ -462,18 +471,17 @@ pregunta a Minerva, Minerva decide.
 
 ## 5. Ejemplo de referencia completo
 
-`examples/godin-consumer/` es un consumidor mínimo funcional: cliente público + PKCE,
-`/login`, `/callback`, `/whoami` y `/protegido` (con `require_permission`), más `/popup`
-y `/popup/exchange` que demuestran el login en popup de §3.7. Su `README.md` trae el flujo
-de prueba manual paso a paso, incluyendo los `curl` exactos para registrar la aplicación y
-probar el endpoint protegido.
+`examples/minerva-consumer/` es un consumidor mínimo funcional: login + PKCE mediante el
+SDK, callback, sesión HttpOnly, refresh, logout, selector de cuenta, permisos efectivos y
+rutas que muestran 401/403. Su `manifest.minerva.yml` y README permiten probar roles de
+consulta, captura y administración sin escribir URLs OAuth ni JSON de registro a mano.
 
 ## 6. Diferencias entre Dev y Producción al integrar
 
 | Aspecto | Dev | Producción |
 |---|---|---|
-| `MINERVA_ISSUER_URL` (en tu sistema) | `http://localhost:9000` | URL pública de Minerva = el host de nginx **sin `:9000`** (todo va consolidado tras nginx); HTTPS al tener certificado |
-| Verificación de `aud`/`iss` | siempre activa (`aud`=`application_code`, `iss`=`issuer_url`) | fija `MINERVA_EXPECTED_ISSUER` al issuer público si difiere del host de JWKS |
+| `MINERVA_ISSUER_URL` (en tu sistema) | `http://localhost:3100` | URL pública de Minerva; nginx concentra login, token, JWKS y permisos; HTTPS al tener certificado |
+| Verificación de `aud`/`iss` | siempre activa (`aud`=`application_code`, `iss`=`issuer_url`) | usa la misma URL pública anunciada por discovery |
 | Registro de `redirect_uri` | localhost, puertos de desarrollo | dominio real de tu sistema, HTTPS |
 | Manifiesto | auto-importado al arrancar Minerva en local | importar explícitamente vía API/CI en el despliegue, no depender de auto-import |
 | Secrets (`client_secret`) | puede vivir en `.env` local | secret manager — nunca en el repo ni en logs |
@@ -495,14 +503,9 @@ Campos (todos opcionales) en la aplicación:
 | `logo_url` | URL del logo (imagen accesible públicamente). Si falla, cae al logo del IIEG. |
 | `brand_color` | Color hex (p. ej. `#5C2472`). Colorea el botón de acceso. |
 
-Se configuran desde el **panel admin** (editar aplicación → "Branding en el login"), o vía API:
-
-```bash
-curl -X PATCH {MINERVA_ISSUER}/applications/{application_id} \
-  -H "Authorization: Bearer <admin_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"display_name": "Godín Oficios", "logo_url": "https://.../logo.png", "brand_color": "#5C2472"}'
-```
+Se configuran desde el **panel admin**: editar aplicación → "Branding en el login".
+Las rutas de edición de aplicaciones pertenecen al BFF del panel y requieren su cookie
+de sesión; no necesitan código ni credenciales adicionales en el consumidor.
 
 La pantalla de login descubre el branding por `client_id` a través de un endpoint público
 de solo lectura (`GET /public/apps/{client_id}/branding`) que expone **únicamente** esos

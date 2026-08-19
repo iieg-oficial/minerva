@@ -17,7 +17,7 @@ from minerva_sdk.fastapi import require_permission
 
 
 @router.post("/oficios")
-async def create_oficio(user: dict = Depends(require_permission("godin.oficios.create"))):
+async def create_document(user: dict = Depends(require_permission("portal_demo.documents.create"))):
     ...
 ```
 
@@ -44,11 +44,13 @@ Never replace this with local role checks, copied JWT decoding code, or a local 
 
 4. Implement delegated login only where needed:
    - Use OIDC Authorization Code + PKCE for browser login.
+   - Use `MinervaOIDC.authorization_request()` and `exchange_code()`; do not build PKCE
+     or concatenate Minerva endpoint URLs in each consumer.
    - Store `state` and `code_verifier` in the consumer's normal session mechanism.
    - In `/callback`, make `code` optional and handle the OAuth2 `error` param: a user with
      no role in the app is redirected with `error=access_denied` and no `code`. Show a "no
      access" screen instead of exchanging the token; a `code`-required signature 422s.
-   - Exchange `code` at Minerva's `/auth/token` server-to-server.
+   - Let `MinervaOIDC.exchange_code()` exchange the code server-to-server.
    - Optional popup login: add `response_mode=web_message` to the `/authorize` URL and open
      it with `window.open`; Minerva returns `{code, state, error}` to the opener via
      `postMessage` (validate `event.origin`) instead of a full-page redirect. Opt-in per
@@ -70,6 +72,8 @@ Never replace this with local role checks, copied JWT decoding code, or a local 
    - Required for login flow: `MINERVA_CLIENT_ID`, `MINERVA_REDIRECT_URI`; add `MINERVA_CLIENT_SECRET` only for confidential clients.
    - The SDK always verifies `aud` (= `MINERVA_APPLICATION_CODE`) and `iss`; set `MINERVA_EXPECTED_ISSUER` to Minerva's public issuer when it differs from `MINERVA_ISSUER_URL`. Neither check can be disabled.
    - Do not introduce `MINERVA_JWT_SECRET` for consumers; Minerva signs with RS256 and publishes JWKS.
+   - Do not add a separate panel/web URL to the normal consumer configuration; the issuer
+     routes the browser to the login UI when needed.
 
 7. Validate the integration:
    - Add or update tests for missing token `401`, invalid token `401`, missing permission `403`, and the happy path.

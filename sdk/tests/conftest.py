@@ -16,7 +16,7 @@ from minerva_sdk import config
 from minerva_sdk.fastapi import clear_caches
 
 ISSUER = "http://localhost:9000"
-APP_CODE = "godin"
+APP_CODE = "portal_demo"
 
 
 def make_keypair() -> tuple[str, str]:

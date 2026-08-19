@@ -246,7 +246,7 @@ def test_duplicate_slug(client, admin_token):
 def test_import_manifest_rejects_foreign_permission(client, admin_token):
     bad = """
 application:
-  code: godin
+  code: portal_demo
 permissions:
   - key: mariachi.database.view
     name: Mal
@@ -258,9 +258,9 @@ permissions:
 def test_import_manifest_rejects_bad_convention(client, admin_token):
     bad = """
 application:
-  code: godin
+  code: portal_demo
 permissions:
-  - key: godin-oficios-view
+  - key: portal-demo-documents-view
     name: Mal
 """
     resp = _import_manifest(client, admin_token, bad)

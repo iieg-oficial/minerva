@@ -24,7 +24,7 @@ def _raw_token(**claims):
     return jwt.encode({**base, **claims}, pem, algorithm="RS256", headers={"kid": kid})
 
 
-def _consumer_access_token(sub="user-x", aud="godin"):
+def _consumer_access_token(sub="user-x", aud="portal_demo"):
     kid, pem = _active_key()
     return create_access_token_rs256(
         user_id=sub, email="x@iieg.gob.mx", name="X", kid=kid, private_key_pem=pem, application_slug=aud, typ="access"
@@ -55,7 +55,7 @@ def test_dev_token_cannot_refresh(client):
 def test_consumer_access_token_with_admin_sub_cannot_reach_panel(client, admin_user):
     """Aun con el sub de un admin, un access de consumidor no es typ=session: el
     panel lo rechaza antes de mirar el rol."""
-    token = _consumer_access_token(sub=admin_user["id"], aud="godin")
+    token = _consumer_access_token(sub=admin_user["id"], aud="portal_demo")
     assert client.get("/users", headers=_auth(token)).status_code == 401
 
 
@@ -72,7 +72,7 @@ def test_userinfo_rejects_session_token(client, admin_token):
 
 def test_userinfo_rejects_id_token(client):
     kid, pem = _active_key()
-    id_token = create_id_token(user_id="u1", client_id="godin", kid=kid, private_key_pem=pem)
+    id_token = create_id_token(user_id="u1", client_id="portal_demo", kid=kid, private_key_pem=pem)
     assert client.get("/userinfo", headers=_auth(id_token)).status_code == 401
 
 

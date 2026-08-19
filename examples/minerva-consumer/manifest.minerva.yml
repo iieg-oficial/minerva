@@ -1,0 +1,35 @@
+application:
+  code: portal_demo
+  name: Portal Demo
+  description: Consumidor de referencia para probar la integración con Minerva
+  base_url: http://localhost:8100
+  redirect_uris:
+    - http://localhost:8100/callback
+
+permissions:
+  - key: portal_demo.documents.view
+    name: Ver documentos
+    description: Permite consultar el endpoint de lectura del mock
+  - key: portal_demo.documents.create
+    name: Crear documentos
+    description: Permite ejecutar el endpoint de creación del mock
+  - key: portal_demo.system.manage
+    name: Administrar el sistema
+    description: Permite ejecutar la acción administrativa del mock
+
+roles:
+  - name: Consulta
+    description: Solo demuestra acceso de lectura
+    permissions:
+      - portal_demo.documents.view
+  - name: Captura
+    description: Demuestra lectura y creación
+    permissions:
+      - portal_demo.documents.view
+      - portal_demo.documents.create
+  - name: Administración
+    description: Demuestra todos los permisos del sistema
+    permissions:
+      - portal_demo.documents.view
+      - portal_demo.documents.create
+      - portal_demo.system.manage

@@ -411,7 +411,7 @@ export default function ApplicationsPage() {
                                 label="Nombre a mostrar"
                                 extra="Se muestra en la pantalla de login. Si se deja vacío, se usa el nombre."
                             >
-                                <Input placeholder="Ej. Godín Oficios" />
+                                <Input placeholder="Ej. Portal Documental" />
                             </Form.Item>
                             <Form.Item name="logo_url" label="URL del logo">
                                 <Input placeholder="https://.../logo.png" />

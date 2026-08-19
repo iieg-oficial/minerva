@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlmodel import Session, select
 
+from app.core.config import settings
 from app.core.security import hash_secret
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.oidc.service import OIDCService
@@ -143,9 +144,7 @@ def test_max_age_within_window_issues_code(client, app_ctx):
     assert "code=" in resp.headers["location"]
 
 
-def test_prompt_select_account_issues_code(client, app_ctx):
-    """El selector de cuentas lo resuelve la SPA; el backend NO re-autentica por
-    `prompt=select_account`: si hay sesión válida, emite el `code` normal."""
+def test_prompt_select_account_redirects_to_selector(client, app_ctx):
     from app.modules.users.repository import UserRepository
 
     with Session(test_engine) as session:
@@ -165,5 +164,5 @@ def test_prompt_select_account_issues_code(client, app_ctx):
         follow_redirects=False,
     )
     assert resp.status_code in (302, 307)
-    assert resp.headers["location"].startswith(REDIRECT_URI)
-    assert "code=" in resp.headers["location"]
+    assert resp.headers["location"].startswith(f"{settings.FRONTEND_URL}/authorize?")
+    assert "prompt=select_account" in resp.headers["location"]

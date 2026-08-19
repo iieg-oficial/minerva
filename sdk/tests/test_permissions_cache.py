@@ -8,6 +8,7 @@ import asyncio
 import time
 
 import pytest
+from conftest import APP_CODE
 from fastapi import HTTPException
 
 from minerva_sdk import config
@@ -18,7 +19,8 @@ from minerva_sdk.fastapi import (
     clear_caches,
     invalidate_token,
 )
-from tests.conftest import APP_CODE
+
+PERMISSION = "portal_demo.documents.create"
 
 
 def _claims(jti: str | None = "jti-1", exp: int | None = None, sub: str = "u1") -> dict:
@@ -37,9 +39,9 @@ def test_revocar_un_token_deja_de_autorizar_de_inmediato(fake_http):
     Es la prueba que decide si la revocación es inmediata: mientras una decisión
     positiva pueda servirse de memoria, aquí se seguirían viendo los permisos viejos.
     """
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
     claims = _claims()
-    assert _fetch(claims) == {"godin.oficios.create"}
+    assert _fetch(claims) == {PERMISSION}
 
     # Minerva revoca el token: su endpoint de permisos empieza a responder 401.
     fake_http.set_permissions([], status_code=401)
@@ -53,7 +55,7 @@ def test_sin_cache_cada_chequeo_pregunta_a_minerva(fake_http):
     """El default es no cachear: Minerva es quien aplica la revocación, así que hay que
     consultarla en cada decisión."""
     assert config.settings.permissions_cache_ttl == 0, "el default debe ser sin caché"
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
     claims = _claims()
 
     _fetch(claims)
@@ -67,11 +69,11 @@ def test_con_cache_activada_la_segunda_llamada_no_sale_a_la_red(fake_http):
     """Opt-in explícito: el consumidor acepta la ventana de propagación a cambio de
     menos tráfico."""
     config.settings.permissions_cache_ttl = 300
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
     claims = _claims()
 
-    assert _fetch(claims) == {"godin.oficios.create"}
-    assert _fetch(claims) == {"godin.oficios.create"}
+    assert _fetch(claims) == {PERMISSION}
+    assert _fetch(claims) == {PERMISSION}
 
     assert fake_http.count("permissions") == 1
 
@@ -80,14 +82,14 @@ def test_con_cache_activada_la_revocacion_tarda_hasta_el_ttl(fake_http):
     """Documenta el precio de activar la caché: la revocación deja de ser inmediata.
     Es exactamente el comportamiento que motivó volverla opt-in."""
     config.settings.permissions_cache_ttl = 300
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
     claims = _claims()
-    assert _fetch(claims) == {"godin.oficios.create"}
+    assert _fetch(claims) == {PERMISSION}
 
     fake_http.set_permissions([], status_code=401)
 
     # El token ya está revocado en Minerva, pero la entrada cacheada lo sigue dejando pasar.
-    assert _fetch(claims) == {"godin.oficios.create"}
+    assert _fetch(claims) == {PERMISSION}
     assert fake_http.count("permissions") == 1
 
 
@@ -95,8 +97,8 @@ def test_dos_tokens_del_mismo_usuario_no_comparten_decision(fake_http):
     """El bug: el segundo token heredaba los permisos cacheados del primero aunque
     fuera otro token (p. ej. uno ya revocado y otro nuevo, o al revés)."""
     config.settings.permissions_cache_ttl = 300
-    fake_http.set_permissions(["godin.oficios.create"])
-    assert _fetch(_claims(jti="jti-1")) == {"godin.oficios.create"}
+    fake_http.set_permissions([PERMISSION])
+    assert _fetch(_claims(jti="jti-1")) == {PERMISSION}
 
     # Mismo `sub`, token distinto: Minerva vuelve a decidir, y ahora dice que no.
     fake_http.set_permissions([])
@@ -109,7 +111,7 @@ def test_la_entrada_nunca_sobrevive_al_exp_del_token(fake_http):
     """Aunque el TTL configurado sea largo, la caché no puede seguir autorizando
     después de que el token haya expirado."""
     config.settings.permissions_cache_ttl = 3600
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
 
     token_exp = int(time.time()) + 30
     _fetch(_claims(jti="jti-corto", exp=token_exp))
@@ -122,7 +124,7 @@ def test_token_sin_jti_no_se_cachea(fake_http):
     """Fail-closed: sin `jti` no hay forma de ligar la entrada a un token concreto,
     así que se pregunta a Minerva siempre en vez de cachear por usuario."""
     config.settings.permissions_cache_ttl = 300
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
     claims = _claims(jti=None)
 
     _fetch(claims)
@@ -136,9 +138,9 @@ def test_un_401_de_minerva_purga_la_entrada(fake_http):
     """Revocar el token debe borrar lo cacheado: si no, un reintento dentro del TTL
     volvería a ver los permisos viejos."""
     config.settings.permissions_cache_ttl = 300
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
     claims = _claims(jti="jti-revocado")
-    assert _fetch(claims) == {"godin.oficios.create"}
+    assert _fetch(claims) == {PERMISSION}
     assert ("jti-revocado", APP_CODE) in _permissions_cache
 
     fake_http.set_permissions([], status_code=401)
@@ -152,7 +154,7 @@ def test_un_401_de_minerva_purga_la_entrada(fake_http):
 
 def test_invalidate_token_olvida_solo_ese_token(fake_http):
     config.settings.permissions_cache_ttl = 300
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
     _fetch(_claims(jti="jti-1"))
     _fetch(_claims(jti="jti-2"))
 
@@ -167,7 +169,7 @@ def test_la_cache_no_crece_sin_cota_con_tokens_vigentes(fake_http):
     vez, donde barrer las vencidas no libera nada. Antes solo se barrían las vencidas,
     así que el tope no existía."""
     config.settings.permissions_cache_ttl = 3600
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
 
     total = _PERMISSIONS_CACHE_MAX + 200
     base = int(time.time()) + 3600
@@ -183,7 +185,7 @@ def test_la_cache_no_crece_sin_cota_con_tokens_vigentes(fake_http):
 
 def test_las_vencidas_se_barren_antes_de_expulsar_vigentes(fake_http):
     config.settings.permissions_cache_ttl = 3600
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
 
     # Llena de entradas ya vencidas, insertadas directo para poder fijar el `exp`.
     for i in range(_PERMISSIONS_CACHE_MAX):
@@ -198,7 +200,7 @@ def test_las_vencidas_se_barren_antes_de_expulsar_vigentes(fake_http):
 
 def test_clear_caches_vacia_todo(fake_http):
     config.settings.permissions_cache_ttl = 300
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions([PERMISSION])
     _fetch(_claims())
 
     clear_caches()

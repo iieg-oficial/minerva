@@ -15,9 +15,9 @@ que autentica al usuario, valida sus permisos y devuelve un **JWT**.
 > Los sistemas definen *qué* acciones existen. Minerva define *quién* puede hacerlas.
 > Los sistemas validan **permisos**, nunca roles.
 
-- Un sistema declara permisos como `godin.oficios.create` en su `manifest.minerva.yml`.
+- Un sistema declara permisos como `portal_demo.documents.create` en su `manifest.minerva.yml`.
 - Minerva administra qué usuarios tienen esos permisos (vía roles).
-- El sistema consumidor valida con `require_permission("godin.oficios.create")`,
+- El sistema consumidor valida con `require_permission("portal_demo.documents.create")`,
   **NUNCA** con `if user.role == "Admin"`.
 - Convención de permisos: `{application_code}.{resource}.{action}`
   (acciones: `view, create, update, delete, assign, approve, authorize, export, import, manage`).
@@ -37,7 +37,7 @@ Los markdown de pasos futuros/roadmap son internos y **no** se trackean en el re
 | `frontend/` | Panel admin React 19 + Ant Design 6 + Vite | Ver `frontend/CLAUDE.md` |
 | `sdk/` | `minerva_sdk`: helpers para que sistemas consumidores validen permisos | `require_permission`, `get_current_user` |
 | `manifests/` | YAML que declaran apps/permisos/roles | Convención `{app}.{recurso}.{accion}` |
-| `examples/` | `godin-consumer`: ejemplo de integración con el SDK | Referencia de cómo se consume Minerva |
+| `examples/` | `minerva-consumer`: ejemplo de integración con el SDK | Referencia de cómo se consume Minerva |
 | `docs/` | Arquitectura general, docs de módulos y guías de integración | Fuentes de verdad |
 
 ## Reglas globales de trabajo

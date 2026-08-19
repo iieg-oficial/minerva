@@ -8,11 +8,11 @@ import asyncio
 import time
 
 import pytest
+from conftest import jwks_for, make_keypair, sign
 from fastapi import HTTPException
 
 from minerva_sdk import config
 from minerva_sdk.fastapi import _decode, _get_jwks, _jwks_cache
-from tests.conftest import jwks_for, make_keypair, sign
 
 
 def test_kid_desconocido_dispara_un_refresco_y_el_token_valida(fake_http):

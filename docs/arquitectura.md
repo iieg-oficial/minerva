@@ -15,7 +15,7 @@ para que las plataformas internas deleguen su login y autorización en un solo l
 
 Un sistema declara sus permisos en un `manifest.minerva.yml`; Minerva administra qué
 usuarios tienen esos permisos (vía roles); el sistema consumidor valida en tiempo de
-ejecución con `require_permission("godin.oficios.create")`, nunca con `if user.role == "Admin"`.
+ejecución con `require_permission("portal_demo.documents.create")`, nunca con `if user.role == "Admin"`.
 
 ## Mapa del monorepo
 
@@ -25,7 +25,7 @@ minerva/
 ├── frontend/        React 19 + Ant Design 6 — panel admin + páginas de login/authorize
 ├── sdk/            minerva_sdk — helpers para que un consumidor valide tokens y permisos
 ├── manifests/      YAML que declaran apps/permisos/roles de los sistemas consumidores
-├── examples/       godin-consumer — integración de referencia (cliente público + PKCE)
+├── examples/       minerva-consumer — integración de referencia (cliente público + PKCE)
 └── docs/           esta documentación
 ```
 
@@ -242,7 +242,7 @@ reimplementar la verificación JWT:
   consulta `GET /api/v1/me/permissions` en tiempo real (con caché corta) — un permiso
   revocado en Minerva deja de pasar en el siguiente request, sin esperar a que expire el token.
 
-Ver `examples/godin-consumer/` como integración de referencia completa.
+Ver `examples/minerva-consumer/` como integración de referencia completa.
 
 ## Manifiestos
 

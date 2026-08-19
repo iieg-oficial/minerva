@@ -1,0 +1,26 @@
+name: minerva-consumer-example
+
+services:
+  mock:
+    image: minerva-consumer-example:local
+    build:
+      context: ../..
+      dockerfile: examples/minerva-consumer/Dockerfile
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      MINERVA_ISSUER_URL: ${MINERVA_ISSUER_URL:-http://localhost:3100}
+      MINERVA_APPLICATION_CODE: ${MINERVA_APPLICATION_CODE:-portal_demo}
+      MINERVA_CLIENT_ID: ${MINERVA_CLIENT_ID:-}
+      MINERVA_CLIENT_SECRET: ${MINERVA_CLIENT_SECRET:-}
+      MINERVA_REDIRECT_URI: ${MINERVA_REDIRECT_URI:-http://localhost:8100/callback}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/api/config')
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s

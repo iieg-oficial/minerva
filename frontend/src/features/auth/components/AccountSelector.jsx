@@ -42,18 +42,8 @@ function StatusPill({ expired }) {
 
 // Fila de cuenta reutilizable (avatar + nombre/email + estado + acción a la derecha).
 function AccountRow({ session, brandColor, onClick, extra, dim }) {
-    return (
-        <Flex
-            align="center"
-            gap={12}
-            onClick={onClick}
-            style={{
-                padding: '10px 12px',
-                cursor: onClick ? 'pointer' : 'default',
-                opacity: dim ? 0.7 : 1,
-                minWidth: 0,
-            }}
-        >
+    const content = (
+        <>
             <Avatar style={{ backgroundColor: brandColor, flexShrink: 0 }}>
                 {initial(session)}
             </Avatar>
@@ -79,6 +69,41 @@ function AccountRow({ session, brandColor, onClick, extra, dim }) {
             </Flex>
             <StatusPill expired={isExpired(session)} />
             {extra}
+        </>
+    );
+    const style = {
+        padding: '10px 12px',
+        opacity: dim ? 0.7 : 1,
+        minWidth: 0,
+    };
+
+    if (onClick) {
+        return (
+            <button
+                type="button"
+                onClick={onClick}
+                style={{
+                    ...style,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    width: '100%',
+                    border: 0,
+                    background: 'transparent',
+                    color: 'inherit',
+                    font: 'inherit',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                }}
+            >
+                {content}
+            </button>
+        );
+    }
+
+    return (
+        <Flex align="center" gap={12} style={{ ...style, cursor: 'default' }}>
+            {content}
         </Flex>
     );
 }

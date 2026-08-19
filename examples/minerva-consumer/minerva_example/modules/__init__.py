@@ -1,0 +1,1 @@
+"""Módulos funcionales del consumer."""
