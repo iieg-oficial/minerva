@@ -1,0 +1,6 @@
+*
+!sdk
+!sdk/**
+!examples
+!examples/minerva-consumer
+!examples/minerva-consumer/**

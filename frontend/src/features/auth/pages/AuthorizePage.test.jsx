@@ -5,8 +5,10 @@ import { App as AntApp } from 'antd';
 import AuthorizePage from './AuthorizePage';
 
 vi.mock('@/api/auth', () => ({ authorizeUrl: vi.fn() }));
-vi.mock('@/api/session', () => ({ isExpired: vi.fn(() => false), setActive: vi.fn() }));
+vi.mock('@/api/session', () => ({ setActive: vi.fn() }));
 vi.mock('@features/auth/SessionContext', () => ({ useSession: vi.fn() }));
+vi.mock('../components/AccountSelector', () => ({ default: () => <div>Selector de cuentas</div> }));
+vi.mock('../components/AuthShell', () => ({ default: ({ children }) => <>{children}</> }));
 
 const authAPI = await import('@/api/auth');
 const { useSession } = await import('@features/auth/SessionContext');
@@ -26,7 +28,7 @@ afterEach(() => {
 });
 
 const baseQuery =
-    'client_id=godin&redirect_uri=https://godin.iieg.gob.mx/callback&response_type=code&state=xyz';
+    'client_id=portal_demo&redirect_uri=https://portal-demo.iieg.gob.mx/callback&response_type=code&state=xyz';
 
 function LoginProbe() {
     const [params] = useSearchParams();
@@ -47,8 +49,15 @@ function renderAuthorize(search) {
 }
 
 describe('AuthorizePage — propagación de max_age', () => {
+    it('muestra el selector aunque solo exista una cuenta activa', async () => {
+        renderAuthorize(`${baseQuery}&prompt=select_account`);
+
+        expect(await screen.findByText('Selector de cuentas')).toBeInTheDocument();
+        expect(authAPI.authorizeUrl).not.toHaveBeenCalled();
+    });
+
     it('reenvía max_age=0 al backend', async () => {
-        authAPI.authorizeUrl.mockResolvedValue('https://godin.iieg.gob.mx/callback?code=abc');
+        authAPI.authorizeUrl.mockResolvedValue('https://portal-demo.iieg.gob.mx/callback?code=abc');
         renderAuthorize(`${baseQuery}&max_age=0`);
 
         await vi.waitFor(() => expect(authAPI.authorizeUrl).toHaveBeenCalledTimes(1));
@@ -56,7 +65,7 @@ describe('AuthorizePage — propagación de max_age', () => {
     });
 
     it('sin max_age conserva el comportamiento actual (no se manda la clave)', async () => {
-        authAPI.authorizeUrl.mockResolvedValue('https://godin.iieg.gob.mx/callback?code=abc');
+        authAPI.authorizeUrl.mockResolvedValue('https://portal-demo.iieg.gob.mx/callback?code=abc');
         renderAuthorize(baseQuery);
 
         await vi.waitFor(() => expect(authAPI.authorizeUrl).toHaveBeenCalledTimes(1));
@@ -64,7 +73,7 @@ describe('AuthorizePage — propagación de max_age', () => {
     });
 
     it('descarta max_age inválido (negativo o no numérico) en vez de reenviarlo', async () => {
-        authAPI.authorizeUrl.mockResolvedValue('https://godin.iieg.gob.mx/callback?code=abc');
+        authAPI.authorizeUrl.mockResolvedValue('https://portal-demo.iieg.gob.mx/callback?code=abc');
         renderAuthorize(`${baseQuery}&max_age=-1`);
 
         await vi.waitFor(() => expect(authAPI.authorizeUrl).toHaveBeenCalledTimes(1));

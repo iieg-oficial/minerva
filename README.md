@@ -31,7 +31,7 @@ devuelve un token firmado — nadie más vuelve a implementar login ni a guardar
 > Los sistemas definen *qué* acciones existen. Minerva define *quién* puede hacerlas.
 > Los sistemas consumidores validan **permisos**, nunca roles.
 
-Un sistema declara sus permisos (`godin.oficios.create`, `godin.oficios.view`, …) en un
+Un sistema declara sus permisos (`portal_demo.documents.create`, `portal_demo.documents.view`, …) en un
 manifiesto declarativo. Minerva administra qué usuarios tienen esos permisos, vía roles y grupos.
 El sistema consumidor solo pregunta *"¿este usuario puede hacer X?"* — nunca decide localmente con
 `if user.role == "Admin"`. Esa separación es lo que hace que la autorización sea auditable,
@@ -55,9 +55,9 @@ servidor compartido — compatible con la futura Minerva Central del instituto.
 |---|---|
 | [`backend/`](backend) | API FastAPI + SQLModel + PostgreSQL — el proveedor de identidad en sí |
 | [`frontend/`](frontend) | Panel administrativo y pantallas de login/autorización (React + Ant Design) |
-| [`sdk/`](sdk) | `minerva_sdk`: helpers para que un sistema consumidor valide tokens y permisos sin reimplementar nada |
+| [`sdk/`](sdk) | `minerva_sdk`: login OIDC/PKCE, tokens y permisos sin reimplementar el protocolo |
 | [`manifests/`](manifests) | Manifiestos YAML que declaran las aplicaciones, permisos y roles de los sistemas consumidores |
-| [`examples/godin-consumer/`](examples/godin-consumer) | Integración de referencia completa con el SDK |
+| [`examples/minerva-consumer/`](examples/minerva-consumer) | Mock ejecutable de login, logout, roles, permisos y errores 401/403 |
 | [`docs/`](docs) | Arquitectura, glosario OIDC, despliegue e integración — ver abajo |
 
 ## 🏷️ Versionado
@@ -86,14 +86,21 @@ Este README es la portada; el detalle técnico vive en `docs/` para no duplicars
 
 ## 🚀 Arrancar en local
 
+Requiere Docker Compose y [`just`](https://just.systems/).
+
 ```bash
 cp .env.example .env
-docker compose up --build
+just build
+just up
 ```
 
 Panel en `http://localhost:3100`, API en `http://localhost:9000`. El resto — variables de entorno,
 usuario administrador por defecto, checklist de producción — está en
 **[`docs/despliegue.md`](docs/despliegue.md)**.
+
+`just --list` muestra las recetas operativas: `build`, `rebuild`, `restart`, `down`,
+`down-v`, `logs`, `logs-service`, `ps`, `shell`, `config`, `pull` y `dev`. Si `.env`
+no existe, la primera receta lo crea desde `.env.example`.
 
 ## 📄 Licencia
 

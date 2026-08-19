@@ -1,119 +1,157 @@
 # minerva-sdk
 
-SDK mínimo para que un sistema consumidor (FastAPI) valide identidad y permisos
-emitidos por Minerva.
+SDK oficial para integrar sistemas FastAPI con Minerva sin implementar JWT, PKCE,
+URLs OAuth ni consultas de permisos a mano.
 
-> Principio: **los sistemas validan permisos, no roles.** Minerva define quién
-> puede hacer qué; tu sistema solo comprueba permisos explícitos.
+> El consumidor valida permisos, nunca roles. Minerva decide quién tiene cada permiso.
 
 ## Instalación
 
+Desde este repositorio:
+
 ```bash
-pip install -e ./sdk          # desde la raíz del repo Minerva
-# o copia la carpeta minerva_sdk a tu proyecto
+pip install -e path/to/minerva/sdk
 ```
 
-## Configuración (variables de entorno)
+Como paquete publicado:
 
-| Variable | Descripción | Default |
-|---|---|---|
-| `MINERVA_ISSUER_URL` | URL base de Minerva | `http://localhost:9000` |
-| `MINERVA_APPLICATION_CODE` | Código de tu aplicación (slug). **Obligatorio**: es el `aud` que se exige siempre | `` |
-| `MINERVA_EXPECTED_ISSUER` | Issuer esperado del `iss`; si se deja vacío se usa `MINERVA_ISSUER_URL`. La validación NO se puede desactivar | `` |
-| `MINERVA_PERMISSIONS_CACHE_TTL` | TTL de caché de permisos (segundos). **`0` = sin caché** (default): cada chequeo consulta a Minerva y la revocación es inmediata. Un valor > 0 activa la caché y esa cifra pasa a ser lo que tarda una revocación en notarse | `0` |
-| `MINERVA_JWKS_CACHE_TTL` | TTL de caché del JWKS (segundos) | `3600` |
-| `MINERVA_JWKS_REFRESH_COOLDOWN` | Mínimo entre dos refrescos del JWKS disparados por un `kid` desconocido (segundos) | `30` |
-| `MINERVA_REQUEST_TIMEOUT` | Timeout de las llamadas a Minerva (segundos) | `10` |
+```bash
+pip install minerva-sdk
+```
 
-La firma se valida con **RS256 contra el JWKS público** de Minerva: no necesitas
-ningún secreto compartido, solo `MINERVA_ISSUER_URL`.
+## Configuración mínima
 
-### Qué URLs arma el SDK
+Para proteger una API solo necesitas:
 
-El SDK **no lee el documento de discovery**: concatena dos rutas fijas a
-`MINERVA_ISSUER_URL`, y son las únicas dos llamadas que hace a Minerva.
+```env
+MINERVA_ISSUER_URL=http://localhost:3100
+MINERVA_APPLICATION_CODE=portal_demo
+```
 
-| Para qué | URL | Dónde |
-|---|---|---|
-| Claves de firma | `{MINERVA_ISSUER_URL}/.well-known/jwks.json` | `minerva_sdk/fastapi.py` |
-| Permisos efectivos | `{MINERVA_ISSUER_URL}/api/v1/me/permissions?application={code}` | `minerva_sdk/fastapi.py` |
+Para iniciar sesión desde tu sistema agrega:
 
-Consecuencia práctica: si pones Minerva detrás de un proxy, **esas dos rutas tienen que
-seguir colgando de `MINERVA_ISSUER_URL`**; cambiar `userinfo_endpoint` o `jwks_uri` en el
-discovery no mueve al SDK. Y si el host desde el que descargas el JWKS no es el mismo que
-Minerva pone en el claim `iss` de los tokens, fija `MINERVA_EXPECTED_ISSUER` al issuer
-público: el `iss` se valida siempre y no se puede desactivar.
+```env
+MINERVA_CLIENT_ID=<client_id mostrado por Minerva>
+MINERVA_REDIRECT_URI=http://localhost:8100/callback
+MINERVA_CLIENT_SECRET=<solo para cliente confidencial>
+```
 
-## Uso
+Qué significa cada valor:
+
+| Variable | Valor exacto |
+|---|---|
+| `MINERVA_ISSUER_URL` | Una sola URL pública de Minerva. Dev: `http://localhost:3100`. Producción: su origen HTTPS público |
+| `MINERVA_APPLICATION_CODE` | `application.code` del manifiesto; también es el `aud` del access token |
+| `MINERVA_CLIENT_ID` | Credencial pública mostrada al registrar/importar la aplicación |
+| `MINERVA_CLIENT_SECRET` | Credencial privada mostrada una vez; se omite en clientes públicos |
+| `MINERVA_REDIRECT_URI` | Callback del consumidor, idéntica carácter por carácter a la registrada en Minerva |
+
+No configures `MINERVA_JWT_SECRET`: Minerva firma con RS256 y el SDK obtiene las claves
+públicas del JWKS.
+
+## Proteger endpoints FastAPI
 
 ```python
-from fastapi import FastAPI, Depends
-from minerva_sdk.fastapi import require_permission, get_current_user
+from fastapi import Depends, FastAPI
+from minerva_sdk import get_current_user, require_permission
 
 app = FastAPI()
 
+
 @app.get("/whoami")
-async def whoami(user=Depends(get_current_user)):
-    return {"email": user["email"], "sub": user["sub"]}
+async def whoami(user: dict = Depends(get_current_user)):
+    return {"sub": user["sub"], "email": user.get("email")}
+
 
 @app.post("/oficios")
-async def crear_oficio(user=Depends(require_permission("godin.oficios.create"))):
-    return {"message": "Oficio creado", "user": user["email"]}
+async def create_document(user: dict = Depends(require_permission("portal_demo.documents.create"))):
+    return {"created_by": user["email"]}
 ```
 
-`get_current_user` y `require_permission` son **async**. `require_permission`
-verifica la firma del token (RS256/JWKS) y consulta en tiempo real
-`GET /api/v1/me/permissions?application=<code>` de Minerva (con caché en
-memoria). Si el usuario no tiene el permiso, responde `403`. Si el token fue
-revocado, Minerva responde `401` y el SDK lo propaga.
+- Sin token o token inválido: `401`.
+- Token válido sin permiso: `403`.
+- Minerva no disponible durante la consulta de permisos: `502`.
 
-### El objeto de usuario
+El objeto `user` contiene únicamente claims; nunca incluye el bearer.
 
-El dict que devuelven `get_current_user` y `require_permission` son **solo los claims
-del token** (`sub`, `email`, `name`, `jti`, `exp`, ...). Nunca contiene la credencial,
-así que es seguro serializarlo en una respuesta o registrarlo en un log.
+## Login OIDC sin copiar PKCE
 
-### Cachés y revocación
-
-- **Permisos: sin caché por defecto.** Cada `require_permission` consulta a Minerva, que
-  es quien aplica la revocación, así que revocar un token deja de autorizar en el acto.
-  Servir una decisión positiva desde memoria significa, por definición, no enterarse de
-  una revocación hasta que la entrada expire; por eso la caché es **opt-in**.
-- **Si la activas** (`MINERVA_PERMISSIONS_CACHE_TTL > 0`), aceptas esa ventana: un token
-  revocado sigue autorizando hasta ese TTL. La caché se indexa por el `jti` del token
-  (dos tokens del mismo usuario no comparten decisión), nunca sobrevive al `exp` del
-  token, un token sin `jti` no se cachea, y un `401` de Minerva purga la entrada. El
-  número de entradas está acotado.
-- **JWKS:** si llega un token con un `kid` que no está en la caché, el SDK la refresca
-  aunque no haya expirado, así que una rotación de clave en Minerva **no** provoca 401.
-- Para forzarlo desde tu propio logout: `invalidate_token(jti)` y `clear_caches()`.
-
-## Migración desde 0.1.0
-
-**Cambio incompatible:** `get_current_user` ya no agrega `_token` (el bearer crudo) al
-dict de usuario. Si tu código lo leía, declara la dependencia del bearer en tu endpoint:
+El SDK genera `state`, `code_verifier`, challenge y la URL completa:
 
 ```python
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from minerva_sdk import MinervaOIDC
 
-bearer = HTTPBearer()
+oidc = MinervaOIDC()
+authorization = oidc.authorization_request()
 
-@app.get("/algo")
-async def algo(user=Depends(get_current_user), creds: HTTPAuthorizationCredentials = Depends(bearer)):
-    token = creds.credentials
+# Guarda code_verifier asociado a state en tu sesión server-side.
+save_pending(authorization.state, authorization.code_verifier)
+return RedirectResponse(authorization.url)
 ```
 
-Nada más cambia: `get_current_user` y `require_permission` conservan su firma.
+Para mostrar el selector de cuentas:
 
-## Migración a Minerva Central
-
-Solo cambia la URL base: las dos rutas que consulta el SDK cuelgan de ella
-(ver [Qué URLs arma el SDK](#qué-urls-arma-el-sdk)).
-
-```env
-MINERVA_ISSUER_URL=https://minerva.iieg.gob.mx
-MINERVA_APPLICATION_CODE=godin
+```python
+authorization = oidc.authorization_request(prompt="select_account")
 ```
 
-Si el `iss` de los tokens emitidos por Minerva Central no coincide con esa URL, agrega
-`MINERVA_EXPECTED_ISSUER` con el issuer público.
+En la callback, maneja primero `error=access_denied`; después recupera el verifier y
+canjea el código:
+
+```python
+tokens = await oidc.exchange_code(code, code_verifier)
+```
+
+No expongas los tokens al navegador. Guárdalos en el mecanismo de sesión server-side
+que ya use tu aplicación.
+
+## Refresh y logout
+
+```python
+tokens = await oidc.refresh(current_refresh_token)
+await oidc.revoke(tokens["refresh_token"])
+```
+
+El refresh token rota: reemplaza siempre el anterior. `revoke()` invalida la familia de
+refresh tokens; el consumidor debe borrar además su propia sesión/cookie local.
+
+## Sesiones server-side
+
+Si el access token vive en una sesión del backend en vez de llegar como Bearer, usa los
+mismos controles sin tocar funciones privadas:
+
+```python
+from minerva_sdk import check_permission, get_permissions, validate_access_token
+
+user = await validate_access_token(access_token)
+permissions = await get_permissions(access_token)
+user = await check_permission(access_token, "portal_demo.documents.create")
+```
+
+## Variables avanzadas
+
+No hacen falta en el camino normal:
+
+| Variable | Default | Cuándo usarla |
+|---|---:|---|
+| `MINERVA_EXPECTED_ISSUER` | misma URL base | Solo si el host interno usado para JWKS difiere del `iss` público |
+| `MINERVA_PERMISSIONS_CACHE_TTL` | `0` | Opt-in: reduce tráfico, pero retrasa revocaciones hasta ese TTL |
+| `MINERVA_JWKS_CACHE_TTL` | `3600` | Ajustar caché de claves públicas |
+| `MINERVA_JWKS_REFRESH_COOLDOWN` | `30` | Limitar refrescos por `kid` desconocido |
+| `MINERVA_REQUEST_TIMEOUT` | `10` | Timeout de llamadas a Minerva |
+
+Con caché de permisos desactivada, `require_permission` consulta a Minerva en cada
+decisión y detecta revocaciones inmediatamente. La validación local de
+`get_current_user` no consulta revocación y puede aceptar el access token hasta su `exp`.
+
+## Errores de configuración
+
+`settings.validate(login=True)` enumera juntos los valores faltantes o mal formados. El
+cliente OIDC lo ejecuta automáticamente antes de iniciar login, exchange, refresh o
+revoke.
+
+## Ejemplo ejecutable
+
+[`examples/minerva-consumer`](../examples/minerva-consumer) contiene un sistema mock con
+login, callback, sesión HttpOnly, roles informativos, permisos efectivos, errores 401/403,
+refresh, logout y un manifiesto listo para subir al panel.

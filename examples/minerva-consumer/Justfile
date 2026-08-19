@@ -1,0 +1,59 @@
+set dotenv-load := true
+
+compose := "docker compose -f compose.yml"
+
+default:
+    @just --list
+
+[private]
+env:
+    @test -f .env || { cp .env.example .env; echo "Creado .env desde .env.example; agrega las credenciales de Minerva"; }
+
+# Valida el Compose del mock y sus variables.
+config: env
+    {{ compose }} config
+
+# Construye la imagen del mock y el SDK local.
+build: env
+    {{ compose }} build
+
+# Levanta el mock en http://localhost:8100.
+up: env
+    {{ compose }} up -d
+
+# Levanta en primer plano y construye si hace falta.
+dev: env
+    {{ compose }} up --build
+
+# Reconstruye sin caché y recrea el mock.
+rebuild: env
+    {{ compose }} build --no-cache
+    {{ compose }} up -d --force-recreate
+
+# Reinicia el contenedor existente.
+restart: env
+    {{ compose }} restart
+
+# Detiene y elimina el contenedor y su red.
+down: env
+    {{ compose }} down --remove-orphans
+
+# Equivalente destructivo solicitado; el mock no declara volúmenes persistentes.
+down-v: env
+    {{ compose }} down --volumes --remove-orphans
+
+# Sigue los logs del mock.
+logs: env
+    {{ compose }} logs -f --tail=200 mock
+
+# Muestra estado y healthcheck.
+ps: env
+    {{ compose }} ps
+
+# Abre una shell dentro del mock.
+shell: env
+    {{ compose }} exec mock sh
+
+# Ejecuta las pruebas locales del ejemplo.
+test:
+    python -m pytest tests/ -q

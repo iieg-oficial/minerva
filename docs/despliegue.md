@@ -5,10 +5,17 @@
 
 ## 1. Desarrollo
 
+Requiere Docker Compose y [`just`](https://just.systems/).
+
 ```bash
 cp .env.example .env
-docker compose up --build
+just build
+just up
 ```
+
+Usa `just logs` para seguir todos los servicios, `just restart` para reiniciarlos y
+`just down` para detenerlos conservando datos. `just down-v` elimina también los
+volúmenes de PostgreSQL y Redis y, por tanto, sus datos locales.
 
 Servicios:
 

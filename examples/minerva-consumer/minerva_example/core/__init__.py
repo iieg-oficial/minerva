@@ -1,0 +1,1 @@
+"""Infraestructura compartida del consumer."""

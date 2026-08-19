@@ -43,19 +43,14 @@ Backend SDK validation:
 
 ```env
 MINERVA_ISSUER_URL=http://localhost:9000
-MINERVA_APPLICATION_CODE=godin
-MINERVA_EXPECTED_ISSUER=http://localhost:9000
-MINERVA_JWKS_CACHE_TTL=3600
-MINERVA_JWKS_REFRESH_COOLDOWN=30
-MINERVA_PERMISSIONS_CACHE_TTL=0   # 0 = sin cache (default): revocacion inmediata
-MINERVA_REQUEST_TIMEOUT=10
+MINERVA_APPLICATION_CODE=portal_demo
 ```
 
 Login flow for the consumer:
 
 ```env
 MINERVA_CLIENT_ID=<client_id>
-MINERVA_REDIRECT_URI=http://localhost:8000/auth/callback
+MINERVA_REDIRECT_URI=http://localhost:8100/callback
 ```
 
 Only confidential clients need:
@@ -65,14 +60,16 @@ MINERVA_CLIENT_SECRET=<client_secret>
 ```
 
 Do not add `MINERVA_JWT_SECRET` to a consumer. The access token is RS256-signed and verified through Minerva's JWKS.
+Advanced cache, timeout, and split-host settings are documented in `sdk/README.md`; do not
+copy them into every consumer unless that deployment actually needs them.
 
 ## Token Semantics
 
-- `access_token`: send as `Authorization: Bearer <token>` to the consumer API. The SDK verifies it against JWKS. Its `aud` is the application code, for example `godin`.
+- `access_token`: send as `Authorization: Bearer <token>` to the consumer API. The SDK verifies it against JWKS. Its `aud` is the application code, for example `portal_demo`.
 - `id_token`: identity token for the client. Its `aud` is `client_id`; do not use it to call APIs or check permissions.
 - `refresh_token`: rotate on each refresh. Store the newest value and treat the previous value as single-use.
 - `jti`: token id used by Minerva for revocation.
-- `scope`: OIDC identity scopes such as `openid profile email`; unrelated to fine-grained permissions like `godin.oficios.create`.
+- `scope`: OIDC identity scopes such as `openid profile email`; unrelated to fine-grained permissions like `portal_demo.documents.create`.
 - Revocation latency differs by dependency: `get_current_user` verifies the JWT locally against
   JWKS and never calls Minerva, so it does not notice a server-side revocation until the token's
   own `exp` (≤15 min). `require_permission` calls Minerva's `/api/v1/me/permissions` in real time
@@ -96,7 +93,7 @@ async def me(user: dict = Depends(get_current_user)):
 
 
 @router.post("")
-async def create_oficio(user: dict = Depends(require_permission("godin.oficios.create"))):
+async def create_document(user: dict = Depends(require_permission("portal_demo.documents.create"))):
     return {"created_by": user["email"]}
 ```
 
@@ -115,19 +112,17 @@ Depends(require_permission("analytics.dashboard.view", application_code="analyti
 Implement this in the consumer only if users log in through that system.
 
 1. `GET /login` in the consumer:
-   - Generate `state` and `code_verifier`.
-   - Store both in the user's server-side session or trusted cookie/session storage.
-   - Redirect the browser to Minerva:
+   - Ask the SDK for the complete authorization request.
+   - Store `state` and `code_verifier` in the user's server-side session.
+   - Redirect the browser to `authorization.url`:
 
-```text
-{MINERVA_ISSUER_URL}/auth/authorize
-  ?client_id={MINERVA_CLIENT_ID}
-  &redirect_uri={MINERVA_REDIRECT_URI}
-  &response_type=code
-  &scope=openid profile email
-  &state={state}
-  &code_challenge={BASE64URL_SHA256(code_verifier)}
-  &code_challenge_method=S256
+```python
+from minerva_sdk import MinervaOIDC
+
+oidc = MinervaOIDC()
+authorization = oidc.authorization_request()
+save_pending(authorization.state, authorization.code_verifier)
+return RedirectResponse(authorization.url)
 ```
 
    Optional `prompt` / `max_age` parameters (OIDC Core 3.1.2.1):
@@ -150,9 +145,10 @@ Implement this in the consumer only if users log in through that system.
      when the code was issued. Signing in elsewhere does not rejuvenate this session, and refreshing
      the panel token is not re-authentication. Same reference Minerva uses to enforce `max_age`.
 
-   Minerva-side logout: `POST /auth/logout` with the user's `access_token` revokes it server-side
-   (blacklist by `jti`); a later `/authorize` will not silently reuse that session. This is separate
-   from your own app's logout.
+   Consumer logout deletes its own session and calls `MinervaOIDC.revoke(refresh_token)`.
+   `/auth/logout` belongs to the panel cookie session and does not accept the consumer Bearer.
+   A later `/authorize` may reuse the panel's SSO session; use `prompt=select_account` when the
+   user needs to enter with another account.
 
 2. `GET /auth/callback` in the consumer:
    - Verify returned `state`.
@@ -165,27 +161,12 @@ Implement this in the consumer only if users log in through that system.
    - Exchange `code` server-to-server:
 
 ```python
-import httpx
-
-async with httpx.AsyncClient(timeout=10) as client:
-    response = await client.post(
-        f"{settings.minerva_issuer_url}/auth/token",
-        data={
-            "grant_type": "authorization_code",
-            "client_id": settings.minerva_client_id,
-            "code": code,
-            "redirect_uri": settings.minerva_redirect_uri,
-            "code_verifier": code_verifier,
-            # "client_secret": settings.minerva_client_secret,  # confidential clients only
-        },
-    )
-    response.raise_for_status()
-    tokens = response.json()
+tokens = await oidc.exchange_code(code, code_verifier)
 ```
 
 3. Store tokens using the project's existing session/security pattern. For a web app, prefer an HTTP-only secure session/cookie setup over exposing raw tokens to the browser.
 
-Small PKCE helpers are acceptable when no OAuth client library exists, but do not create custom JWT validation or permission functions.
+Do not create custom PKCE, JWT validation, or permission helpers in the consumer.
 
 ## Popup / web_message Login
 
@@ -231,9 +212,9 @@ window.open(
 );
 ```
 
-Generate `state`/`code_verifier` the same way as the full-page flow and keep the verifier
-server-side (look it up by `state` when the opener posts the code back). See
-`examples/godin-consumer` (`/popup`, `/popup/exchange`) for a working reference.
+Generate `state`/`code_verifier` with `MinervaOIDC.authorization_request()` and keep the
+verifier server-side. Popup login is advanced; the reference example intentionally uses
+the smaller full-page redirect flow.
 
 ## Public vs Confidential Clients
 
