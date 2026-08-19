@@ -116,3 +116,37 @@ def test_promote_key_purges_retired_keys_past_overlap_window(service):
 
     assert service.repo.get_by_kid(stale.kid) is None
     assert service.get_active_signing_key().kid == new_active.kid
+
+
+def test_revoke_compromised_active_key_requires_confirmation_and_invalidates_tokens(service, monkeypatch, capsys):
+    from app import cli
+
+    compromised = service.generate_signing_key()
+    compromised_kid = compromised.kid
+    token = create_access_token_rs256(
+        user_id="user-1",
+        email="u@iieg.gob.mx",
+        name="U",
+        kid=compromised_kid,
+        private_key_pem=service.get_active_private_pem()[1],
+    )
+
+    monkeypatch.setattr(cli, "engine", test_engine)
+    monkeypatch.setattr(cli, "_drop_jwks_cache", lambda strict=False: True)
+
+    assert cli.revoke_key(compromised_kid, confirm="otro-kid") == 1
+    assert service.repo.get_by_kid(compromised_kid) is not None
+    assert cli.revoke_key(compromised_kid) == 0
+    assert "DRY-RUN" in capsys.readouterr().out
+    assert service.repo.get_by_kid(compromised_kid) is not None
+    assert cli.revoke_key(compromised_kid, confirm=compromised_kid) == 0
+
+    service.session.expire_all()
+    active = service.get_active_signing_key()
+    jwks = service.build_jwks()
+
+    assert active.kid != compromised_kid
+    assert service.repo.get_by_kid(compromised_kid) is None
+    assert compromised_kid not in {entry["kid"] for entry in jwks["keys"]}
+    with pytest.raises(ValueError):
+        decode_token_rs256(token, jwks)

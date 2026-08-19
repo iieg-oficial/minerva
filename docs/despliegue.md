@@ -219,10 +219,35 @@ A lo sumo puede existir **una** clave `active` y **una** `pending` a la vez: lo 
 índices únicos parciales en `signing_keys` (migración 009), no solo el código, así que ni
 un INSERT manual ni una restauración a medias pueden dejar ambiguo con qué clave se firma.
 
-> **Clave comprometida.** Este flujo **no** cubre ese caso. Rotar solo deja de *emitir* con
-> la clave vieja; la comprometida sigue publicada en el JWKS toda la ventana de retención,
-> así que los tokens firmados con ella se siguen aceptando. Retirarla de verdad exige
-> borrarla del JWKS y revocar los tokens vivos, que hoy es un procedimiento manual.
+#### Retirada de emergencia de una clave comprometida
+
+Este procedimiento rompe deliberadamente todos los tokens firmados por el `kid`
+comprometido. No sustituye la rotación normal ni debe usarse para mantenimiento periódico.
+
+```bash
+# 1. Lista las claves y sus estados; no muestra material privado.
+docker compose exec backend python -m app.cli revoke-key
+
+# 2. Simula el impacto. No modifica la base ni el cache.
+docker compose exec backend python -m app.cli revoke-key KID_COMPROMETIDO
+
+# 3. Ejecuta solo si --confirm repite exactamente el kid.
+docker compose exec backend python -m app.cli revoke-key KID_COMPROMETIDO \
+  --confirm KID_COMPROMETIDO
+```
+
+Si la comprometida era `active`, el comando crea una clave nueva —o promueve la
+`pending` ya publicada— antes de eliminarla. Después invalida el JWKS cacheado en Redis.
+El comando es idempotente: si falla al limpiar Redis, repite exactamente el paso 3.
+
+Verifica el simulacro antes de cerrar el incidente:
+
+1. `curl -fsS https://HOST/.well-known/jwks.json` ya no contiene el `kid` comprometido.
+2. Obtén un token nuevo y confirma que su `kid` es la nueva `active` y que autentica.
+3. Fuerza a cada consumidor a refrescar su JWKS; un token firmado por el `kid` retirado
+   debe fallar. Los caches externos no pueden invalidarse desde Minerva.
+4. Revisa logs, accesos y tokens emitidos durante la ventana de compromiso, rota las
+   credenciales que pudieron exponer la clave y conserva la evidencia del incidente.
 
 **Recomendación operativa:** colgar la rotación de un cron periódico (p. ej. mensual),
 recordando que son **dos** ejecuciones separadas por la ventana de propagación.

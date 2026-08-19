@@ -43,6 +43,10 @@ class SigningKeyRepository:
         self.session.refresh(key)
         return key
 
+    def delete(self, key: SigningKey) -> None:
+        self.session.delete(key)
+        self.session.commit()
+
     def mark_retired(self, key: SigningKey) -> SigningKey:
         key.status = "retired"
         key.rotated_at = datetime.now(timezone.utc)
