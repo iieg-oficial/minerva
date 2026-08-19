@@ -15,6 +15,7 @@ from app.modules.applications.schemas import (
     RedirectURIRead,
 )
 from app.modules.applications.service import ApplicationService
+from app.modules.audit.service import AuditService
 from app.modules.devkit.manifest import ManifestLoader, parse_manifest, validate_manifest
 from app.modules.devkit.schemas import ManifestImportResult
 from app.shared.pagination import PaginatedResponse
@@ -28,6 +29,10 @@ public_router = APIRouter(prefix="/public", tags=["Public"])
 
 def get_application_service(session: Session = Depends(get_db)) -> ApplicationService:
     return ApplicationService(session)
+
+
+def get_audit_service(session: Session = Depends(get_db)) -> AuditService:
+    return AuditService(session)
 
 
 @public_router.get("/apps/{client_id}/branding", response_model=ApplicationBranding)
@@ -55,9 +60,21 @@ def create_application(
     data: ApplicationCreate,
     request: Request,
     service: ApplicationService = Depends(get_application_service),
+    audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
-    return service.create_application(data)
+    result = service.create_application(data, commit=False)
+    audit.log(
+        "application_create",
+        actor_user_id=_current_user["sub"],
+        target_type="application",
+        target_id=result.id,
+        application_id=result.id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+    )
+    return result
 
 
 @router.post("/import-manifest", response_model=ManifestImportResult)
@@ -92,20 +109,44 @@ def get_application(
 def update_application(
     application_id: str,
     data: ApplicationUpdate,
+    request: Request,
     service: ApplicationService = Depends(get_application_service),
+    audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
-    return service.update_application(application_id, data)
+    result = service.update_application(application_id, data, commit=False)
+    audit.log(
+        "application_update",
+        actor_user_id=_current_user["sub"],
+        target_type="application",
+        target_id=application_id,
+        application_id=application_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+    )
+    return result
 
 
 @router.delete("/{application_id}", status_code=204)
 def delete_application(
     application_id: str,
+    request: Request,
     service: ApplicationService = Depends(get_application_service),
+    audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
     """Elimina la aplicación con sus permisos, roles, redirect URIs y asignaciones."""
-    service.delete_application(application_id)
+    service.delete_application(application_id, commit=False)
+    audit.log(
+        "application_delete",
+        actor_user_id=_current_user["sub"],
+        target_type="application",
+        target_id=application_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+    )
 
 
 @router.post("/{application_id}/import-manifest", response_model=ManifestImportResult)
@@ -135,11 +176,24 @@ async def update_application_manifest(
 @router.post("/{application_id}/regenerate-secret", response_model=ApplicationWithSecrets)
 def regenerate_secret(
     application_id: str,
+    request: Request,
     service: ApplicationService = Depends(get_application_service),
+    audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
     """Genera un nuevo client_secret (se muestra una sola vez). El client_id no cambia."""
-    return service.regenerate_secret(application_id)
+    result = service.regenerate_secret(application_id, commit=False)
+    audit.log(
+        "application_secret_regenerate",
+        actor_user_id=_current_user["sub"],
+        target_type="application",
+        target_id=application_id,
+        application_id=application_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+    )
+    return result
 
 
 @router.post("/{application_id}/redirect-uris", response_model=RedirectURIRead, status_code=201)

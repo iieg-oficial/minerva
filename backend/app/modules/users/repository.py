@@ -29,11 +29,14 @@ class UserRepository:
         total = self.session.exec(select(User)).all()
         return items, len(total)
 
-    def create(self, user: User) -> User:
+    def create(self, user: User, commit: bool = True) -> User:
         user.email = normalize_email(user.email)
         self.session.add(user)
-        self.session.commit()
-        self.session.refresh(user)
+        if commit:
+            self.session.commit()
+            self.session.refresh(user)
+        else:
+            self.session.flush()
         return user
 
     def update(self, user: User, commit: bool = True) -> User:

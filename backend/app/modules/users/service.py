@@ -31,7 +31,7 @@ class UserService:
         users, total = self.repo.list_all(offset, limit)
         return [UserRead.model_validate(u) for u in users], total
 
-    def create_user(self, data: UserCreate) -> UserRead:
+    def create_user(self, data: UserCreate, commit: bool = True) -> UserRead:
         existing = self.repo.get_by_email(data.email)
         if existing:
             raise ConflictError(detail="El correo ya está registrado")
@@ -43,7 +43,7 @@ class UserService:
             domain=data.domain,
         )
 
-        user = self.repo.create(user)
+        user = self.repo.create(user, commit=commit)
         return UserRead.model_validate(user)
 
     def update_user(self, user_id: str, data: UserUpdate, commit: bool = True) -> UserRead:
