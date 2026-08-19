@@ -1,9 +1,12 @@
 import uuid
+from ipaddress import ip_address
+from urllib.parse import urlsplit
 
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.config import settings
+from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.core.security import hash_secret
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.applications.repository import ApplicationRepository, RedirectURIRepository
@@ -16,6 +19,31 @@ from app.modules.applications.schemas import (
     RedirectURICreate,
     RedirectURIRead,
 )
+
+
+def is_safe_redirect_uri(uri: str) -> bool:
+    try:
+        parsed = urlsplit(uri)
+        parsed.port
+    except ValueError:
+        return False
+
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        return False
+    if parsed.scheme == "https" or not settings.is_production:
+        return True
+    if parsed.hostname == "localhost":
+        return True
+    try:
+        return ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        return False
 
 
 class ApplicationService:
@@ -119,6 +147,8 @@ class ApplicationService:
         app = self.repo.get_by_id(app_id)
         if not app:
             raise NotFoundError(detail="Aplicación no encontrada")
+        if not is_safe_redirect_uri(data.uri):
+            raise BadRequestError(detail="redirect_uri inválida o insegura")
 
         existing = self.redirect_repo.get_by_uri(app_id, data.uri)
         if existing:
@@ -143,6 +173,8 @@ class ApplicationService:
         return [RedirectURIRead.model_validate(u) for u in uris]
 
     def validate_redirect_uri(self, client_id: str, redirect_uri: str) -> bool:
+        if not is_safe_redirect_uri(redirect_uri):
+            return False
         app = self.repo.get_by_client_id(client_id)
         if not app:
             return False
