@@ -123,5 +123,7 @@ class DevKitService:
         )
 
     # --- Manifests --------------------------------------------------------
-    def import_manifest(self, content: str, source: str = "manifest.minerva.yml") -> ManifestImportResult:
-        return ManifestLoader(self.session).import_manifest(content, source)
+    def import_manifest(
+        self, content: str, source: str = "manifest.minerva.yml", commit: bool = True
+    ) -> ManifestImportResult:
+        return ManifestLoader(self.session).import_manifest(content, source, commit=commit)
