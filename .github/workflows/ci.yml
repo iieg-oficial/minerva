@@ -107,7 +107,8 @@ jobs:
       - run: pip install -e "../examples/minerva-consumer[dev]"
       - run: ruff check ../examples/minerva-consumer/minerva_example ../examples/minerva-consumer/tests
       - run: ruff format --check ../examples/minerva-consumer/minerva_example ../examples/minerva-consumer/tests
-      - run: pytest ../examples/minerva-consumer/tests/ -v # referencia ejecutable, Minerva simulada
+      - run: pytest tests/ -v # referencia ejecutable, Minerva simulada
+        working-directory: examples/minerva-consumer
 
   frontend:
     runs-on: ubuntu-latest
