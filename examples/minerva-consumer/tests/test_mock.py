@@ -41,7 +41,7 @@ def clean_state():
 def test_fastapi_mounts_frontend_and_explains_missing_configuration():
     settings.client_id = ""
     config = request("GET", "/api/config")
-    route_paths = {route.path for route in app.routes}
+    route_paths = {route.path for route in app.routes if hasattr(route, "path")}
     assert {"/", "/assets"} <= route_paths
     assert '<script type="module" src="/assets/app.js"' in (frontend / "index.html").read_text()
     assert (frontend / "app.js").is_file()
