@@ -3,6 +3,7 @@
 Uso (dentro del contenedor backend o con el entorno conda `minerva` activo):
     python -m app.cli rotate-key         # fase 1: publica la clave nueva en el JWKS
     python -m app.cli promote-key        # fase 2: empieza a firmar con ella
+    python -m app.cli revoke-key KID     # simula la retirada de una clave comprometida
     python -m app.cli import-manifests   # importa los manifiestos del arranque
 """
 
@@ -21,7 +22,7 @@ from app.modules.oidc.service import OIDCService
 logger = logging.getLogger("minerva.cli")
 
 
-def _drop_jwks_cache() -> None:
+def _drop_jwks_cache(strict: bool = False) -> bool:
     """Invalida el JWKS cacheado en Redis. Sin esto el backend seguiría sirviendo el
     JWKS viejo hasta MINERVA_JWKS_CACHE_TTL_SECONDS y rechazaría tokens legítimos.
 
@@ -45,7 +46,12 @@ def _drop_jwks_cache() -> None:
         asyncio.run(_run())
     except Exception as exc:  # noqa: BLE001 - operacional: informar y seguir
         print(f"Aviso: no se pudo invalidar el cache JWKS en Redis ({exc}).")
-        print("El backend lo reconstruira solo al ver el kid nuevo; no hace falta reintentar.")
+        if strict:
+            print("Repite el comando: el kid ya no se publica, pero el cache debe invalidarse.")
+        else:
+            print("El backend lo reconstruira solo al ver el kid nuevo; no hace falta reintentar.")
+        return False
+    return True
 
 
 def rotate_key() -> None:
@@ -67,6 +73,45 @@ def promote_key(force: bool = False) -> None:
     logger.info("Clave de firma promovida. Nuevo kid activo: %s", key.kid)
     print(f"Clave {key.kid} activa: ya firma los tokens nuevos.")
     print(f"La anterior queda retirada y publicada {settings.key_retirement_overlap_minutes} min mas.")
+
+
+def revoke_key(kid: str | None, confirm: str | None = None) -> int:
+    """Lista o retira un kid comprometido. Sin confirmación solo muestra el impacto."""
+    import_models()
+    with Session(engine) as session:
+        service = OIDCService(session)
+        if kid is None:
+            for key in service.repo.list_publishable():
+                print(f"{key.kid}\t{key.status}\tcreada={key.created_at.isoformat()}")
+            return 0
+
+        compromised = service.repo.get_by_kid(kid)
+        if compromised is None:
+            if confirm == kid and _drop_jwks_cache(strict=True):
+                print(f"El kid {kid} ya no existe; cache JWKS invalidado.")
+                return 0
+            print(f"ERROR: no existe el kid {kid}.")
+            return 1
+
+        print(f"Impacto: retirar {kid} ({compromised.status}) invalida inmediatamente sus tokens tras refrescar JWKS.")
+        if compromised.status == "active":
+            pending = service.repo.get_pending()
+            action = f"promover {pending.kid}" if pending else "crear y promover una clave nueva"
+            print(f"La clave comprometida esta activa: se va a {action} antes de eliminarla.")
+        if confirm is None:
+            print(f"DRY-RUN: para ejecutar, agrega --confirm {kid}")
+            return 0
+        if confirm != kid:
+            print("ERROR: --confirm debe repetir exactamente el kid comprometido.")
+            return 1
+
+        active = service.revoke_compromised_key(kid)
+
+    if not _drop_jwks_cache(strict=True):
+        return 1
+    logger.warning("Clave de firma comprometida retirada: %s; active=%s", kid, active.kid)
+    print(f"Kid {kid} retirado. Nueva clave activa: {active.kid}.")
+    return 0
 
 
 def import_manifests() -> int:
@@ -123,6 +168,10 @@ def main() -> None:
         help="Promueve aunque no haya terminado la ventana de propagacion",
     )
 
+    revoke = subparsers.add_parser("revoke-key", help="Retira de emergencia un kid comprometido")
+    revoke.add_argument("kid", nargs="?", help="Kid comprometido; omitir para listar claves")
+    revoke.add_argument("--confirm", metavar="KID", help="Debe repetir exactamente el kid que se eliminara")
+
     subparsers.add_parser("import-manifests", help="Importa los manifiestos de MINERVA_MANIFESTS_PATH")
 
     args = parser.parse_args()
@@ -130,6 +179,8 @@ def main() -> None:
         rotate_key()
     elif args.command == "promote-key":
         promote_key(force=args.force)
+    elif args.command == "revoke-key":
+        sys.exit(revoke_key(args.kid, confirm=args.confirm))
     elif args.command == "import-manifests":
         sys.exit(import_manifests())
 

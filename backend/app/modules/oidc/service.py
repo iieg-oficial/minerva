@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.crypto import decrypt_secret, encrypt_secret
-from app.core.exceptions import AppException, ConflictError
+from app.core.exceptions import AppException, ConflictError, NotFoundError
 from app.core.security import create_access_token_rs256, create_dev_token_rs256
 from app.modules.oidc.models import SigningKey
 from app.modules.oidc.repository import SigningKeyRepository
@@ -176,6 +176,18 @@ class OIDCService:
 
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.key_retirement_overlap_minutes)
         return self.repo.purge_retired_before(cutoff)
+
+    def revoke_compromised_key(self, kid: str) -> SigningKey:
+        """Deja de publicar un kid comprometido y garantiza otra clave activa."""
+        compromised = self.repo.get_by_kid(kid)
+        if compromised is None:
+            raise NotFoundError("Clave de firma")
+        if compromised.status == "active":
+            if self.repo.get_pending() is None:
+                self.stage_key()
+            self.promote_key(force=True)
+        self.repo.delete(compromised)
+        return self.ensure_active_signing_key()
 
     # --- Emisión de tokens de sesión interna -------------------------------
     # Tokens del panel/login y del Dev Kit. Se firman con la clave activa (RS256),
