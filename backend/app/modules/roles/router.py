@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlmodel import Session
 
 from app.core.dependencies.admin import require_minerva_admin
 from app.core.dependencies.auth import get_current_panel_user
 from app.core.dependencies.db import get_db
+from app.modules.audit.service import AuditService
 from app.modules.permissions.schemas import PermissionRead
 from app.modules.permissions.service import PermissionService
 from app.modules.roles.schemas import RoleCreate, RoleRead, RoleUpdate
@@ -20,6 +21,10 @@ def get_role_service(session: Session = Depends(get_db)) -> RoleService:
 
 def get_permission_service(session: Session = Depends(get_db)) -> PermissionService:
     return PermissionService(session)
+
+
+def get_audit_service(session: Session = Depends(get_db)) -> AuditService:
+    return AuditService(session)
 
 
 @router.get("", response_model=PaginatedResponse[RoleRead])
@@ -40,11 +45,24 @@ def list_roles(
 @router.post("", response_model=RoleRead, status_code=201)
 def create_role(
     data: RoleCreate,
+    request: Request,
     application_id: str = Query(..., description="ID de la aplicación"),
     service: RoleService = Depends(get_role_service),
+    audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
-    return service.create_role(application_id, data)
+    result = service.create_role(application_id, data, commit=False)
+    audit.log(
+        "role_create",
+        actor_user_id=_current_user["sub"],
+        target_type="role",
+        target_id=result.id,
+        application_id=application_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+    )
+    return result
 
 
 @router.get("/{role_id}", response_model=RoleRead)
@@ -78,29 +96,66 @@ def list_role_users(
 def update_role(
     role_id: str,
     data: RoleUpdate,
+    request: Request,
     service: RoleService = Depends(get_role_service),
+    audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
-    return service.update_role(role_id, data)
+    result = service.update_role(role_id, data, commit=False)
+    audit.log(
+        "role_update",
+        actor_user_id=_current_user["sub"],
+        target_type="role",
+        target_id=role_id,
+        application_id=result.application_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+    )
+    return result
 
 
 @router.delete("/{role_id}", status_code=204)
 def delete_role(
     role_id: str,
+    request: Request,
     service: RoleService = Depends(get_role_service),
+    audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
-    service.delete_role(role_id)
+    application_id = service.delete_role(role_id, commit=False)
+    audit.log(
+        "role_delete",
+        actor_user_id=_current_user["sub"],
+        target_type="role",
+        target_id=role_id,
+        application_id=application_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+    )
 
 
 @router.post("/{role_id}/permissions/{permission_id}", status_code=201)
 def add_permission_to_role(
     role_id: str,
     permission_id: str,
+    request: Request,
     service: PermissionService = Depends(get_permission_service),
+    audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
-    service.add_permission_to_role(role_id, permission_id)
+    application_id = service.add_permission_to_role(role_id, permission_id, commit=False)
+    audit.log(
+        "role_permission_add",
+        actor_user_id=_current_user["sub"],
+        target_type="role_permission",
+        target_id=f"{role_id}:{permission_id}",
+        application_id=application_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+    )
     return {"message": "Permiso asignado al rol"}
 
 
@@ -108,7 +163,19 @@ def add_permission_to_role(
 def remove_permission_from_role(
     role_id: str,
     permission_id: str,
+    request: Request,
     service: PermissionService = Depends(get_permission_service),
+    audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
-    service.remove_permission_from_role(role_id, permission_id)
+    application_id = service.remove_permission_from_role(role_id, permission_id, commit=False)
+    audit.log(
+        "role_permission_remove",
+        actor_user_id=_current_user["sub"],
+        target_type="role_permission",
+        target_id=f"{role_id}:{permission_id}",
+        application_id=application_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+    )
