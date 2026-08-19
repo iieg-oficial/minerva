@@ -8,6 +8,7 @@ from app.core.dependencies.auth import get_current_panel_user
 from app.core.dependencies.db import get_db
 from app.core.redis import get_redis
 from app.core.token_blacklist import invalidate_user_tokens, revoke_jti
+from app.modules.audit.service import AuditService
 from app.modules.users.schemas import UserCreate, UserRead, UserStatusUpdate, UserUpdate
 from app.modules.users.service import UserService
 from app.shared.pagination import PaginatedResponse
@@ -17,6 +18,10 @@ router = APIRouter(prefix="/users", tags=["Users"], dependencies=[Depends(requir
 
 def get_user_service(session: Session = Depends(get_db)) -> UserService:
     return UserService(session)
+
+
+def get_audit_service(session: Session = Depends(get_db)) -> AuditService:
+    return AuditService(session)
 
 
 async def _invalidate_user_sessions(redis: Redis, service: UserService, user_id: str) -> None:
@@ -72,16 +77,29 @@ def create_user(
     data: UserCreate,
     request: Request,
     service: UserService = Depends(get_user_service),
+    audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
-    return service.create_user(data)
+    result = service.create_user(data, commit=False)
+    audit.log(
+        "user_create",
+        actor_user_id=_current_user["sub"],
+        target_type="user",
+        target_id=result.id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+    )
+    return result
 
 
 @router.patch("/{user_id}", response_model=UserRead)
 async def update_user(
     user_id: str,
     data: UserUpdate,
+    request: Request,
     service: UserService = Depends(get_user_service),
+    audit: AuditService = Depends(get_audit_service),
     redis: Redis = Depends(get_redis),
     _current_user: dict = Depends(get_current_panel_user),
 ):
@@ -89,7 +107,17 @@ async def update_user(
     invalidating = (
         data.password is not None or data.email is not None or (data.status is not None and data.status != "active")
     )
-    result = service.update_user(user_id, data, commit=not invalidating)
+    result = service.update_user(user_id, data, commit=False)
+    audit.log(
+        "user_update",
+        actor_user_id=_current_user["sub"],
+        target_type="user",
+        target_id=user_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+        commit=not invalidating,
+    )
     if invalidating:
         await _apply_with_invalidation(service, redis, user_id)
     return result
@@ -99,12 +127,24 @@ async def update_user(
 async def update_user_status(
     user_id: str,
     data: UserStatusUpdate,
+    request: Request,
     service: UserService = Depends(get_user_service),
+    audit: AuditService = Depends(get_audit_service),
     redis: Redis = Depends(get_redis),
     _current_user: dict = Depends(get_current_panel_user),
 ):
     invalidating = data.status != "active"
-    result = service.update_status(user_id, data, commit=not invalidating)
+    result = service.update_status(user_id, data, commit=False)
+    audit.log(
+        "user_status_update",
+        actor_user_id=_current_user["sub"],
+        target_type="user",
+        target_id=user_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success"},
+        commit=not invalidating,
+    )
     if invalidating:
         await _apply_with_invalidation(service, redis, user_id)
     return result
