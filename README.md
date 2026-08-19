@@ -4,7 +4,7 @@
 
 ### El sistema institucional de identidad, autenticación y autorización del IIEG
 
-[![CI](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml/badge.svg)](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml) [![Versión](https://img.shields.io/badge/versi%C3%B3n-0.6.0-5C2472)](CHANGELOG.md) ![OIDC](https://img.shields.io/badge/OIDC-OpenID%20Connect-5C2472) ![RS256](https://img.shields.io/badge/JWT-RS256%20%2F%20JWKS-2e4372) ![Python](https://img.shields.io/badge/python-3.12%2B-2e4372) [![Licencia](https://img.shields.io/badge/licencia-AGPL--3.0--only-FF8300)](LICENSE)
+[![CI](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml/badge.svg)](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml) [![Versión](https://img.shields.io/badge/versi%C3%B3n-0.7.0-5C2472)](CHANGELOG.md) ![OIDC](https://img.shields.io/badge/OIDC-OpenID%20Connect-5C2472) ![RS256](https://img.shields.io/badge/JWT-RS256%20%2F%20JWKS-2e4372) ![Python](https://img.shields.io/badge/python-3.12%2B-2e4372) [![Licencia](https://img.shields.io/badge/licencia-AGPL--3.0--only-FF8300)](LICENSE)
 
 </div>
 

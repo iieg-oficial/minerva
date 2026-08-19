@@ -7,6 +7,8 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-18
+
 ### Added
 
 - **SDK 0.3.0 y consumidor de referencia.** `MinervaOIDC` construye el flujo Authorization

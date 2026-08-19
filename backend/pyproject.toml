@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minerva"
-version = "0.6.0"
+version = "0.7.0"
 description = "Sistema institucional de autenticacion, autorizacion y gestion de accesos del IIEG"
 # El texto completo vive en el `LICENSE` de la raiz del monorepo, fuera de este proyecto
 # hatchling: aqui solo se declara la expresion SPDX (PEP 639).
