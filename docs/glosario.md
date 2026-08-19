@@ -73,7 +73,7 @@ contraseña.
 su propia pantalla de login — que es como se acumulan contraseñas repetidas y cuentas de
 gente que ya no trabaja ahí.
 
-**Ejemplo.** Ana entra a Minerva en la mañana. Al abrir Godín a mediodía, Godín la redirige a
+**Ejemplo.** Ana entra a Minerva en la mañana. Al abrir Portal Demo a mediodía, el portal la redirige a
 Minerva, Minerva ve que ya tiene sesión y la devuelve autenticada sin pedirle nada. Ana solo
 ve un parpadeo del navegador.
 
@@ -82,7 +82,7 @@ ve un parpadeo del navegador.
 **Qué es.** El acuerdo por el cual un sistema **confía** en la palabra de otro sobre quién es
 un usuario, en lugar de verificarlo por su cuenta.
 
-**Para qué sirve.** Es lo que hace posible el SSO. Godín no verifica la contraseña de Ana:
+**Para qué sirve.** Es lo que hace posible el SSO. Portal Demo no verifica la contraseña de Ana:
 confía en que Minerva ya lo hizo, porque el token viene firmado.
 
 **Ejemplo.** Cuando entras a un sitio con "Continuar con Google", ese sitio está federando su
@@ -118,7 +118,7 @@ porque confía en lo que el IdP afirma.
 
 **Para qué sirve.** Es el rol que tendrá cualquier sistema del instituto que se integre.
 
-**Ejemplo.** Godín. En Minerva cada cliente es un registro en la tabla `applications`,
+**Ejemplo.** Portal Demo. En Minerva cada cliente es un registro en la tabla `applications`,
 identificado por un `client_id`.
 
 ### Resource Owner (Dueño del Recurso)
@@ -129,7 +129,7 @@ autoriza que una aplicación los use.
 **Para qué sirve.** El nombre recuerda que el usuario no es un objeto pasivo del flujo: es
 quien concede el acceso.
 
-**Ejemplo.** Ana Pérez, que autoriza a Godín a ver su nombre y correo.
+**Ejemplo.** Ana Pérez, que autoriza a Portal Demo a ver su nombre y correo.
 
 ### Resource Server (Servidor de Recursos)
 
@@ -137,8 +137,8 @@ quien concede el acceso.
 
 **Para qué sirve.** Es el que hace cumplir la autorización en el punto de uso.
 
-**Ejemplo.** La API de Godín que expone `POST /oficios` y valida
-`require_permission("godin.oficios.create")`.
+**Ejemplo.** La API de Portal Demo que expone `POST /documents` y valida
+`require_permission("portal_demo.documents.create")`.
 
 ### User Agent
 
@@ -162,7 +162,7 @@ información lo atraviesa.
 **Para qué sirve.** Determina cómo el cliente prueba su identidad ante el IdP. El confidencial
 usa un `client_secret`; el público usa **PKCE**.
 
-**Ejemplo.** El backend de Godín en un servidor es confidencial: su `client_secret` vive en
+**Ejemplo.** El backend de Portal Demo en un servidor es confidencial: su `client_secret` vive en
 una variable de entorno que nadie ve. Una SPA de React es pública: cualquier cosa que le
 pongas está en el JavaScript que el navegador descargó, visible con F12.
 
@@ -178,7 +178,7 @@ actuar en nombre de un usuario, **sin que la aplicación vea la contraseña**.
 **Para qué sirve.** Elimina el peor patrón posible: que cada sistema pida y almacene la
 contraseña del usuario.
 
-**Ejemplo.** Godín nunca conoce la contraseña de Ana. Recibe un token que dice "el portador
+**Ejemplo.** Portal Demo nunca conoce la contraseña de Ana. Recibe un token que dice "el portador
 actúa por Ana, con estos permisos, hasta las 14:35".
 
 **Ojo.** OAuth por sí solo **no** estandariza quién es el usuario. Solo dice qué puede hacer
@@ -241,8 +241,8 @@ al IdP.
 **Para qué sirve.** Para nada. Destruye el propósito de OAuth: la app vuelve a ver la
 contraseña.
 
-**Ejemplo del problema.** Si Godín pide la contraseña de Minerva en su propio formulario,
-(a) Godín podría guardarla, (b) entrena a los usuarios a escribir su contraseña institucional
+**Ejemplo del problema.** Si Portal Demo pide la contraseña de Minerva en su propio formulario,
+(a) el portal podría guardarla, (b) entrena a los usuarios a escribir su contraseña institucional
 en cualquier formulario que se la pida — que es exactamente el reflejo que explota el
 *phishing*.
 
@@ -304,8 +304,8 @@ deshace la otra.
 **Para qué sirve.** Permite **verificar sin poder falsificar** — la propiedad que hace posible
 todo el modelo de Minerva.
 
-**Ejemplo.** Minerva firma con la privada (que nunca sale de Minerva). Godín verifica con la
-pública (que Minerva publica abiertamente). Godín confirma que el token es auténtico, pero no
+**Ejemplo.** Minerva firma con la privada (que nunca sale de Minerva). Portal Demo verifica con la
+pública (que Minerva publica abiertamente). El portal confirma que el token es auténtico, pero no
 puede fabricar uno.
 
 ### Firma digital
@@ -339,7 +339,7 @@ de todos sus JWT.
 
 **Para qué sirve.** Sistemas monolíticos donde el mismo servicio emite y valida.
 
-**Ejemplo del problema.** Con HS256, Godín necesitaría la llave para verificar — y con esa
+**Ejemplo del problema.** Con HS256, Portal Demo necesitaría la llave para verificar — y con esa
 misma llave podría **emitir** tokens válidos a nombre de cualquier usuario. Se acabó la
 separación entre IdP y consumidor. Por eso Minerva usa RS256 exclusivamente.
 
@@ -399,14 +399,14 @@ invalidar tokens legítimos por un desfase de relojes.
 El flujo completo, paso a paso. Es el corazón de todo lo demás.
 
 ```
-   Usuario en Godín hace click en "Entrar con Minerva"
+   Usuario en Portal Demo hace click en "Entrar con Minerva"
              │
              ▼
    ┌─────────────────────────────────────────────────────┐
-   │ 1. Godín redirige el NAVEGADOR a Minerva            │
+   │ 1. Portal Demo redirige el NAVEGADOR a Minerva      │
    │    GET /auth/authorize                              │
-   │      ?client_id=godin                               │
-   │      &redirect_uri=https://godin.../callback        │
+   │      ?client_id=portal_demo                         │
+   │      &redirect_uri=https://portal-demo.../callback  │
    │      &state=xyz789                                  │
    │      &code_challenge=E9Melhoa...                    │
    │      &scope=openid profile email                    │
@@ -421,14 +421,14 @@ El flujo completo, paso a paso. Es el corazón de todo lo demás.
              ▼
    ┌─────────────────────────────────────────────────────┐
    │ 3. Minerva redirige de vuelta con un CODE           │
-   │    https://godin.../callback?code=abc123&state=xyz789│
+   │ https://portal-demo.../callback?code=abc123&state=xyz│
    │                                    ↑                 │
    │              esto SÍ pasa por el navegador           │
    └─────────────────────────────────────────────────────┘
              │
              ▼
    ┌─────────────────────────────────────────────────────┐
-   │ 4. El BACKEND de Godín canjea el code               │
+   │ 4. El BACKEND de Portal Demo canjea el code         │
    │    POST /auth/token                                 │
    │      code=abc123                                    │
    │      code_verifier=dBjftJeZ...                      │
@@ -483,7 +483,7 @@ nunca pasaron por el navegador. El token real viaja en el paso 4, invisible.
 
 **Para qué sirve.** Es donde el cliente retoma el control después de que el IdP hizo su parte.
 
-**Ejemplo.** `https://godin.jalisco.gob.mx/callback`. Ahí Godín verifica el `state`, canjea el
+**Ejemplo.** `https://portal-demo.jalisco.gob.mx/callback`. Ahí el portal verifica el `state`, canjea el
 `code` y crea su propia sesión.
 
 ---
@@ -496,7 +496,7 @@ nunca pasaron por el navegador. El token real viaja en el paso 4, invisible.
 
 **Para qué sirve.** Le dice al IdP quién está pidiendo. No es secreto: viaja en la URL.
 
-**Ejemplo.** `client_id=godin`.
+**Ejemplo.** `client_id=portal_demo`.
 
 ### `client_secret`
 
@@ -505,7 +505,7 @@ nunca pasaron por el navegador. El token real viaja en el paso 4, invisible.
 **Para qué sirve.** Prueba, al canjear el `code`, que quien lo canjea es realmente esa
 aplicación.
 
-**Ejemplo.** Vive en una variable de entorno del backend de Godín. Minerva lo guarda hasheado
+**Ejemplo.** Vive en una variable de entorno del backend de Portal Demo. Minerva lo guarda hasheado
 (`client_secret_hash`), nunca en claro — igual que una contraseña de usuario.
 
 ### `redirect_uri`
@@ -529,9 +529,9 @@ sin modificar.
 verifica que el `state` recibido sea el que él generó y guardó en la sesión.
 
 **Ejemplo del ataque que previene.** Un atacante inicia un login con *su* cuenta, intercepta
-su propio `code`, y te hace visitar `https://godin.../callback?code=<code-del-atacante>`. Sin
-`state`, Godín canjearía ese code y te dejaría **dentro de la sesión del atacante** — donde
-todo lo que subas queda en la cuenta de él. Con `state`, Godín ve un valor que no generó y
+su propio `code`, y te hace visitar `https://portal-demo.../callback?code=<code-del-atacante>`. Sin
+`state`, el portal canjearía ese code y te dejaría **dentro de la sesión del atacante** — donde
+todo lo que subas queda en la cuenta de él. Con `state`, el portal ve un valor que no generó y
 aborta.
 
 ### `nonce`
@@ -542,7 +542,7 @@ aborta.
 **Para qué sirve.** Protege contra **replay del `id_token`**: garantiza que el token que
 recibes fue emitido para *esta* petición y no es uno viejo reinyectado.
 
-**Ejemplo.** Godín genera `nonce=n-0S6_WzA2Mj`, lo manda, y al recibir el `id_token` verifica
+**Ejemplo.** Portal Demo genera `nonce=n-0S6_WzA2Mj`, lo manda, y al recibir el `id_token` verifica
 que el claim `nonce` coincida. Si no, descarta el token.
 
 **Diferencia con `state`.** `state` se verifica en la URL de retorno y protege el flujo.
@@ -561,7 +561,7 @@ que el claim `nonce` coincida. Si no, descarta el token.
 - `email` — correo.
 
 > ⚠️ **Confusión muy común.** El `scope` **no** son los permisos de negocio. `scope=profile` no
-> tiene nada que ver con `godin.oficios.create`. El scope es de identidad, los permisos finos
+> tiene nada que ver con `portal_demo.documents.create`. El scope es de identidad, los permisos finos
 > se resuelven aparte (ver sección 14).
 
 ### `response_type`
@@ -630,7 +630,7 @@ necesitar `client_secret`**.
 que inició el flujo, si no puedo guardar ningún secreto?
 
 **Ejemplo del ataque que previene.** En móviles, varias apps pueden registrar el mismo esquema
-de redirect (`godin://callback`). Una app maliciosa instalada en el teléfono podría interceptar
+de redirect (`portal-demo://callback`). Una app maliciosa instalada en el teléfono podría interceptar
 el `code`. Con PKCE, ese `code` no le sirve: no tiene el `code_verifier`.
 
 ### Cómo funciona
@@ -715,7 +715,7 @@ retoma el flujo después (parámetro `next=`).
 **Para qué sirve.** Canjear el `code` (+ `code_verifier`) por los tokens, y renovar con el
 refresh token.
 
-**Ejemplo.** El backend de Godín lo llama con `grant_type=authorization_code` y recibe
+**Ejemplo.** El backend de Portal Demo lo llama con `grant_type=authorization_code` y recibe
 `{ access_token, id_token, refresh_token }`.
 
 ### `/revoke` — Revocation Endpoint (RFC 7009)
@@ -735,7 +735,7 @@ presentado como Bearer.
 **Para qué sirve.** Obtener datos de identidad frescos sin re-autenticar, y filtrados por el
 scope con el que se emitió el token.
 
-**Ejemplo.** Godín llama `/userinfo` con el access token y recibe `{ sub, email, name }` —
+**Ejemplo.** Portal Demo llama `/userinfo` con el access token y recibe `{ sub, email, name }` —
 solo los campos que el scope autorizó.
 
 ### Discovery — `/.well-known/openid-configuration`
@@ -938,7 +938,7 @@ este usuario.
 |---|---|---|---|
 | `iss` | *issuer* | Quién emitió el token | `https://minerva.jalisco.gob.mx` |
 | `sub` | *subject* | El ID único del usuario | `a3f9c2d1-...` |
-| `aud` | *audience* | Para quién es este token | `godin` |
+| `aud` | *audience* | Para quién es este token | `portal_demo` |
 | `exp` | *expiration* | Cuándo vence (timestamp Unix) | `1730000000` |
 | `iat` | *issued at* | Cuándo se emitió | `1729999100` |
 | `nbf` | *not before* | No válido antes de | `1729999100` |
@@ -1232,7 +1232,7 @@ en el navegador) + CSP.
 pero el `code` termina en manos ajenas.
 
 **Defensa.** Lista blanca de `redirect_uri` registradas, con **coincidencia exacta**. Nunca
-por prefijo: `https://godin.com.atacante.net` empieza con `https://godin.com`.
+por prefijo: `https://portal-demo.com.atacante.net` empieza con `https://portal-demo.com`.
 
 ### Replay attack (ataque de repetición)
 
@@ -1341,7 +1341,7 @@ abierta.
 **Para qué sirve.** Es la unidad **atómica y estable** de autorización, contra la que se
 programa.
 
-**Ejemplo.** `godin.oficios.create`. Acciones estándar: `view, create, update, delete, assign,
+**Ejemplo.** `portal_demo.documents.create`. Acciones estándar: `view, create, update, delete, assign,
 approve, authorize, export, import, manage`.
 
 ### Rol
@@ -1351,7 +1351,7 @@ approve, authorize, export, import, manage`.
 **Para qué sirve.** Es una comodidad **administrativa**: agrupar permisos para asignarlos
 juntos desde el panel.
 
-**Ejemplo.** El rol "Coordinador" agrupa `godin.oficios.view`, `.create` y `.approve`.
+**Ejemplo.** El rol "Coordinador" agrupa `portal_demo.documents.view`, `.create` y `.approve`.
 
 > 🔴 **El rol NUNCA se valida en código.** Un rol es una etiqueta que puede cambiar de
 > contenido sin previo aviso: si mañana "Coordinador" pierde el permiso de aprobar, un
@@ -1385,7 +1385,7 @@ existente.
 
 **Ejemplo.**
 ```python
-@router.post("/oficios", dependencies=[Depends(require_permission("godin.oficios.create"))])
+@router.post("/documents", dependencies=[Depends(require_permission("portal_demo.documents.create"))])
 def crear_oficio(...):
     ...
 ```
@@ -1410,7 +1410,7 @@ Los que más aparecen en revisión de código. Si solo te llevas una sección, q
 
 ```python
 if user.role == "Admin":                       # ❌ frágil
-require_permission("godin.oficios.create")     # ✅ estable
+require_permission("portal_demo.documents.create")     # ✅ estable
 ```
 
 ### 2. Escribir tu propia validación de JWT
@@ -1441,11 +1441,11 @@ Un JWT es **legible por cualquiera**. Base64 no es cifrado.
 ### 7. Confundir `scope` con permisos
 
 `scope` es de identidad (`openid`, `profile`, `email`). Los permisos de negocio
-(`godin.oficios.create`) se resuelven aparte.
+(`portal_demo.documents.create`) se resuelven aparte.
 
 ### 8. Validar `redirect_uri` por prefijo
 
-`https://godin.com.atacante.net` empieza con `https://godin.com`. Coincidencia **exacta**,
+`https://portal-demo.com.atacante.net` empieza con `https://portal-demo.com`. Coincidencia **exacta**,
 siempre.
 
 ### 9. Access tokens de vida larga

@@ -9,8 +9,8 @@ from tests.conftest import test_engine
 def _create_app(client_secret_hash: str = "x", **branding) -> str:
     with Session(test_engine) as session:
         app_row = Application(
-            name="Godín",
-            slug="godin-branding",
+            name="Portal Demo",
+            slug="portal-demo-branding",
             client_secret_hash=client_secret_hash,
             status="active",
             **branding,
@@ -23,17 +23,17 @@ def _create_app(client_secret_hash: str = "x", **branding) -> str:
 
 def test_branding_public_endpoint_requires_no_auth(client):
     client_id = _create_app(
-        display_name="Godín Oficios",
-        logo_url="https://cdn.iieg.gob.mx/godin.png",
+        display_name="Portal Documental",
+        logo_url="https://cdn.iieg.gob.mx/portal-demo.png",
         brand_color="#5C2472",
     )
     resp = client.get(f"/public/apps/{client_id}/branding")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["display_name"] == "Godín Oficios"
-    assert body["logo_url"] == "https://cdn.iieg.gob.mx/godin.png"
+    assert body["display_name"] == "Portal Documental"
+    assert body["logo_url"] == "https://cdn.iieg.gob.mx/portal-demo.png"
     assert body["brand_color"] == "#5C2472"
-    assert body["name"] == "Godín"
+    assert body["name"] == "Portal Demo"
 
 
 def test_branding_never_leaks_secrets(client):

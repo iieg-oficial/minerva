@@ -7,11 +7,11 @@ Antes `get_current_user` colgaba la credencial cruda en `user["_token"]`: un
 import asyncio
 
 import httpx
+from conftest import APP_CODE, jwks_for, make_keypair, sign
 from fastapi import Depends, FastAPI
 from httpx import ASGITransport
 
 from minerva_sdk.fastapi import _decode, get_current_user, require_permission
-from tests.conftest import APP_CODE, jwks_for, make_keypair, sign
 
 KID = "kid-leak"
 
@@ -49,13 +49,13 @@ def test_endpoint_protegido_no_filtra_el_bearer_al_serializar(fake_http):
     exponer la credencial en la respuesta."""
     private_pem, public_pem = make_keypair()
     fake_http.set_jwks(jwks_for((KID, public_pem)))
-    fake_http.set_permissions(["godin.oficios.create"])
+    fake_http.set_permissions(["portal_demo.documents.create"])
     token = sign(private_pem, KID, jti="jti-1")
 
     api = FastAPI()
 
     @api.get("/protegido")
-    async def protegido(user: dict = Depends(require_permission("godin.oficios.create", APP_CODE))):
+    async def protegido(user: dict = Depends(require_permission("portal_demo.documents.create", APP_CODE))):
         return user  # exactamente lo que un consumidor descuidado haría
 
     async def _call():

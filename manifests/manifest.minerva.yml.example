@@ -6,31 +6,31 @@
 # Convención de permisos: {application_code}.{resource}.{action}
 
 application:
-  code: godin
-  name: Godín
-  description: Gestor de oficios, memos y solicitudes de información
-  base_url: http://localhost:8000
+  code: portal_demo
+  name: Portal Demo
+  description: Sistema documental de ejemplo
+  base_url: http://localhost:8100
   redirect_uris:
-    - http://localhost:8000/auth/callback
+    - http://localhost:8100/callback
 
 permissions:
-  - key: godin.oficios.view
-    name: Ver oficios
-    description: Permite consultar oficios
+  - key: portal_demo.documents.view
+    name: Ver documentos
+    description: Permite consultar documentos
 
-  - key: godin.oficios.create
-    name: Crear oficios
-    description: Permite crear nuevos oficios
+  - key: portal_demo.documents.create
+    name: Crear documentos
+    description: Permite crear nuevos documentos
 
-  - key: godin.oficios.authorize
-    name: Autorizar oficios
-    description: Permite autorizar oficios
+  - key: portal_demo.documents.authorize
+    name: Autorizar documentos
+    description: Permite autorizar documentos
 
-  - key: godin.solicitudes.view
+  - key: portal_demo.requests.view
     name: Ver solicitudes
     description: Permite consultar solicitudes de información
 
-  - key: godin.solicitudes.assign
+  - key: portal_demo.requests.assign
     name: Asignar solicitudes
     description: Permite asignar solicitudes a usuarios
 
@@ -38,21 +38,21 @@ roles:
   - name: Consulta
     description: Usuario de solo lectura
     permissions:
-      - godin.oficios.view
-      - godin.solicitudes.view
+      - portal_demo.documents.view
+      - portal_demo.requests.view
 
   - name: Capturista
     description: Usuario que puede capturar información
     permissions:
-      - godin.oficios.view
-      - godin.oficios.create
-      - godin.solicitudes.view
+      - portal_demo.documents.view
+      - portal_demo.documents.create
+      - portal_demo.requests.view
 
   - name: Administrador
     description: Control total del sistema
     permissions:
-      - godin.oficios.view
-      - godin.oficios.create
-      - godin.oficios.authorize
-      - godin.solicitudes.view
-      - godin.solicitudes.assign
+      - portal_demo.documents.view
+      - portal_demo.documents.create
+      - portal_demo.documents.authorize
+      - portal_demo.requests.view
+      - portal_demo.requests.assign

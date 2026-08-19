@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "minerva-sdk"
 # Ciclo de versionado propio, independiente del servidor (ver "Versionado" en el README
 # raíz): no tiene por qué coincidir con backend/pyproject.toml.
-version = "0.2.0"
+version = "0.3.0"
 description = "SDK mínimo de Minerva para sistemas consumidores (FastAPI)"
 # Apache-2.0, NO la AGPL-3.0 del resto del repo: esta librería la importan los sistemas
 # consumidores en su propio código y no debe imponerles el copyleft del servidor.

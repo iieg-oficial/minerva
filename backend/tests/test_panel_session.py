@@ -171,7 +171,7 @@ def test_consumer_access_token_not_valid_as_panel(client, fresh_redis):
 
     with Session(test_engine) as s:
         kid, pem = OIDCService(s).get_active_private_pem()
-    access = create_access_token_rs256("user-x", "u@x", "U", kid, pem, application_slug="godin", typ="access")
+    access = create_access_token_rs256("user-x", "u@x", "U", kid, pem, application_slug="portal_demo", typ="access")
 
     sid = panel_session.new_sid()
     container = panel_session.empty_container()

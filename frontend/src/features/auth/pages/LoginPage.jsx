@@ -171,7 +171,6 @@ export default function LoginPage() {
                 form={form}
                 name="login"
                 onFinish={onFinish}
-                autoComplete="off"
                 layout="vertical"
                 initialValues={
                     prefillEmail
@@ -201,7 +200,7 @@ export default function LoginPage() {
                         { type: 'email', message: 'Ingrese un correo válido' },
                     ]}
                 >
-                    <Input placeholder="correo@iieg.gob.mx" />
+                    <Input placeholder="correo@iieg.gob.mx" autoComplete="username" />
                 </Form.Item>
 
                 <Form.Item
@@ -211,6 +210,7 @@ export default function LoginPage() {
                 >
                     <Input.Password
                         placeholder="Contraseña"
+                        autoComplete="current-password"
                         iconRender={(visible) => (
                             <img
                                 src={`${import.meta.env.BASE_URL}${visible ? 'ico-show.svg' : 'ico-hidden.svg'}`}

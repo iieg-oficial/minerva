@@ -124,6 +124,11 @@ async def get_current_user(
     return await _decode(credentials.credentials)
 
 
+async def validate_access_token(token: str) -> dict:
+    """Valida un access token cuando el consumidor lo guarda en sesión server-side."""
+    return await _decode(token)
+
+
 def invalidate_token(jti: str) -> None:
     """Olvida los permisos cacheados de un token concreto. Engánchalo a tu propio
     logout si quieres que la revocación surta efecto sin esperar al TTL."""
@@ -223,6 +228,26 @@ async def _fetch_permissions(token: str, claims: dict, application_code: str) ->
         _permissions_cache[cache_key] = (expires_at, frozenset(perms))
         _prune_permissions_cache(now)
     return perms
+
+
+async def get_permissions(token: str, application_code: str | None = None) -> set[str]:
+    """Devuelve permisos efectivos para integraciones que no reciben Bearer directo."""
+    app_code = application_code or settings.application_code
+    if not app_code:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "MINERVA_APPLICATION_CODE no configurado")
+    claims = await _decode(token)
+    return await _fetch_permissions(token, claims, app_code)
+
+
+async def check_permission(token: str, permission: str, application_code: str | None = None) -> dict:
+    """Valida token y permiso; devuelve los claims o responde 401/403."""
+    claims = await _decode(token)
+    app_code = application_code or settings.application_code
+    if not app_code:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "MINERVA_APPLICATION_CODE no configurado")
+    if permission not in await _fetch_permissions(token, claims, app_code):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, f"Requiere permiso: {permission}")
+    return claims
 
 
 def require_permission(permission: str, application_code: str | None = None):
