@@ -254,20 +254,87 @@ recordando que son **dos** ejecuciones separadas por la ventana de propagación.
 
 ### 3.2 Backups de PostgreSQL
 
+Usa el formato custom de `pg_dump`: permite validar el archivo con `pg_restore --list`
+y restaurar con fallo inmediato. En producción añade
+`-f docker-compose.deploy.yml` a cada comando `docker compose`.
+
 ```bash
-docker compose exec -T postgres bash -c \
-  'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
-  > backups/minerva-$(date +%Y%m%d-%H%M%S).sql
+mkdir -p backups
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+docker compose exec -T postgres sh -c \
+  'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  > "backups/minerva-$stamp.dump"
+docker compose exec -T postgres pg_restore --list \
+  < "backups/minerva-$stamp.dump" > /dev/null
+sha256sum "backups/minerva-$stamp.dump" > "backups/minerva-$stamp.dump.sha256"
 ```
 
-O usando el script `backend/scripts/backup-postgres.sh` dentro del contenedor
-`postgres` (lee `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`/`BACKUP_DIR` del
-entorno).
+`backend/scripts/backup-postgres.sh` es una alternativa para un host que tenga
+`pg_dump` y las variables de PostgreSQL; no está montado dentro del contenedor
+`postgres`.
 
 **Por qué es crítico:** la tabla `signing_keys` guarda las claves privadas RSA
 (cifradas) que firman todos los tokens vigentes. Perder esta tabla sin backup invalida
 de golpe todos los tokens emitidos y obliga a una rotación forzada con impacto en todos
-los consumidores. Cadencia sugerida: diaria.
+los consumidores. El dump no contiene `MINERVA_KEY_ENCRYPTION_KEY`: conserva esa clave
+en el secret manager, porque sin ella las claves privadas restauradas no se pueden
+descifrar. Cadencia sugerida: diaria.
+
+#### Simulacro de restauración
+
+Restaura siempre en una base vacía con otro nombre. Así el origen queda intacto y el
+rollback consiste en volver a apuntar al origen; no uses `--clean` sobre la base activa.
+
+```bash
+restore_db=minerva_restore_$(date -u +%Y%m%d%H%M%S)
+dump=backups/minerva-AAAAMMDDTHHMMSSZ.dump
+
+docker compose exec -T postgres sh -c \
+  'createdb -T template0 -U "$POSTGRES_USER" "$1"' sh "$restore_db"
+docker compose exec -T postgres sh -c \
+  'pg_restore --exit-on-error --no-owner --no-privileges \
+    -U "$POSTGRES_USER" -d "$1"' sh "$restore_db" < "$dump"
+```
+
+Antes de arrancar Minerva contra la copia, compara en origen y destino los conteos de
+`users`, `applications`, `roles`, `permissions`, `groups`, `signing_keys`, `audit_logs`
+y `refresh_tokens`. En la copia comprueba además:
+
+```sql
+SELECT version_num FROM alembic_version;
+SELECT count(*) FROM signing_keys WHERE status = 'active'; -- debe ser 1
+```
+
+Después levanta una instancia no pública con `MINERVA_DB_URL` apuntando a
+`$restore_db` y la misma `MINERVA_KEY_ENCRYPTION_KEY`. Debe responder `200` en
+`/ready`; inicia sesión con una cuenta restaurada y completa Authorization Code + PKCE
+hasta obtener `access_token` e `id_token`. No promuevas la copia si cualquier conteo,
+la migración, la clave activa, readiness o el login difieren.
+
+Para el corte, detén escrituras, toma un dump final y cambia `MINERVA_DB_URL` a la base
+validada. Conserva la base anterior sin escrituras durante la ventana de rollback. Si
+el smoke posterior falla, restaura el valor anterior de `MINERVA_DB_URL` y reinicia el
+backend; no intentes fusionar escrituras entre ambas bases.
+
+Registra `SHOW server_version`, `pg_dump --version` y `pg_restore --version` en cada
+simulacro. Para restauraciones rutinarias usa la misma versión mayor de PostgreSQL. Si
+el destino cambia de versión mayor, usa las herramientas de la versión destino, nunca
+restaures hacia una versión anterior y ensaya la migración antes del corte.
+
+#### Evidencia del simulacro 2026-08-19
+
+Simulacro local no productivo sobre `fb2ee7f`, con PostgreSQL/`pg_dump`/`pg_restore`
+16.14:
+
+- dump custom de 56 KiB en 142 ms; restauración en base limpia en 208 ms;
+- conteos origen/restauración: 2 usuarios, 3 aplicaciones, 8 roles, 35 permisos,
+  0 grupos, 2 signing keys, 147 eventos de auditoría y 33 refresh tokens;
+- migración `011_app_scoped_uniqueness` y exactamente una clave activa;
+- `/ready` 200, login restaurado 200 y Authorization Code + PKCE completado con
+  `access_token` e `id_token`;
+- la base y el dump temporales se eliminaron al terminar.
+
+Estos tiempos solo describen ese dataset pequeño; no son un SLO de producción.
 
 ### 3.3 Migraciones de base de datos
 
