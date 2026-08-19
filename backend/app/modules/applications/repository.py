@@ -32,20 +32,26 @@ class ApplicationRepository:
         total = self.session.exec(select(Application)).all()
         return items, len(total)
 
-    def create(self, app: Application) -> Application:
+    def create(self, app: Application, commit: bool = True) -> Application:
         self.session.add(app)
-        self.session.commit()
-        self.session.refresh(app)
+        if commit:
+            self.session.commit()
+            self.session.refresh(app)
+        else:
+            self.session.flush()
         return app
 
-    def update(self, app: Application) -> Application:
+    def update(self, app: Application, commit: bool = True) -> Application:
         app.updated_at = datetime.now(timezone.utc)
         self.session.add(app)
-        self.session.commit()
-        self.session.refresh(app)
+        if commit:
+            self.session.commit()
+            self.session.refresh(app)
+        else:
+            self.session.flush()
         return app
 
-    def delete(self, app: Application) -> None:
+    def delete(self, app: Application, commit: bool = True) -> None:
         """Elimina la aplicación y todo lo derivado de ella.
 
         Borra en cascada manualmente (las FKs no declaran ON DELETE CASCADE):
@@ -100,7 +106,10 @@ class ApplicationRepository:
 
         # Nivel 3: la aplicación.
         self.session.delete(app)
-        self.session.commit()
+        if commit:
+            self.session.commit()
+        else:
+            self.session.flush()
 
 
 class RedirectURIRepository:
