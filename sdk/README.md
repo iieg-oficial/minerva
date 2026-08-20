@@ -7,17 +7,34 @@ URLs OAuth ni consultas de permisos a mano.
 
 ## Instalación
 
-Desde este repositorio:
+El SDK se instala **desde este repositorio**; no se publica en PyPI.
+
+```bash
+pip install "minerva-sdk @ git+https://github.com/iieg-oficial/minerva.git@main#subdirectory=sdk"
+```
+
+`main` es la rama de releases: es la referencia que debes usar. El repositorio es privado, así
+que necesitas acceso; si tienes llave SSH configurada, la forma equivalente es:
+
+```bash
+pip install "minerva-sdk @ git+ssh://git@github.com/iieg-oficial/minerva.git@main#subdirectory=sdk"
+```
+
+Declara ese mismo requisito en tu `pyproject.toml` o `requirements.txt` para fijarlo, en lugar
+de pedir `minerva-sdk` por nombre.
+
+> ⚠️ **El paquete `minerva-sdk` de PyPI no es este proyecto.** Es de un tercero sin relación con
+> el IIEG: `pip install minerva-sdk` a secas instala software ajeno.
+
+### Instalación editable (si clonaste el repositorio)
+
+Para desarrollar sobre el SDK o trabajar con un checkout local del monorepo:
 
 ```bash
 pip install -e path/to/minerva/sdk
 ```
 
-Como paquete publicado:
-
-```bash
-pip install minerva-sdk
-```
+Es un canal local de desarrollo, no el canal de distribución de arriba.
 
 ## Configuración mínima
 

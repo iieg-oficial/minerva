@@ -12,6 +12,10 @@ dependencies = [
     "uvicorn>=0.29",
     "httpx>=0.27",
     "python-dotenv>=1.0",
+    # Se satisface con el `sdk/` de este mismo repo: el Dockerfile lo copia a
+    # /opt/minerva-sdk y el flujo local usa `pip install -e ../../sdk`. Fuera del
+    # monorepo se declara como requisito VCS (ver sdk/README.md); NUNCA se resuelve
+    # contra el `minerva-sdk` de PyPI, que es un paquete ajeno.
     "minerva-sdk>=0.3.0",
 ]
 
