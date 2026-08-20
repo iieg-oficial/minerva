@@ -428,8 +428,8 @@ Variables de entorno del SDK (`minerva_sdk/config.py`):
 
 > **El objeto de usuario son solo claims.** El dict que devuelven `get_current_user` y
 > `require_permission` nunca contiene el bearer, así que es seguro serializarlo o
-> registrarlo. Si vienes del SDK 0.1.0, ver «Migración desde 0.1.0» en `sdk/README.md`:
-> `user["_token"]` ya no existe.
+> registrarlo. Si vienes del SDK 0.1.0, ver la entrada 0.2.0 de
+> [`sdk/CHANGELOG.md`](../sdk/CHANGELOG.md): `user["_token"]` ya no existe.
 
 > **Revocación inmediata por defecto.** El SDK **no cachea permisos** salvo que lo actives:
 > cada chequeo consulta a Minerva, que es quien aplica la revocación, así que revocar un
@@ -438,6 +438,11 @@ Variables de entorno del SDK (`minerva_sdk/config.py`):
 
 > **Rotación de claves.** Si Minerva rota su clave de firma, el SDK refresca el JWKS al ver
 > un `kid` desconocido: la rotación **no** produce 401 espurios.
+
+> **Qué versiones soporta.** Python, FastAPI y httpx soportados, la versión del SDK que viaja en
+> cada release de Minerva y la política de versionado están en
+> [«Compatibilidad y versiones»](../sdk/README.md#compatibilidad-y-versiones). Se declaran en un
+> solo lugar a propósito, para que no se desincronicen.
 
 ```python
 from fastapi import Depends, FastAPI

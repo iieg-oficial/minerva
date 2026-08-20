@@ -7,6 +7,24 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+
+- **Matriz de compatibilidad del SDK en el CI.** El job `sdk` pasa a dos entornos: Python 3.10 con
+  `fastapi` y `httpx` clavados en su piso declarado, y Python 3.13 con resolución libre. Antes el
+  SDK solo se probaba en 3.12, así que `requires-python = ">=3.10"`, `fastapi>=0.110` y
+  `httpx>=0.27` eran soportes nominales que nadie ejercitaba.
+- **Changelog propio del SDK** en `sdk/CHANGELOG.md`, con sus versiones 0.1.0, 0.2.0 y 0.3.0 y en
+  qué release de Minerva viaja cada una. Los cambios del SDK ya no quedan enterrados dentro de un
+  release del servidor.
+- **`sdk/tests/test_version.py`**: falla si `minerva_sdk.__version__`, `sdk/pyproject.toml` y
+  `sdk/CHANGELOG.md` se desincronizan.
+
+### Docs
+
+- **`sdk/README.md` declara qué soporta**: Python 3.10–3.13, FastAPI, httpx y python-jose, con la
+  política de versionado pre-1.0 explícita (en `0.x` un cambio incompatible sube el MINOR y se
+  marca `BREAKING` en el changelog) y la tabla de qué SDK viaja en qué Minerva.
+
 ## [0.7.0] - 2026-08-18
 
 ### Added
