@@ -32,7 +32,7 @@ Never replace this with local role checks, copied JWT decoding code, or a local 
 
 2. Add or reuse the official SDK:
    - Prefer `minerva_sdk.fastapi.get_current_user` and `minerva_sdk.fastapi.require_permission`.
-   - If the project is Python/FastAPI, add `minerva-sdk` through the project's normal dependency flow.
+   - If the project is Python/FastAPI, add the SDK as a VCS requirement — `minerva-sdk @ git+https://github.com/iieg-oficial/minerva.git@main#subdirectory=sdk` — never as a bare `minerva-sdk` from PyPI, which is an unrelated package.
    - If the SDK is available only as a local checkout, use an editable/path dependency to Minerva's `sdk/`.
    - Do not vendor or reimplement `minerva_sdk` unless the user explicitly asks.
 

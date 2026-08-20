@@ -29,13 +29,25 @@ from minerva_sdk.fastapi import get_current_user, require_permission
 
 Expected SDK dependencies are FastAPI, HTTPX, and `python-jose[cryptography]`.
 
+The SDK is not published on PyPI. Install it from the Minerva repository, where `main` is the
+release branch:
+
+```bash
+pip install "minerva-sdk @ git+https://github.com/iieg-oficial/minerva.git@main#subdirectory=sdk"
+```
+
+The repository is private, so the environment needs access; with an SSH key configured, use
+`git+ssh://git@github.com/iieg-oficial/minerva.git@main#subdirectory=sdk`. Declare that same VCS
+requirement in the project's `pyproject.toml` or `requirements.txt` — never a bare `minerva-sdk`,
+which resolves to an unrelated third-party package on PyPI.
+
 If Minerva is available as a sibling checkout during development:
 
 ```bash
 pip install -e /path/to/minerva/sdk
 ```
 
-If the package is published in the target environment, add `minerva-sdk` with the project's normal package manager. Do not copy the SDK source into the project unless the user explicitly chooses vendoring.
+Do not copy the SDK source into the project unless the user explicitly chooses vendoring.
 
 ## Environment Variables
 
