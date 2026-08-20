@@ -70,7 +70,9 @@ que el tag de release (`vX.Y.Z`) y la etiqueta de las imágenes en ghcr. El back
 
 **`minerva_sdk` versiona por su cuenta** ([`sdk/pyproject.toml`](sdk/pyproject.toml)): lo instalan
 sistemas consumidores con su propio ritmo de actualización, así que su número no sigue al del
-servidor. La diferencia es deliberada, no un descuido.
+servidor. La diferencia es deliberada, no un descuido. Por eso tiene su propio
+[changelog](sdk/CHANGELOG.md) y declara qué Python, FastAPI y httpx soporta —y qué versión del SDK
+viaja en qué release— en [«Compatibilidad y versiones»](sdk/README.md#compatibilidad-y-versiones).
 
 ## 📚 Guías
 
