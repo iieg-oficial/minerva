@@ -176,8 +176,8 @@ prueba de verdad en cada PR ([`.github/workflows/ci.yml`](../.github/workflows/c
 | Requisito | Soportado | Cómo se prueba |
 |---|---|---|
 | Python | 3.10 – 3.13 | La matriz corre en 3.10 y en 3.13, los dos extremos |
-| FastAPI | `>=0.110` | El entorno de 3.10 instala `fastapi==0.110.*`, el piso exacto |
-| httpx | `>=0.27` | El entorno de 3.10 instala `httpx==0.27.*`, el piso exacto |
+| FastAPI | `>=0.110` | El entorno de 3.10 instala `fastapi==0.110.0`, el piso exacto |
+| httpx | `>=0.27` | El entorno de 3.10 instala `httpx==0.27.0`, el piso exacto |
 | python-jose | `>=3.3` (extra `[cryptography]`) | Resolución libre en ambos entornos |
 
 `requires-python` se queda en `>=3.10` **sin techo** a propósito: una librería que se instala en
