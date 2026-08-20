@@ -18,6 +18,18 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   release del servidor.
 - **`sdk/tests/test_version.py`**: falla si `minerva_sdk.__version__`, `sdk/pyproject.toml` y
   `sdk/CHANGELOG.md` se desincronizan.
+- **Smoke E2E de autenticación web** (`frontend/src/test/auth-smoke.test.jsx`): monta la SPA
+  completa contra una Minerva simulada en el adaptador de axios y recorre la jornada crítica
+  —login con cookie y CSRF, `/authorize` transportando `state` y `max_age`, cambio de cuenta y
+  logout—. Los tests de `features/auth` mockean `@/api/*`, así que nadie probaba el cableado que
+  las une; ahora una regresión de cookie, CSRF, parámetros o navegación rompe el CI.
+
+### Fixed
+
+- El panel importaba el router desde `react-router` (una transitiva) en `LoginPage` y
+  `AdminLayout`, y desde `react-router-dom` (la dependencia declarada) en el resto. Fuera del
+  bundler los dos especificadores resuelven a instancias distintas y el contexto del router deja
+  de compartirse; ahora todo el panel importa `react-router-dom`.
 
 ### Docs
 

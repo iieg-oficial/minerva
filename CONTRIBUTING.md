@@ -140,6 +140,11 @@ Otras cosas que el CI comprueba y conviene no romper:
 - **Alineación de versión**: la versión vive en `backend/pyproject.toml` y `frontend/package.json`
   la repite. `tests/test_version_alignment.py` falla si se desincronizan. El SDK tiene su propio
   guardián, `sdk/tests/test_version.py` (ver §6).
+- **Smoke E2E de autenticación**: `frontend/src/test/auth-smoke.test.jsx` monta la SPA completa
+  contra una Minerva simulada en el adaptador de axios (misma herramienta que el resto de tests,
+  sin navegador ni backend). Cubre la jornada crítica: login con cookie y CSRF, `/authorize`
+  transportando `state` y `max_age`, cambio de cuenta y logout. Si tocas `api/client.js`,
+  `api/session.js` o el flujo de `features/auth`, córrelo.
 - **Matriz del SDK**: el CI corre el SDK en dos entornos, Python 3.10 con `fastapi` y `httpx` en su
   piso declarado y Python 3.13 con resolución libre. En local basta con uno; si tocas los `>=` de
   `sdk/pyproject.toml`, prueba el piso.
