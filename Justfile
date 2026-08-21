@@ -1,13 +1,31 @@
 set dotenv-load := true
 
-compose := "docker compose -f docker-compose.yml"
+# Archivo Compose sobre el que operan TODAS las recetas. El default construye las
+# imágenes desde el código de esta copia del repo; `docker-compose.deploy.yml`
+# consume las ya publicadas en ghcr (`MINERVA_ORG`/`MINERVA_VERSION`, ver
+# docs/uso-imagen-docker.md). Se elige de tres formas, de mayor a menor prioridad:
+#   just file=docker-compose.deploy.yml up          # solo esta invocación
+#   MINERVA_COMPOSE=docker-compose.deploy.yml just up
+#   MINERVA_COMPOSE=docker-compose.deploy.yml en el .env   # fija el host entero
+# Con el compose de deploy no hay nada que construir: `build` avisa y no hace nada,
+# y actualizar es `just pull` + `just up`.
+file := env_var_or_default("MINERVA_COMPOSE", "docker-compose.yml")
+
+compose := "docker compose -f " + file
+
+# El deploy NO parte del .env de desarrollo: levantaría las imágenes publicadas con
+# APP_DEBUG, login de dev y secretos de ejemplo. Su plantilla es la de producción,
+# que además trae MINERVA_ORG y MINERVA_VERSION.
+env_template := if file == "docker-compose.deploy.yml" { ".env.production.example" } else { ".env.example" }
 
 default:
     @just --list
+    @echo ""
+    @echo "Compose activo: {{ file }} — para las imágenes de ghcr usa MINERVA_COMPOSE=docker-compose.deploy.yml"
 
 [private]
 env:
-    @test -f .env || { cp .env.example .env; echo "Creado .env desde .env.example"; }
+    @test -f .env || { cp {{ env_template }} .env; echo "Creado .env desde {{ env_template }}; revisa sus valores antes de levantar"; }
 
 # Valida la resolución final del Compose y sus variables.
 config: env
