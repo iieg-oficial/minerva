@@ -7,6 +7,12 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-21
+
+> **Primer release estable.** Minerva publica el perfil OIDC Authorization Code + PKCE,
+> administración centralizada de identidades y permisos, SDK para FastAPI, despliegue reproducible
+> y controles de seguridad, integridad y operación validados por el CI del proyecto.
+
 ### Added
 
 - **El `Justfile` cubre `docker-compose.deploy.yml`.** Las 15 recetas operaban un archivo fijo, así
