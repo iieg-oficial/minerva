@@ -138,7 +138,16 @@ Otras cosas que el CI comprueba y conviene no romper:
   `constraints.txt` siguiendo el procedimiento de [`backend/CLAUDE.md`](backend/CLAUDE.md); no lo
   edites a ojo.
 - **Alineación de versión**: la versión vive en `backend/pyproject.toml` y `frontend/package.json`
-  la repite. `tests/test_version_alignment.py` falla si se desincronizan.
+  la repite. `tests/test_version_alignment.py` falla si se desincronizan. El SDK tiene su propio
+  guardián, `sdk/tests/test_version.py` (ver §6).
+- **Smoke E2E de autenticación**: `frontend/src/test/auth-smoke.test.jsx` monta la SPA completa
+  contra una Minerva simulada en el adaptador de axios (misma herramienta que el resto de tests,
+  sin navegador ni backend). Cubre la jornada crítica: login con cookie y CSRF, `/authorize`
+  transportando `state` y `max_age`, cambio de cuenta y logout. Si tocas `api/client.js`,
+  `api/session.js` o el flujo de `features/auth`, córrelo.
+- **Matriz del SDK**: el CI corre el SDK en dos entornos, Python 3.10 con `fastapi` y `httpx` en su
+  piso declarado y Python 3.13 con resolución libre. En local basta con uno; si tocas los `>=` de
+  `sdk/pyproject.toml`, prueba el piso.
 - **Migraciones**: si cambias modelos, genera la migración (`alembic revision --autogenerate -m
   "descripcion breve"`), **revísala a mano** y versiónala.
 - **Secretos**: nunca edites ni subas `.env`. Si agregas una variable, documéntala en
@@ -171,7 +180,11 @@ es fácil dejar uno desactualizado.
 Los releases van de `develop` a `main`, con su tag `vX.Y.Z` y su entrada en
 [`CHANGELOG.md`](CHANGELOG.md). Usa la plantilla de issue `Release` como checklist.
 `minerva_sdk` versiona por su cuenta ([`sdk/pyproject.toml`](sdk/pyproject.toml)): su número no
-sigue al del servidor.
+sigue al del servidor. Si tu PR toca `sdk/minerva_sdk/`, sube su versión en el mismo PR —
+`sdk/pyproject.toml`, `minerva_sdk.__version__` y una entrada en
+[`sdk/CHANGELOG.md`](sdk/CHANGELOG.md)—; `sdk/tests/test_version.py` falla si los tres no
+coinciden. Un cambio incompatible se marca `BREAKING` y, mientras el SDK esté en `0.x`, sube el
+MINOR (ver «Política de versionado» en [`sdk/README.md`](sdk/README.md)).
 
 ## 7. Licencia de tus contribuciones
 

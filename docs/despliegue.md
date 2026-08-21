@@ -17,6 +17,9 @@ Usa `just logs` para seguir todos los servicios, `just restart` para reiniciarlo
 `just down` para detenerlos conservando datos. `just down-v` elimina también los
 volúmenes de PostgreSQL y Redis y, por tanto, sus datos locales.
 
+Todas las recetas operan el Compose que indique la variable `file` del `Justfile`, por defecto
+`docker-compose.yml`. Para el despliegue por imágenes publicadas, ver §2.6.
+
 Servicios:
 
 | Servicio | Puerto host (default) | Notas |
@@ -177,6 +180,34 @@ real**, no algo que el backend resuelva por sí mismo:
   de negocio — login, rate limit excedido — pero no sustituyen monitoreo de
   infraestructura).
 
+### 2.6 Operar el compose de deploy con `just`
+
+`docker-compose.deploy.yml` consume las imágenes de `ghcr.io` en vez de construirlas
+(ver [`uso-imagen-docker.md`](uso-imagen-docker.md)). Las recetas del `Justfile` lo operan
+sin escribir `-f` en cada comando; el archivo se elige con la variable `file`, que también
+puede llegar del entorno o del `.env` como `MINERVA_COMPOSE`:
+
+```bash
+# En el host de producción, una vez (en el .env o exportado):
+MINERVA_COMPOSE=docker-compose.deploy.yml
+
+just up                 # docker compose -f docker-compose.deploy.yml up -d
+just pull && just up    # actualizar a la MINERVA_VERSION configurada
+just logs               # seguir los servicios
+
+# Puntual, sin declarar nada:
+just file=docker-compose.deploy.yml ps
+```
+
+Dos diferencias con el compose de desarrollo, deliberadas:
+
+- Si `.env` no existe, la receta lo crea desde **`.env.production.example`** (no desde
+  `.env.example`): las imágenes publicadas no deben arrancar con `APP_DEBUG`, login de dev y
+  secretos de ejemplo. La plantilla trae placeholders `<...>` en todos los secretos:
+  reemplázalos antes de levantar (§2.1).
+- No hay nada que construir: `just build` avisa «No services to build» y no hace nada. La
+  actualización es `pull` + `up`, y la versión la fija `MINERVA_VERSION`.
+
 ## 3. Mantenimiento
 
 ### 3.1 Rotación de claves de firma RS256
@@ -219,30 +250,123 @@ A lo sumo puede existir **una** clave `active` y **una** `pending` a la vez: lo 
 índices únicos parciales en `signing_keys` (migración 009), no solo el código, así que ni
 un INSERT manual ni una restauración a medias pueden dejar ambiguo con qué clave se firma.
 
-> **Clave comprometida.** Este flujo **no** cubre ese caso. Rotar solo deja de *emitir* con
-> la clave vieja; la comprometida sigue publicada en el JWKS toda la ventana de retención,
-> así que los tokens firmados con ella se siguen aceptando. Retirarla de verdad exige
-> borrarla del JWKS y revocar los tokens vivos, que hoy es un procedimiento manual.
+#### Retirada de emergencia de una clave comprometida
+
+Este procedimiento rompe deliberadamente todos los tokens firmados por el `kid`
+comprometido. No sustituye la rotación normal ni debe usarse para mantenimiento periódico.
+
+```bash
+# 1. Lista las claves y sus estados; no muestra material privado.
+docker compose exec backend python -m app.cli revoke-key
+
+# 2. Simula el impacto. No modifica la base ni el cache.
+docker compose exec backend python -m app.cli revoke-key KID_COMPROMETIDO
+
+# 3. Ejecuta solo si --confirm repite exactamente el kid.
+docker compose exec backend python -m app.cli revoke-key KID_COMPROMETIDO \
+  --confirm KID_COMPROMETIDO
+```
+
+Si la comprometida era `active`, el comando crea una clave nueva —o promueve la
+`pending` ya publicada— antes de eliminarla. Después invalida el JWKS cacheado en Redis.
+El comando es idempotente: si falla al limpiar Redis, repite exactamente el paso 3.
+
+Verifica el simulacro antes de cerrar el incidente:
+
+1. `curl -fsS https://HOST/.well-known/jwks.json` ya no contiene el `kid` comprometido.
+2. Obtén un token nuevo y confirma que su `kid` es la nueva `active` y que autentica.
+3. Fuerza a cada consumidor a refrescar su JWKS; un token firmado por el `kid` retirado
+   debe fallar. Los caches externos no pueden invalidarse desde Minerva.
+4. Revisa logs, accesos y tokens emitidos durante la ventana de compromiso, rota las
+   credenciales que pudieron exponer la clave y conserva la evidencia del incidente.
 
 **Recomendación operativa:** colgar la rotación de un cron periódico (p. ej. mensual),
 recordando que son **dos** ejecuciones separadas por la ventana de propagación.
 
 ### 3.2 Backups de PostgreSQL
 
+Usa el formato custom de `pg_dump`: permite validar el archivo con `pg_restore --list`
+y restaurar con fallo inmediato. En producción añade
+`-f docker-compose.deploy.yml` a cada comando `docker compose` (o declara
+`MINERVA_COMPOSE` una vez y usa las recetas de `just`, §2.6).
+
 ```bash
-docker compose exec -T postgres bash -c \
-  'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
-  > backups/minerva-$(date +%Y%m%d-%H%M%S).sql
+mkdir -p backups
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+docker compose exec -T postgres sh -c \
+  'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  > "backups/minerva-$stamp.dump"
+docker compose exec -T postgres pg_restore --list \
+  < "backups/minerva-$stamp.dump" > /dev/null
+sha256sum "backups/minerva-$stamp.dump" > "backups/minerva-$stamp.dump.sha256"
 ```
 
-O usando el script `backend/scripts/backup-postgres.sh` dentro del contenedor
-`postgres` (lee `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`/`BACKUP_DIR` del
-entorno).
+`backend/scripts/backup-postgres.sh` es una alternativa para un host que tenga
+`pg_dump` y las variables de PostgreSQL; no está montado dentro del contenedor
+`postgres`.
 
 **Por qué es crítico:** la tabla `signing_keys` guarda las claves privadas RSA
 (cifradas) que firman todos los tokens vigentes. Perder esta tabla sin backup invalida
 de golpe todos los tokens emitidos y obliga a una rotación forzada con impacto en todos
-los consumidores. Cadencia sugerida: diaria.
+los consumidores. El dump no contiene `MINERVA_KEY_ENCRYPTION_KEY`: conserva esa clave
+en el secret manager, porque sin ella las claves privadas restauradas no se pueden
+descifrar. Cadencia sugerida: diaria.
+
+#### Simulacro de restauración
+
+Restaura siempre en una base vacía con otro nombre. Así el origen queda intacto y el
+rollback consiste en volver a apuntar al origen; no uses `--clean` sobre la base activa.
+
+```bash
+restore_db=minerva_restore_$(date -u +%Y%m%d%H%M%S)
+dump=backups/minerva-AAAAMMDDTHHMMSSZ.dump
+
+docker compose exec -T postgres sh -c \
+  'createdb -T template0 -U "$POSTGRES_USER" "$1"' sh "$restore_db"
+docker compose exec -T postgres sh -c \
+  'pg_restore --exit-on-error --no-owner --no-privileges \
+    -U "$POSTGRES_USER" -d "$1"' sh "$restore_db" < "$dump"
+```
+
+Antes de arrancar Minerva contra la copia, compara en origen y destino los conteos de
+`users`, `applications`, `roles`, `permissions`, `groups`, `signing_keys`, `audit_logs`
+y `refresh_tokens`. En la copia comprueba además:
+
+```sql
+SELECT version_num FROM alembic_version;
+SELECT count(*) FROM signing_keys WHERE status = 'active'; -- debe ser 1
+```
+
+Después levanta una instancia no pública con `MINERVA_DB_URL` apuntando a
+`$restore_db` y la misma `MINERVA_KEY_ENCRYPTION_KEY`. Debe responder `200` en
+`/ready`; inicia sesión con una cuenta restaurada y completa Authorization Code + PKCE
+hasta obtener `access_token` e `id_token`. No promuevas la copia si cualquier conteo,
+la migración, la clave activa, readiness o el login difieren.
+
+Para el corte, detén escrituras, toma un dump final y cambia `MINERVA_DB_URL` a la base
+validada. Conserva la base anterior sin escrituras durante la ventana de rollback. Si
+el smoke posterior falla, restaura el valor anterior de `MINERVA_DB_URL` y reinicia el
+backend; no intentes fusionar escrituras entre ambas bases.
+
+Registra `SHOW server_version`, `pg_dump --version` y `pg_restore --version` en cada
+simulacro. Para restauraciones rutinarias usa la misma versión mayor de PostgreSQL. Si
+el destino cambia de versión mayor, usa las herramientas de la versión destino, nunca
+restaures hacia una versión anterior y ensaya la migración antes del corte.
+
+#### Evidencia del simulacro 2026-08-19
+
+Simulacro local no productivo sobre `fb2ee7f`, con PostgreSQL/`pg_dump`/`pg_restore`
+16.14:
+
+- dump custom de 56 KiB en 142 ms; restauración en base limpia en 208 ms;
+- conteos origen/restauración: 2 usuarios, 3 aplicaciones, 8 roles, 35 permisos,
+  0 grupos, 2 signing keys, 147 eventos de auditoría y 33 refresh tokens;
+- migración `011_app_scoped_uniqueness` y exactamente una clave activa;
+- `/ready` 200, login restaurado 200 y Authorization Code + PKCE completado con
+  `access_token` e `id_token`;
+- la base y el dump temporales se eliminaron al terminar.
+
+Estos tiempos solo describen ese dataset pequeño; no son un SLO de producción.
 
 ### 3.3 Migraciones de base de datos
 

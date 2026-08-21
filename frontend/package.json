@@ -1,6 +1,6 @@
 {
     "name": "minerva-frontend",
-    "version": "0.7.0",
+    "version": "1.0.0",
     "private": true,
     "license": "AGPL-3.0-only",
     "type": "module",
@@ -18,7 +18,7 @@
         "react-dom": "^19.2.8",
         "antd": "^6.0.0",
         "@ant-design/icons": "^6.0.0",
-        "react-router-dom": "^7.0.0",
+        "react-router-dom": "^7.18.2",
         "axios": "^1.7.0"
     },
     "devDependencies": {

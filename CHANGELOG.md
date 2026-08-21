@@ -7,6 +7,51 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-21
+
+> **Primer release estable.** Minerva publica el perfil OIDC Authorization Code + PKCE,
+> administración centralizada de identidades y permisos, SDK para FastAPI, despliegue reproducible
+> y controles de seguridad, integridad y operación validados por el CI del proyecto.
+
+### Added
+
+- **El `Justfile` cubre `docker-compose.deploy.yml`.** Las 15 recetas operaban un archivo fijo, así
+  que desplegar con las imágenes publicadas en ghcr obligaba a escribir `docker compose -f
+  docker-compose.deploy.yml` a mano, fuera de la interfaz que documenta el repo. Ahora el archivo
+  lo elige la variable `file` (`just file=docker-compose.deploy.yml up`), que también se puede
+  declarar una vez por host con `MINERVA_COMPOSE` en el `.env`; con el compose de deploy el `.env`
+  se siembra desde `.env.production.example` en vez de `.env.example`.
+- **Matriz de compatibilidad del SDK en el CI.** El job `sdk` pasa a dos entornos: Python 3.10 con
+  `fastapi` y `httpx` clavados en su piso declarado, y Python 3.13 con resolución libre. Antes el
+  SDK solo se probaba en 3.12, así que `requires-python = ">=3.10"`, `fastapi>=0.110` y
+  `httpx>=0.27` eran soportes nominales que nadie ejercitaba.
+- **Changelog propio del SDK** en `sdk/CHANGELOG.md`, con sus versiones 0.1.0, 0.2.0 y 0.3.0 y en
+  qué release de Minerva viaja cada una. Los cambios del SDK ya no quedan enterrados dentro de un
+  release del servidor.
+- **`sdk/tests/test_version.py`**: falla si `minerva_sdk.__version__`, `sdk/pyproject.toml` y
+  `sdk/CHANGELOG.md` se desincronizan.
+- **Smoke E2E de autenticación web** (`frontend/src/test/auth-smoke.test.jsx`): monta la SPA
+  completa contra una Minerva simulada en el adaptador de axios y recorre la jornada crítica
+  —login con cookie y CSRF, `/authorize` transportando `state` y `max_age`, cambio de cuenta y
+  logout—. Los tests de `features/auth` mockean `@/api/*`, así que nadie probaba el cableado que
+  las une; ahora una regresión de cookie, CSRF, parámetros o navegación rompe el CI.
+
+### Fixed
+
+- El panel importaba el router desde `react-router` (una transitiva) en `LoginPage` y
+  `AdminLayout`, y desde `react-router-dom` (la dependencia declarada) en el resto. Fuera del
+  bundler los dos especificadores resuelven a instancias distintas y el contexto del router deja
+  de compartirse; ahora todo el panel importa `react-router-dom`.
+
+### Docs
+
+- **Valores esperados de `MINERVA_ORG` y `MINERVA_VERSION`** en `docs/uso-imagen-docker.md` y
+  `.env.production.example`: la org dueña de los paquetes en ghcr y el tag de la imagen, que es el
+  del release **sin la `v`** (`v0.7.0` → `0.7.0`) o `latest`.
+- **`sdk/README.md` declara qué soporta**: Python 3.10–3.13, FastAPI, httpx y python-jose, con la
+  política de versionado pre-1.0 explícita (en `0.x` un cambio incompatible sube el MINOR y se
+  marca `BREAKING` en el changelog) y la tabla de qué SDK viaja en qué Minerva.
+
 ## [0.7.0] - 2026-08-18
 
 ### Added

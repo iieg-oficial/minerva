@@ -4,7 +4,7 @@
 
 ### El sistema institucional de identidad, autenticación y autorización del IIEG
 
-[![CI](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml/badge.svg)](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml) [![Versión](https://img.shields.io/badge/versi%C3%B3n-0.7.0-5C2472)](CHANGELOG.md) ![OIDC](https://img.shields.io/badge/OIDC-OpenID%20Connect-5C2472) ![RS256](https://img.shields.io/badge/JWT-RS256%20%2F%20JWKS-2e4372) ![Python](https://img.shields.io/badge/python-3.12%2B-2e4372) [![Licencia](https://img.shields.io/badge/licencia-AGPL--3.0--only-FF8300)](LICENSE)
+[![CI](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml/badge.svg)](https://github.com/iieg-oficial/minerva/actions/workflows/ci.yml) [![Versión](https://img.shields.io/badge/versi%C3%B3n-1.0.0-5C2472)](CHANGELOG.md) ![OIDC](https://img.shields.io/badge/OIDC-OpenID%20Connect-5C2472) ![RS256](https://img.shields.io/badge/JWT-RS256%20%2F%20JWKS-2e4372) ![Python](https://img.shields.io/badge/python-3.12%2B-2e4372) [![Licencia](https://img.shields.io/badge/licencia-AGPL--3.0--only-FF8300)](LICENSE)
 
 </div>
 
@@ -70,7 +70,9 @@ que el tag de release (`vX.Y.Z`) y la etiqueta de las imágenes en ghcr. El back
 
 **`minerva_sdk` versiona por su cuenta** ([`sdk/pyproject.toml`](sdk/pyproject.toml)): lo instalan
 sistemas consumidores con su propio ritmo de actualización, así que su número no sigue al del
-servidor. La diferencia es deliberada, no un descuido.
+servidor. La diferencia es deliberada, no un descuido. Por eso tiene su propio
+[changelog](sdk/CHANGELOG.md) y declara qué Python, FastAPI y httpx soporta —y qué versión del SDK
+viaja en qué release— en [«Compatibilidad y versiones»](sdk/README.md#compatibilidad-y-versiones).
 
 ## 📚 Guías
 
@@ -101,6 +103,12 @@ usuario administrador por defecto, checklist de producción — está en
 `just --list` muestra las recetas operativas: `build`, `rebuild`, `restart`, `down`,
 `down-v`, `logs`, `logs-service`, `ps`, `shell`, `config`, `pull` y `dev`. Si `.env`
 no existe, la primera receta lo crea desde `.env.example`.
+
+Las mismas recetas operan el despliegue por imágenes de `ghcr.io`
+(`docker-compose.deploy.yml`): declara `MINERVA_COMPOSE=docker-compose.deploy.yml` en el `.env`
+—o pásalo suelto con `just file=docker-compose.deploy.yml <receta>`— y ahí el `.env` se siembra
+desde `.env.production.example`. Detalle en
+**[`docs/uso-imagen-docker.md`](docs/uso-imagen-docker.md)**.
 
 ## 📄 Licencia
 

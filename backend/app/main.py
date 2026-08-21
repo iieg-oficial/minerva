@@ -1,8 +1,12 @@
+import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from importlib.metadata import version as package_version
+from pathlib import Path
 
-from fastapi import FastAPI
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlmodel import Session, select
@@ -11,7 +15,7 @@ from app.core.config import settings
 from app.core.csrf import panel_csrf_middleware
 from app.core.database import engine
 from app.core.models import import_models
-from app.core.redis import close_redis, init_redis
+from app.core.redis import close_redis, get_redis, init_redis
 from app.core.security import hash_password, hash_secret
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.applications.router import public_router
@@ -35,6 +39,20 @@ from app.modules.users.router import router as users_router
 # Clave de namespace (arbitraria pero fija) del advisory lock que serializa el seed entre
 # procesos. Solo importa que sea única entre los locks del proyecto.
 _SEED_ADMIN_LOCK_KEY = 728_314
+_READINESS_TIMEOUT_SECONDS = 3
+
+_alembic_config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+_alembic_config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "alembic"))
+_MIGRATION_HEADS = set(ScriptDirectory.from_config(_alembic_config).get_heads())
+
+
+def _check_database_readiness() -> None:
+    with engine.connect() as connection:
+        revisions = set(connection.execute(text("SELECT version_num FROM alembic_version")).scalars())
+        if revisions != _MIGRATION_HEADS:
+            raise RuntimeError("Database migrations are not current")
+        if connection.execute(text("SELECT 1 FROM signing_keys WHERE status = 'active' LIMIT 1")).first() is None:
+            raise RuntimeError("No active signing key")
 
 
 def seed_admin(session: Session) -> None:
@@ -174,7 +192,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL, "http://localhost:5173"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -211,3 +229,15 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/ready")
+async def ready():
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(asyncio.to_thread(_check_database_readiness), get_redis().ping()),
+            timeout=_READINESS_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Service unavailable") from exc
+    return {"status": "ready"}

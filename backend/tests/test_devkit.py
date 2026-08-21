@@ -1,3 +1,22 @@
+import pytest
+from sqlalchemy import text
+from sqlmodel import Session, select
+
+import app.main as main_module
+from app.modules.oidc.models import SigningKey
+from tests.conftest import test_engine
+
+
+@pytest.fixture
+def migration_table():
+    with test_engine.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS alembic_version"))
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)"))
+    yield
+    with test_engine.begin() as connection:
+        connection.execute(text("DROP TABLE alembic_version"))
+
+
 def dev_login(client, email="admin@local.dev"):
     resp = client.post("/api/v1/auth/dev-login", json={"email": email})
     assert resp.status_code == 200, resp.text
@@ -10,6 +29,55 @@ def auth(token):
 
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
+
+
+def test_ready(client, migration_table, monkeypatch):
+    monkeypatch.setattr(main_module, "engine", test_engine)
+    with test_engine.begin() as connection:
+        for revision in main_module._MIGRATION_HEADS:
+            connection.execute(text("INSERT INTO alembic_version VALUES (:revision)"), {"revision": revision})
+
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
+def test_ready_fails_when_database_is_unavailable(client, monkeypatch):
+    def fail():
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(main_module, "_check_database_readiness", fail)
+    assert client.get("/ready").status_code == 503
+
+
+def test_ready_fails_when_redis_is_unavailable(client, fresh_redis, monkeypatch):
+    async def fail():
+        raise RuntimeError("redis unavailable")
+
+    monkeypatch.setattr(fresh_redis, "ping", fail)
+    monkeypatch.setattr(main_module, "_check_database_readiness", lambda: None)
+    assert client.get("/ready").status_code == 503
+
+
+def test_database_readiness_requires_migrations_and_active_key(client, migration_table, monkeypatch):
+    monkeypatch.setattr(main_module, "engine", test_engine)
+
+    with pytest.raises(RuntimeError, match="migrations"):
+        main_module._check_database_readiness()
+
+    with test_engine.begin() as connection:
+        for revision in main_module._MIGRATION_HEADS:
+            connection.execute(text("INSERT INTO alembic_version VALUES (:revision)"), {"revision": revision})
+    main_module._check_database_readiness()
+
+    with Session(test_engine) as session:
+        for key in session.exec(select(SigningKey)).all():
+            session.delete(key)
+        session.commit()
+
+    with pytest.raises(RuntimeError, match="signing key"):
+        main_module._check_database_readiness()
 
 
 def test_dev_login_and_me(client):

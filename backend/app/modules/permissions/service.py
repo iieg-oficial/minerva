@@ -29,14 +29,14 @@ class PermissionService:
         perms, total = self.repo.list_all(offset, limit)
         return [PermissionRead.model_validate(p) for p in perms], total
 
-    def create_permission(self, app_id: str, data: PermissionCreate) -> PermissionRead:
+    def create_permission(self, app_id: str, data: PermissionCreate, commit: bool = True) -> PermissionRead:
         existing = self.repo.get_by_slug(app_id, data.slug)
         if existing:
             raise ConflictError(detail="Ya existe un permiso con ese slug en esta aplicación")
 
         perm = Permission(application_id=app_id, name=data.name, slug=data.slug, description=data.description)
         try:
-            perm = self.repo.create(perm)
+            perm = self.repo.create(perm, commit=commit)
         except IntegrityError:
             # Ver RoleService.create_role: la comprobación previa no cierra la carrera
             # entre dos altas concurrentes; el constraint de BD sí (issue #76).
@@ -44,7 +44,7 @@ class PermissionService:
             raise ConflictError(detail="Ya existe un permiso con ese slug en esta aplicación")
         return PermissionRead.model_validate(perm)
 
-    def update_permission(self, perm_id: str, data: PermissionUpdate) -> PermissionRead:
+    def update_permission(self, perm_id: str, data: PermissionUpdate, commit: bool = True) -> PermissionRead:
         perm = self.repo.get_by_id(perm_id)
         if not perm:
             raise NotFoundError(detail="Permiso no encontrado")
@@ -54,10 +54,10 @@ class PermissionService:
         if data.description is not None:
             perm.description = data.description
 
-        perm = self.repo.update(perm)
+        perm = self.repo.update(perm, commit=commit)
         return PermissionRead.model_validate(perm)
 
-    def add_permission_to_role(self, role_id: str, perm_id: str) -> None:
+    def add_permission_to_role(self, role_id: str, perm_id: str, commit: bool = True) -> str:
         role = self.role_repo.get_by_id(role_id)
         if not role:
             raise NotFoundError(detail="Rol no encontrado")
@@ -73,13 +73,18 @@ class PermissionService:
         if existing:
             raise ConflictError(detail="El permiso ya está asignado a este rol")
 
-        self.role_perm_repo.add(RolePermission(role_id=role_id, permission_id=perm_id))
+        self.role_perm_repo.add(RolePermission(role_id=role_id, permission_id=perm_id), commit=commit)
+        return role.application_id
 
-    def remove_permission_from_role(self, role_id: str, perm_id: str) -> None:
+    def remove_permission_from_role(self, role_id: str, perm_id: str, commit: bool = True) -> str:
         rp = self.role_perm_repo.get(role_id, perm_id)
         if not rp:
             raise NotFoundError(detail="El permiso no está asignado a este rol")
-        self.role_perm_repo.remove(rp)
+        role = self.role_repo.get_by_id(role_id)
+        if not role:
+            raise NotFoundError(detail="Rol no encontrado")
+        self.role_perm_repo.remove(rp, commit=commit)
+        return role.application_id
 
     def list_permissions_by_role(self, role_id: str) -> list[PermissionRead]:
         perms = self.role_perm_repo.list_permissions_by_role(role_id)

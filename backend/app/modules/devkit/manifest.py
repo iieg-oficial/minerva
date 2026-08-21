@@ -22,6 +22,7 @@ from app.core.exceptions import BadRequestError, ConflictError
 from app.core.security import hash_secret
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.applications.repository import ApplicationRepository, RedirectURIRepository
+from app.modules.applications.service import is_safe_redirect_uri
 from app.modules.devkit.models import ManifestImport
 from app.modules.devkit.schemas import ManifestImportResult
 from app.modules.permissions.models import Permission, RolePermission
@@ -59,6 +60,12 @@ def validate_manifest(data: dict) -> str:
         raise BadRequestError(detail="`application.code` es obligatorio")
     if not re.match(r"^[a-z0-9_]+$", code):
         raise BadRequestError(detail="`application.code` debe ser minúsculas/números/guion_bajo")
+
+    redirect_uris = application.get("redirect_uris") or []
+    if not isinstance(redirect_uris, list):
+        raise BadRequestError(detail="`application.redirect_uris` debe ser una lista")
+    if any(not isinstance(uri, str) or not is_safe_redirect_uri(uri) for uri in redirect_uris):
+        raise BadRequestError(detail="El manifiesto contiene una redirect_uri inválida o insegura")
 
     permissions = data.get("permissions") or []
     if not isinstance(permissions, list):
@@ -100,7 +107,9 @@ class ManifestLoader:
         self.role_repo = RoleRepository(session)
         self.role_perm_repo = RolePermissionRepository(session)
 
-    def import_manifest(self, content: str, source: str = "manifest.minerva.yml") -> ManifestImportResult:
+    def import_manifest(
+        self, content: str, source: str = "manifest.minerva.yml", commit: bool = True
+    ) -> ManifestImportResult:
         data = parse_manifest(content)
         code = validate_manifest(data)
         checksum = hashlib.sha256(content.encode()).hexdigest()
@@ -220,7 +229,10 @@ class ManifestLoader:
                 roles_count=len(roles),
             )
             self.session.add(record)
-            self.session.commit()
+            if commit:
+                self.session.commit()
+            else:
+                self.session.flush()
         except IntegrityError:
             self.session.rollback()
             raise ConflictError(detail="Otra importación concurrente ya registró estos mismos datos; reintente")

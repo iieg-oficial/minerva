@@ -1,9 +1,12 @@
 import uuid
+from ipaddress import ip_address
+from urllib.parse import urlsplit
 
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.config import settings
+from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.core.security import hash_secret
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.applications.repository import ApplicationRepository, RedirectURIRepository
@@ -16,6 +19,31 @@ from app.modules.applications.schemas import (
     RedirectURICreate,
     RedirectURIRead,
 )
+
+
+def is_safe_redirect_uri(uri: str) -> bool:
+    try:
+        parsed = urlsplit(uri)
+        parsed.port
+    except ValueError:
+        return False
+
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        return False
+    if parsed.scheme == "https" or not settings.is_production:
+        return True
+    if parsed.hostname == "localhost":
+        return True
+    try:
+        return ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        return False
 
 
 class ApplicationService:
@@ -40,7 +68,7 @@ class ApplicationService:
         apps, total = self.repo.list_all(offset, limit)
         return [ApplicationRead.model_validate(a) for a in apps], total
 
-    def create_application(self, data: ApplicationCreate) -> ApplicationWithSecrets:
+    def create_application(self, data: ApplicationCreate, commit: bool = True) -> ApplicationWithSecrets:
         existing = self.repo.get_by_slug(data.slug)
         if existing:
             raise ConflictError(detail="Ya existe una aplicación con ese slug")
@@ -54,20 +82,20 @@ class ApplicationService:
             client_id=str(uuid.uuid4()),
             client_secret_hash=hash_secret(raw_secret) if raw_secret is not None else None,
         )
-        app = self.repo.create(app)
+        app = self.repo.create(app, commit=commit)
         result = ApplicationWithSecrets.model_validate(app)
         result.client_secret_hash = raw_secret
         return result
 
-    def delete_application(self, app_id: str) -> None:
+    def delete_application(self, app_id: str, commit: bool = True) -> None:
         """Elimina la aplicación y todo lo derivado de ella (permisos, roles,
         redirect URIs y asignaciones). Operación destructiva e irreversible."""
         app = self.repo.get_by_id(app_id)
         if not app:
             raise NotFoundError(detail="Aplicación no encontrada")
-        self.repo.delete(app)
+        self.repo.delete(app, commit=commit)
 
-    def regenerate_secret(self, app_id: str) -> ApplicationWithSecrets:
+    def regenerate_secret(self, app_id: str, commit: bool = True) -> ApplicationWithSecrets:
         """Genera un nuevo client_secret para la aplicación y lo devuelve una sola vez.
 
         Útil cuando se perdió el secret original (solo se muestra al crear) o para
@@ -79,12 +107,12 @@ class ApplicationService:
 
         raw_secret = str(uuid.uuid4())
         app.client_secret_hash = hash_secret(raw_secret)
-        app = self.repo.update(app)
+        app = self.repo.update(app, commit=commit)
         result = ApplicationWithSecrets.model_validate(app)
         result.client_secret_hash = raw_secret
         return result
 
-    def update_application(self, app_id: str, data: ApplicationUpdate) -> ApplicationRead:
+    def update_application(self, app_id: str, data: ApplicationUpdate, commit: bool = True) -> ApplicationRead:
         app = self.repo.get_by_id(app_id)
         if not app:
             raise NotFoundError(detail="Aplicación no encontrada")
@@ -104,7 +132,7 @@ class ApplicationService:
         if data.brand_color is not None:
             app.brand_color = data.brand_color
 
-        app = self.repo.update(app)
+        app = self.repo.update(app, commit=commit)
         return ApplicationRead.model_validate(app)
 
     def get_branding(self, client_id: str) -> ApplicationBranding:
@@ -119,6 +147,8 @@ class ApplicationService:
         app = self.repo.get_by_id(app_id)
         if not app:
             raise NotFoundError(detail="Aplicación no encontrada")
+        if not is_safe_redirect_uri(data.uri):
+            raise BadRequestError(detail="redirect_uri inválida o insegura")
 
         existing = self.redirect_repo.get_by_uri(app_id, data.uri)
         if existing:
@@ -143,6 +173,8 @@ class ApplicationService:
         return [RedirectURIRead.model_validate(u) for u in uris]
 
     def validate_redirect_uri(self, client_id: str, redirect_uri: str) -> bool:
+        if not is_safe_redirect_uri(redirect_uri):
+            return False
         app = self.repo.get_by_client_id(client_id)
         if not app:
             return False
