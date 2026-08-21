@@ -104,6 +104,12 @@ usuario administrador por defecto, checklist de producción — está en
 `down-v`, `logs`, `logs-service`, `ps`, `shell`, `config`, `pull` y `dev`. Si `.env`
 no existe, la primera receta lo crea desde `.env.example`.
 
+Las mismas recetas operan el despliegue por imágenes de `ghcr.io`
+(`docker-compose.deploy.yml`): declara `MINERVA_COMPOSE=docker-compose.deploy.yml` en el `.env`
+—o pásalo suelto con `just file=docker-compose.deploy.yml <receta>`— y ahí el `.env` se siembra
+desde `.env.production.example`. Detalle en
+**[`docs/uso-imagen-docker.md`](docs/uso-imagen-docker.md)**.
+
 ## 📄 Licencia
 
 Copyright (C) 2026 **Instituto de Información Estadística y Geográfica de Jalisco (IIEG)**.

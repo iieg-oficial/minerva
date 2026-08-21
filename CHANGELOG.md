@@ -9,6 +9,12 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Added
 
+- **El `Justfile` cubre `docker-compose.deploy.yml`.** Las 15 recetas operaban un archivo fijo, así
+  que desplegar con las imágenes publicadas en ghcr obligaba a escribir `docker compose -f
+  docker-compose.deploy.yml` a mano, fuera de la interfaz que documenta el repo. Ahora el archivo
+  lo elige la variable `file` (`just file=docker-compose.deploy.yml up`), que también se puede
+  declarar una vez por host con `MINERVA_COMPOSE` en el `.env`; con el compose de deploy el `.env`
+  se siembra desde `.env.production.example` en vez de `.env.example`.
 - **Matriz de compatibilidad del SDK en el CI.** El job `sdk` pasa a dos entornos: Python 3.10 con
   `fastapi` y `httpx` clavados en su piso declarado, y Python 3.13 con resolución libre. Antes el
   SDK solo se probaba en 3.12, así que `requires-python = ">=3.10"`, `fastapi>=0.110` y
@@ -33,6 +39,9 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Docs
 
+- **Valores esperados de `MINERVA_ORG` y `MINERVA_VERSION`** en `docs/uso-imagen-docker.md` y
+  `.env.production.example`: la org dueña de los paquetes en ghcr y el tag de la imagen, que es el
+  del release **sin la `v`** (`v0.7.0` → `0.7.0`) o `latest`.
 - **`sdk/README.md` declara qué soporta**: Python 3.10–3.13, FastAPI, httpx y python-jose, con la
   política de versionado pre-1.0 explícita (en `0.x` un cambio incompatible sube el MINOR y se
   marca `BREAKING` en el changelog) y la tabla de qué SDK viaja en qué Minerva.

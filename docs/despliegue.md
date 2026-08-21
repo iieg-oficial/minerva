@@ -17,6 +17,9 @@ Usa `just logs` para seguir todos los servicios, `just restart` para reiniciarlo
 `just down` para detenerlos conservando datos. `just down-v` elimina también los
 volúmenes de PostgreSQL y Redis y, por tanto, sus datos locales.
 
+Todas las recetas operan el Compose que indique la variable `file` del `Justfile`, por defecto
+`docker-compose.yml`. Para el despliegue por imágenes publicadas, ver §2.6.
+
 Servicios:
 
 | Servicio | Puerto host (default) | Notas |
@@ -177,6 +180,34 @@ real**, no algo que el backend resuelva por sí mismo:
   de negocio — login, rate limit excedido — pero no sustituyen monitoreo de
   infraestructura).
 
+### 2.6 Operar el compose de deploy con `just`
+
+`docker-compose.deploy.yml` consume las imágenes de `ghcr.io` en vez de construirlas
+(ver [`uso-imagen-docker.md`](uso-imagen-docker.md)). Las recetas del `Justfile` lo operan
+sin escribir `-f` en cada comando; el archivo se elige con la variable `file`, que también
+puede llegar del entorno o del `.env` como `MINERVA_COMPOSE`:
+
+```bash
+# En el host de producción, una vez (en el .env o exportado):
+MINERVA_COMPOSE=docker-compose.deploy.yml
+
+just up                 # docker compose -f docker-compose.deploy.yml up -d
+just pull && just up    # actualizar a la MINERVA_VERSION configurada
+just logs               # seguir los servicios
+
+# Puntual, sin declarar nada:
+just file=docker-compose.deploy.yml ps
+```
+
+Dos diferencias con el compose de desarrollo, deliberadas:
+
+- Si `.env` no existe, la receta lo crea desde **`.env.production.example`** (no desde
+  `.env.example`): las imágenes publicadas no deben arrancar con `APP_DEBUG`, login de dev y
+  secretos de ejemplo. La plantilla trae placeholders `<...>` en todos los secretos:
+  reemplázalos antes de levantar (§2.1).
+- No hay nada que construir: `just build` avisa «No services to build» y no hace nada. La
+  actualización es `pull` + `up`, y la versión la fija `MINERVA_VERSION`.
+
 ## 3. Mantenimiento
 
 ### 3.1 Rotación de claves de firma RS256
@@ -256,7 +287,8 @@ recordando que son **dos** ejecuciones separadas por la ventana de propagación.
 
 Usa el formato custom de `pg_dump`: permite validar el archivo con `pg_restore --list`
 y restaurar con fallo inmediato. En producción añade
-`-f docker-compose.deploy.yml` a cada comando `docker compose`.
+`-f docker-compose.deploy.yml` a cada comando `docker compose` (o declara
+`MINERVA_COMPOSE` una vez y usa las recetas de `just`, §2.6).
 
 ```bash
 mkdir -p backups
