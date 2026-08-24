@@ -18,7 +18,8 @@ MINERVA_REDIRECT_URI=http://localhost:8100/callback
 1. Importa tu `manifest.minerva.yml` desde **Aplicaciones → Importar manifiesto** en el
    panel de Minerva.
 2. Copia el `client_id` y, si es confidencial, el `client_secret` que muestra Minerva.
-3. Instala `minerva-sdk` y usa `MinervaOIDC` para login/callback; no armes PKCE ni URLs a mano.
+3. Instala el SDK desde el repositorio (ver [§4](#4-validar-tokens-y-permisos-con-el-sdk-minerva_sdk);
+   no está en PyPI) y usa `MinervaOIDC` para login/callback; no armes PKCE ni URLs a mano.
 4. Protege APIs con `get_current_user` o `require_permission`.
 
 El ejemplo ejecutable [`examples/minerva-consumer`](../examples/minerva-consumer) muestra el
@@ -392,9 +393,23 @@ avanzado; el ejemplo de referencia usa el redirect completo, que requiere menos 
 
 ## 4. Validar tokens y permisos con el SDK (`minerva_sdk`)
 
+El SDK se instala desde el repositorio de Minerva; **no se publica en PyPI**. `main` es la
+rama de releases:
+
 ```bash
-pip install -e path/to/minerva/sdk   # o como dependencia publicada, según tu setup
+pip install "minerva-sdk @ git+https://github.com/iieg-oficial/minerva.git@main#subdirectory=sdk"
 ```
+
+El repositorio es privado, así que necesitas acceso. Con llave SSH configurada la forma
+equivalente es `git+ssh://git@github.com/iieg-oficial/minerva.git@main#subdirectory=sdk`.
+Declara ese mismo requisito en tu `pyproject.toml` o `requirements.txt`, en lugar de pedir
+`minerva-sdk` por nombre.
+
+> ⚠️ **El paquete `minerva-sdk` de PyPI no es este proyecto**: es de un tercero sin relación con
+> el IIEG. `pip install minerva-sdk` a secas instala software ajeno.
+
+Si ya clonaste el monorepo, la instalación editable local sigue disponible para desarrollo
+(`pip install -e path/to/minerva/sdk`); es un canal local, no el de distribución.
 
 Variables de entorno del SDK (`minerva_sdk/config.py`):
 
@@ -413,8 +428,8 @@ Variables de entorno del SDK (`minerva_sdk/config.py`):
 
 > **El objeto de usuario son solo claims.** El dict que devuelven `get_current_user` y
 > `require_permission` nunca contiene el bearer, así que es seguro serializarlo o
-> registrarlo. Si vienes del SDK 0.1.0, ver «Migración desde 0.1.0» en `sdk/README.md`:
-> `user["_token"]` ya no existe.
+> registrarlo. Si vienes del SDK 0.1.0, ver la entrada 0.2.0 de
+> [`sdk/CHANGELOG.md`](../sdk/CHANGELOG.md): `user["_token"]` ya no existe.
 
 > **Revocación inmediata por defecto.** El SDK **no cachea permisos** salvo que lo actives:
 > cada chequeo consulta a Minerva, que es quien aplica la revocación, así que revocar un
@@ -423,6 +438,11 @@ Variables de entorno del SDK (`minerva_sdk/config.py`):
 
 > **Rotación de claves.** Si Minerva rota su clave de firma, el SDK refresca el JWKS al ver
 > un `kid` desconocido: la rotación **no** produce 401 espurios.
+
+> **Qué versiones soporta.** Python, FastAPI y httpx soportados, la versión del SDK que viaja en
+> cada release de Minerva y la política de versionado están en
+> [«Compatibilidad y versiones»](../sdk/README.md#compatibilidad-y-versiones). Se declaran en un
+> solo lugar a propósito, para que no se desincronicen.
 
 ```python
 from fastapi import Depends, FastAPI

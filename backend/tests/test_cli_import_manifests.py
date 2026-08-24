@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 from app import cli
 from app.core.config import settings
 from app.modules.applications.models import Application
+from app.modules.audit.models import AuditLog
 from tests.conftest import test_engine
 
 _MANIFEST = """
@@ -49,6 +50,14 @@ def test_imports_the_manifests_and_returns_zero(manifests_dir):
 
     with Session(test_engine) as session:
         assert session.exec(select(Application).where(Application.slug == "cliapp")).first() is not None
+        log = session.exec(select(AuditLog).where(AuditLog.action == "manifest_import")).one()
+
+    assert log.event_metadata == {
+        "actor": "system",
+        "process": "cli",
+        "result": "success",
+        "source": "cliapp.minerva.yml",
+    }
 
 
 def test_a_broken_manifest_fails_the_step(manifests_dir):
@@ -56,6 +65,14 @@ def test_a_broken_manifest_fails_the_step(manifests_dir):
     (manifests_dir / "roto.minerva.yml").write_text(_MANIFEST_INVALIDO, encoding="utf-8")
 
     assert cli.import_manifests() == 1
+
+    with Session(test_engine) as session:
+        log = session.exec(select(AuditLog).where(AuditLog.action == "manifest_import")).one()
+
+    assert log.actor_user_id is None
+    assert log.event_metadata["actor"] == "system"
+    assert log.event_metadata["result"] == "failure"
+    assert "nombre_que_no_existe" not in str(log.event_metadata)
 
 
 def test_a_broken_manifest_does_not_hide_the_others(manifests_dir):

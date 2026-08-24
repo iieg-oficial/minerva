@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { App as AntApp, Form, Input, Button, Typography, Flex, Spin, theme } from 'antd';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as authAPI from '@/api/auth';
 import { useSession } from '@features/auth/SessionContext';
 import { getAppBranding } from '@/api/public';

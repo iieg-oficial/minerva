@@ -25,7 +25,7 @@ import {
     MenuFoldOutlined,
     MenuUnfoldOutlined,
 } from '@ant-design/icons';
-import { Outlet, useNavigate, useLocation } from 'react-router';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import * as authAPI from '@/api/auth';
 import { isExpired, setActive } from '@/api/session';
 import { useSession } from '@features/auth/SessionContext';

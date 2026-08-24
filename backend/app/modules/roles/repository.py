@@ -26,19 +26,25 @@ class RoleRepository:
         total = self.session.exec(select(Role)).all()
         return items, len(total)
 
-    def create(self, role: Role) -> Role:
+    def create(self, role: Role, commit: bool = True) -> Role:
         self.session.add(role)
-        self.session.commit()
-        self.session.refresh(role)
+        if commit:
+            self.session.commit()
+            self.session.refresh(role)
+        else:
+            self.session.flush()
         return role
 
-    def update(self, role: Role) -> Role:
+    def update(self, role: Role, commit: bool = True) -> Role:
         role.updated_at = datetime.now(timezone.utc)
         self.session.add(role)
-        self.session.commit()
-        self.session.refresh(role)
+        if commit:
+            self.session.commit()
+            self.session.refresh(role)
+        else:
+            self.session.flush()
         return role
 
-    def delete(self, role: Role) -> None:
+    def delete(self, role: Role, commit: bool = True) -> None:
         self.session.delete(role)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()

@@ -48,6 +48,17 @@ docker compose -f docker-compose.deploy.yml up -d
 
 - Panel/login: `http://localhost:${FRONTEND_PORT}` (default 3100)
 
+Qué valores admiten esas dos variables:
+
+| Variable | Valores esperados | Default del compose |
+|---|---|---|
+| `MINERVA_ORG` | La organización de GitHub dueña de los paquetes en `ghcr.io`. Solo cambia si publicas las imágenes bajo otra cuenta. | `iieg-oficial` |
+| `MINERVA_VERSION` | El tag de la imagen: el del release **sin la `v`** (`v0.7.0` → `0.7.0`), o `latest` para el último publicado. En producción, fija la versión. | `latest` |
+
+Los tags salen de `.github/workflows/docker-publish.yml`: al empujar un tag `vX.Y.Z` se publican
+`ghcr.io/<org>/minerva-backend` y `-frontend` con las etiquetas `X.Y.Z` y `latest`. Por eso la
+versión de la imagen **no** lleva la `v` que sí lleva el release.
+
 El **backend no publica puerto** en este compose: nginx (servicio `frontend`) es el único punto
 público y proxea `/.well-known`, `/auth`, `/userinfo`, `/api` y `/api/v1` al backend por la red
 interna (`BACKEND_PORT` no aplica aquí, solo al compose de desarrollo). Detalle de rutas en
@@ -63,6 +74,25 @@ export MINERVA_VERSION=X.Y.Z      # la versión a la que quieres subir; los tags
 docker compose -f docker-compose.deploy.yml pull
 docker compose -f docker-compose.deploy.yml up -d
 ```
+
+### 3.1 Desde un clon del repositorio
+
+Si además tienes el repo clonado, el [`Justfile`](../Justfile) opera este mismo compose sin
+repetir `-f` en cada comando. Basta con declarar el archivo una vez —en el `.env` o exportado—
+y todas las recetas (`up`, `pull`, `logs`, `ps`, `down`, …) apuntan al deploy:
+
+```bash
+export MINERVA_COMPOSE=docker-compose.deploy.yml   # o ponlo en el .env del host
+just up            # = docker compose -f docker-compose.deploy.yml up -d
+just pull && just up   # la actualización de la sección anterior
+just logs
+```
+
+Para una sola invocación, sin declarar nada: `just file=docker-compose.deploy.yml up`.
+
+Si `.env` no existe, la primera receta lo crea desde **`.env.production.example`** —no desde
+`.env.example`—: las imágenes publicadas no deben arrancar con la configuración de desarrollo.
+Con el compose de deploy no hay nada que construir, así que `just build` avisa y no hace nada.
 
 ## 4. Variables de entorno (`.env`)
 

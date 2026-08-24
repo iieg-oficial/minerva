@@ -7,17 +7,34 @@ URLs OAuth ni consultas de permisos a mano.
 
 ## Instalación
 
-Desde este repositorio:
+El SDK se instala **desde este repositorio**; no se publica en PyPI.
+
+```bash
+pip install "minerva-sdk @ git+https://github.com/iieg-oficial/minerva.git@main#subdirectory=sdk"
+```
+
+`main` es la rama de releases: es la referencia que debes usar. El repositorio es privado, así
+que necesitas acceso; si tienes llave SSH configurada, la forma equivalente es:
+
+```bash
+pip install "minerva-sdk @ git+ssh://git@github.com/iieg-oficial/minerva.git@main#subdirectory=sdk"
+```
+
+Declara ese mismo requisito en tu `pyproject.toml` o `requirements.txt` para fijarlo, en lugar
+de pedir `minerva-sdk` por nombre.
+
+> ⚠️ **El paquete `minerva-sdk` de PyPI no es este proyecto.** Es de un tercero sin relación con
+> el IIEG: `pip install minerva-sdk` a secas instala software ajeno.
+
+### Instalación editable (si clonaste el repositorio)
+
+Para desarrollar sobre el SDK o trabajar con un checkout local del monorepo:
 
 ```bash
 pip install -e path/to/minerva/sdk
 ```
 
-Como paquete publicado:
-
-```bash
-pip install minerva-sdk
-```
+Es un canal local de desarrollo, no el canal de distribución de arriba.
 
 ## Configuración mínima
 
@@ -149,6 +166,59 @@ decisión y detecta revocaciones inmediatamente. La validación local de
 `settings.validate(login=True)` enumera juntos los valores faltantes o mal formados. El
 cliente OIDC lo ejecuta automáticamente antes de iniciar login, exchange, refresh o
 revoke.
+
+## Compatibilidad y versiones
+
+El SDK corre en **tu** entorno, no en el de Minerva, así que estos son los soportes que el CI
+prueba de verdad en cada PR ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml), job
+`sdk`): una matriz de dos entornos, el mínimo declarado y el más reciente soportado.
+
+| Requisito | Soportado | Cómo se prueba |
+|---|---|---|
+| Python | 3.10 – 3.13 | La matriz corre en 3.10 y en 3.13, los dos extremos |
+| FastAPI | `>=0.110` | El entorno de 3.10 instala `fastapi==0.110.0`, el piso exacto |
+| httpx | `>=0.27` | El entorno de 3.10 instala `httpx==0.27.0`, el piso exacto |
+| python-jose | `>=3.3` (extra `[cryptography]`) | Resolución libre en ambos entornos |
+
+`requires-python` se queda en `>=3.10` **sin techo** a propósito: una librería que se instala en
+el entorno del consumidor no debe bloquear su Python. Pero el soporte llega hasta donde llega lo
+probado — si corres 3.14, corres por delante de la matriz.
+
+**Solo FastAPI.** Las dependencias del SDK son dependencias de FastAPI (`Depends`, `HTTPBearer`);
+no se soportan Flask, Django ni otros frameworks, y no está previsto añadirlos.
+
+### Qué versión del SDK va con qué Minerva
+
+El SDK se instala como requisito VCS desde este repositorio, así que puedes fijarlo a un tag de
+release en lugar de a `main` y tener instalaciones reproducibles:
+
+```bash
+pip install "minerva-sdk @ git+https://github.com/iieg-oficial/minerva.git@v0.7.0#subdirectory=sdk"
+```
+
+| SDK | Viaja en Minerva |
+|---|---|
+| 0.3.0 | `v0.7.0` y posteriores |
+| 0.2.0 | `v0.4.0` … `v0.6.0` |
+| 0.1.0 | `v0.1.0` … `v0.3.4` |
+
+Contra el servidor, el SDK solo consume el contrato OIDC estable —
+`/.well-known/jwks.json`, `/auth/authorize`, `/auth/token`, `/auth/revoke` y
+`GET /api/v1/me/permissions`—, así que la tabla dice **con qué release viaja cada versión**, no
+que las demás combinaciones estén rotas.
+
+### Política de versionado
+
+El SDK **versiona por su cuenta** ([`pyproject.toml`](pyproject.toml)): su número no sigue al del
+servidor, porque lo actualizas a tu ritmo.
+
+- Mientras el SDK esté en `0.x`, un cambio **incompatible sube el MINOR** (0.2.0 → 0.3.0), que es
+  lo que permite SemVer antes de 1.0. A partir de `1.0.0` un cambio incompatible sube el **MAJOR**.
+- Todo cambio incompatible se marca como `BREAKING` en [`CHANGELOG.md`](CHANGELOG.md), con su nota
+  de migración. Un cambio incompatible sin entrada de changelog no se mergea: hay una prueba que
+  falla si la versión del paquete no está documentada.
+- Antes de actualizar, lee [`CHANGELOG.md`](CHANGELOG.md) — es el changelog del SDK, distinto del
+  [changelog de Minerva](../CHANGELOG.md).
 
 ## Ejemplo ejecutable
 

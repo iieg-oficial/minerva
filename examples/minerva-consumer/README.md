@@ -72,6 +72,10 @@ pip install -e ../../sdk -e '.[dev]'
 uvicorn minerva_example.main:app --port 8100 --reload
 ```
 
+El `-e ../../sdk` no es opcional: es lo que satisface la dependencia `minerva-sdk` del ejemplo.
+El SDK no está en PyPI — fuera del monorepo se instala como requisito VCS
+(ver [`sdk/README.md`](../../sdk/README.md)).
+
 ## Estructura del ejemplo
 
 ```text

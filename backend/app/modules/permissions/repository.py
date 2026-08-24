@@ -26,17 +26,23 @@ class PermissionRepository:
         total = self.session.exec(select(Permission)).all()
         return items, len(total)
 
-    def create(self, perm: Permission) -> Permission:
+    def create(self, perm: Permission, commit: bool = True) -> Permission:
         self.session.add(perm)
-        self.session.commit()
-        self.session.refresh(perm)
+        if commit:
+            self.session.commit()
+            self.session.refresh(perm)
+        else:
+            self.session.flush()
         return perm
 
-    def update(self, perm: Permission) -> Permission:
+    def update(self, perm: Permission, commit: bool = True) -> Permission:
         perm.updated_at = datetime.now(timezone.utc)
         self.session.add(perm)
-        self.session.commit()
-        self.session.refresh(perm)
+        if commit:
+            self.session.commit()
+            self.session.refresh(perm)
+        else:
+            self.session.flush()
         return perm
 
 
@@ -44,14 +50,14 @@ class RolePermissionRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def add(self, role_perm: RolePermission) -> RolePermission:
+    def add(self, role_perm: RolePermission, commit: bool = True) -> RolePermission:
         self.session.add(role_perm)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
         return role_perm
 
-    def remove(self, role_perm: RolePermission) -> None:
+    def remove(self, role_perm: RolePermission, commit: bool = True) -> None:
         self.session.delete(role_perm)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
 
     def get(self, role_id: str, perm_id: str) -> RolePermission | None:
         statement = select(RolePermission).where(

@@ -24,17 +24,23 @@ class GroupRepository:
         total = self.session.exec(select(Group)).all()
         return items, len(total)
 
-    def create(self, group: Group) -> Group:
+    def create(self, group: Group, commit: bool = True) -> Group:
         self.session.add(group)
-        self.session.commit()
-        self.session.refresh(group)
+        if commit:
+            self.session.commit()
+            self.session.refresh(group)
+        else:
+            self.session.flush()
         return group
 
-    def update(self, group: Group) -> Group:
+    def update(self, group: Group, commit: bool = True) -> Group:
         group.updated_at = datetime.now(timezone.utc)
         self.session.add(group)
-        self.session.commit()
-        self.session.refresh(group)
+        if commit:
+            self.session.commit()
+            self.session.refresh(group)
+        else:
+            self.session.flush()
         return group
 
     def delete(self, group: Group) -> None:
@@ -46,14 +52,14 @@ class GroupUserRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def add(self, gu: GroupUser) -> GroupUser:
+    def add(self, gu: GroupUser, commit: bool = True) -> GroupUser:
         self.session.add(gu)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
         return gu
 
-    def remove(self, gu: GroupUser) -> None:
+    def remove(self, gu: GroupUser, commit: bool = True) -> None:
         self.session.delete(gu)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
 
     def get(self, group_id: str, user_id: str) -> GroupUser | None:
         statement = select(GroupUser).where(GroupUser.group_id == group_id, GroupUser.user_id == user_id)
@@ -72,14 +78,14 @@ class GroupRoleRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def add(self, gr: GroupRole) -> GroupRole:
+    def add(self, gr: GroupRole, commit: bool = True) -> GroupRole:
         self.session.add(gr)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
         return gr
 
-    def remove(self, gr: GroupRole) -> None:
+    def remove(self, gr: GroupRole, commit: bool = True) -> None:
         self.session.delete(gr)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
 
     def get(self, group_id: str, role_id: str) -> GroupRole | None:
         statement = select(GroupRole).where(GroupRole.group_id == group_id, GroupRole.role_id == role_id)
@@ -100,14 +106,14 @@ class UserRoleRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def add(self, ur: UserRole) -> UserRole:
+    def add(self, ur: UserRole, commit: bool = True) -> UserRole:
         self.session.add(ur)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
         return ur
 
-    def remove(self, ur: UserRole) -> None:
+    def remove(self, ur: UserRole, commit: bool = True) -> None:
         self.session.delete(ur)
-        self.session.commit()
+        self.session.commit() if commit else self.session.flush()
 
     def get(self, user_id: str, role_id: str) -> UserRole | None:
         statement = select(UserRole).where(UserRole.user_id == user_id, UserRole.role_id == role_id)
