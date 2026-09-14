@@ -7,6 +7,14 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-14
+
+> **Release intermedio.** Las personas fijan y cambian su propia contraseña (invitación,
+> restablecimiento, cambio obligatorio y cambio propio), y el rol `minerva.admin` deja de conceder
+> administración global fuera de la app `minerva`. Incluye la migración `012_credential_lifecycle`.
+> ⚠️ **Cambio de contrato:** `PATCH /users/{id}` con `password` ahora exige cambiarla en el próximo
+> ingreso, salvo que se envíe `"require_change": false` (ver *Changed*).
+
 ### Added
 
 - **Ciclo de vida de la credencial.** Hasta ahora la contraseña solo la creaba o cambiaba un
