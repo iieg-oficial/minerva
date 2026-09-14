@@ -1,5 +1,6 @@
 from sqlmodel import Session
 
+from app.core.constants import MINERVA_ADMIN_ROLE_SLUG, MINERVA_APP_SLUG
 from app.core.exceptions import NotFoundError
 from app.modules.applications.service import ApplicationService
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
@@ -35,9 +36,16 @@ class AuthorizationService:
         return list({p.id: p for p in all_perms}.values())
 
     def is_minerva_admin(self, user_id: str) -> bool:
-        """True si el usuario tiene el rol global de administrador de Minerva."""
-        roles = self._get_effective_roles(user_id)
-        return any(r.slug == "minerva.admin" for r in roles)
+        """True si el usuario tiene el rol global de administrador de Minerva.
+
+        El rol cuenta solo si pertenece a la app `minerva`: un rol con el mismo slug
+        en otra aplicación no concede administración global.
+        """
+        admin_roles = [r for r in self._get_effective_roles(user_id) if r.slug == MINERVA_ADMIN_ROLE_SLUG]
+        if not admin_roles:
+            return False
+        minerva_app = self.app_service.get_application_by_slug(MINERVA_APP_SLUG)
+        return minerva_app is not None and any(r.application_id == minerva_app.id for r in admin_roles)
 
     def check_permission(self, user_id: str, application_slug: str, permission_slug: str) -> dict:
         app = self.app_service.get_application_by_slug(application_slug)
