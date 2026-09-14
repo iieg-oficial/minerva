@@ -7,6 +7,37 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+
+- **Ciclo de vida de la credencial.** Hasta ahora la contraseña solo la creaba o cambiaba un
+  administrador global, era obligatoria al dar de alta y nada forzaba a cambiar una temporal.
+  - **Alta por invitación:** `POST /users` sin `password` crea al usuario en estado `pending` y
+    devuelve un enlace de un solo uso (`credential_link`) que el administrador entrega; con él la
+    persona fija su contraseña en `/activar` y la cuenta pasa a `active`. Sin SMTP.
+  - **Restablecimiento:** `POST /users/{id}/credential-link` genera un enlace nuevo (invitación si
+    sigue pendiente, restablecimiento si no) e invalida los anteriores. Es también la vía de
+    recuperación por olvido mientras Minerva no envíe correo.
+  - **Cambio obligatorio:** si un administrador fija la contraseña (`PATCH /users/{id}`), la
+    persona debe cambiarla en su próximo ingreso (`require_change`, activo por defecto). El login
+    responde `403 password_change_required` con un token de un solo uso y **no** abre sesión.
+  - **Cambio propio:** `POST /auth/password` (sesión + CSRF, exige la contraseña actual) y la
+    pantalla `/cuenta/contrasena`, accesible también para quien no es administrador.
+  - Los enlaces guardan solo el hash del token, llevan el token en el fragmento (`#token=`) para
+    que no llegue a logs ni al `Referer`, vencen (`CREDENTIAL_INVITE_TTL_HOURS=72`,
+    `CREDENTIAL_RESET_TTL_HOURS=24`) y tienen rate limit por IP (`RATE_LIMIT_CREDENTIAL_*`). Fijar
+    o cambiar la contraseña invalida todas las sesiones y refresh tokens previos del usuario.
+  - Migración `012_credential_lifecycle`: tabla `credential_tokens` y columna
+    `users.password_change_required`.
+
+### Changed
+
+- **`PATCH /users/{id}` con `password` ahora obliga a cambiarla en el próximo ingreso.** Es un
+  cambio de contrato para quien ya fijaba contraseñas por API: el login responde `403
+  password_change_required` hasta que la persona defina una propia. Para conservar el
+  comportamiento anterior, envía `"require_change": false`.
+- **El estado `pending` solo lo asigna el alta sin contraseña.** Ponerlo a mano responde 400, y
+  fijar una contraseña a un usuario pendiente lo activa y anula su invitación.
+
 ### Security
 
 - **El rol `minerva.admin` solo da administración global si pertenece a la app `minerva`.**

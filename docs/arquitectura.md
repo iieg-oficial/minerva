@@ -89,7 +89,8 @@ completas (no se repiten aquí).
 |---|---|
 | `auth` | Login/registro, flujo OIDC `/authorize` + `/token` + `/revoke`, rate limiting |
 | `oidc` | Claves de firma RS256, JWKS, discovery, `/userinfo` |
-| `users` | CRUD de usuarios, hashing de contraseñas |
+| `users` | CRUD de usuarios, hashing de contraseñas, cambio de contraseña propio, invalidación de sesiones (`invalidation.py`) |
+| `credentials` | Enlaces de un solo uso para fijar la contraseña: invitación, restablecimiento y cambio obligatorio (sin router propio: los exponen `users` y `auth`) |
 | `applications` | Registro de aplicaciones consumidoras (`client_id`/secret, redirect URIs, clientes públicos) |
 | `roles` | Roles por aplicación |
 | `permissions` | Permisos por aplicación y su relación con roles |
@@ -167,6 +168,28 @@ sequenceDiagram
 
 Ver [`integracion.md`](integracion.md) para el detalle paso a paso y
 [`glosario.md`](glosario.md) para cada término (`PKCE`, `code_challenge`, `nonce`, etc.).
+
+## Ciclo de vida de la credencial
+
+La contraseña la fija la propia persona; el administrador solo emite enlaces de un solo uso.
+
+| Caso | Quién lo origina | Qué recibe la persona |
+|---|---|---|
+| Alta sin contraseña | Admin: `POST /users` sin `password` → usuario `pending` | Enlace de invitación (`CREDENTIAL_INVITE_TTL_HOURS`) |
+| Restablecimiento / olvido | Admin: `POST /users/{id}/credential-link` | Enlace de restablecimiento (`CREDENTIAL_RESET_TTL_HOURS`) |
+| Contraseña fijada por admin | Admin: `PATCH /users/{id}` con `password` (marca `password_change_required`) | En su próximo login, `403 password_change_required` + token de un solo uso, **sin sesión** |
+| Cambio propio | La persona, con sesión: `POST /auth/password` (exige la actual) | — |
+
+- El enlace es `{FRONTEND_URL}/activar#token=…`: el token va en el **fragmento**, que el navegador
+  no envía al servidor, así que no queda en logs de nginx ni en el `Referer`. En BD solo vive su
+  hash (`credential_tokens`), con reclamo atómico (`UPDATE … WHERE used_at IS NULL`) igual que los
+  códigos de autorización. Un enlace nuevo invalida los anteriores del mismo usuario.
+- `/auth/credential/inspect` y `/auth/credential` son públicos y están exentos de CSRF (la prueba es
+  el token, no la sesión), con rate limit por IP. Responden 400 genérico para enlace inexistente,
+  usado o vencido: no distinguen cuál.
+- Fijar o cambiar la contraseña invalida todas las sesiones y refresh tokens previos del usuario
+  (`users/invalidation.py`, orden fail-closed Redis → PostgreSQL); se vuelve a iniciar sesión.
+- Sin SMTP: Minerva no envía correo. La recuperación por olvido es un enlace que genera el admin.
 
 ## Firma de tokens y rotación de claves
 
