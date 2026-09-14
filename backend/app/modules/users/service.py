@@ -5,11 +5,19 @@ from sqlmodel import Session
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.core.security import hash_password, verify_password
 from app.modules.audit.repository import AuditRepository
-from app.modules.users.models import User
+from app.modules.credentials.repository import CredentialTokenRepository
+from app.modules.users.models import LINKABLE_STATUSES, User
 from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import UserCreate, UserRead, UserStatusUpdate, UserUpdate
 
 logger = logging.getLogger(__name__)
+
+
+def _check_status_change(current: str, new: str) -> None:
+    """`pending` solo lo asigna el alta sin contraseña: puesto a mano dejaría esperando una
+    invitación a alguien que ya tiene contraseña."""
+    if new == "pending" and current != "pending":
+        raise BadRequestError(detail="El estado pendiente solo lo asigna el alta por invitación")
 
 
 class UserService:
@@ -17,6 +25,7 @@ class UserService:
         self.session = session
         self.repo = UserRepository(session)
         self.audit_repo = AuditRepository(session)
+        self.credential_repo = CredentialTokenRepository(session)
 
     def get_user(self, user_id: str) -> UserRead:
         user = self.repo.get_by_id(user_id)
@@ -39,7 +48,9 @@ class UserService:
         user = User(
             email=data.email,
             full_name=data.full_name,
-            hashed_password=hash_password(data.password),
+            hashed_password=hash_password(data.password) if data.password else None,
+            # Sin contraseña queda pendiente hasta que la persona la fije con su invitación.
+            status="active" if data.password else "pending",
             domain=data.domain,
         )
 
@@ -53,17 +64,27 @@ class UserService:
 
         if data.full_name is not None:
             user.full_name = data.full_name
+        email_changed = False
         if data.email is not None and data.email != user.email:
             existing = self.repo.get_by_email(data.email)
             if existing and existing.id != user_id:
                 raise ConflictError(detail="El correo ya está registrado")
             user.email = data.email
+            email_changed = True
         if data.password:
             user.hashed_password = hash_password(data.password)
+            user.password_change_required = data.require_change
+            # Con una contraseña asignada ya no espera su invitación.
+            if user.status == "pending" and data.status is None:
+                user.status = "active"
         if data.status is not None:
+            _check_status_change(user.status, data.status)
             user.status = data.status
         if data.domain is not None:
             user.domain = data.domain
+        # Un enlace pendiente no debe sobrevivir a un cambio de credenciales ni a una baja.
+        if data.password or email_changed or user.status not in LINKABLE_STATUSES:
+            self.credential_repo.invalidate_unused_for_user(user_id)
 
         user = self.repo.update(user, commit=commit)
         return UserRead.model_validate(user)
@@ -73,9 +94,24 @@ class UserService:
         if not user:
             raise NotFoundError(detail="Usuario no encontrado")
 
+        _check_status_change(user.status, data.status)
         user.status = data.status
+        if user.status not in LINKABLE_STATUSES:
+            self.credential_repo.invalidate_unused_for_user(user_id)
         user = self.repo.update(user, commit=commit)
         return UserRead.model_validate(user)
+
+    def change_own_password(self, user_id: str, current_password: str, new_password: str, commit: bool = True) -> None:
+        """Cambio de contraseña por el propio usuario: exige la actual y retira la marca de
+        cambio obligatorio. El caller invalida las sesiones antes de confirmar."""
+        user = self.repo.get_by_id(user_id)
+        if not user or not user.hashed_password or not verify_password(current_password, user.hashed_password):
+            raise BadRequestError(detail="La contraseña actual no es correcta")
+        user.hashed_password = hash_password(new_password)
+        user.password_change_required = False
+        # Un enlace de restablecimiento filtrado no debe poder pisar la contraseña recién elegida.
+        self.credential_repo.invalidate_unused_for_user(user_id)
+        self.repo.update(user, commit=commit)
 
     def revoke_refresh_tokens(self, user_id: str, commit: bool = True) -> list[str]:
         """Revoca los refresh tokens OIDC vigentes del usuario (parte de invalidar

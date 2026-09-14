@@ -92,6 +92,18 @@ class Settings(BaseSettings):
     RATE_LIMIT_LOGIN_WINDOW: int = 900  # segundos (15 min)
     RATE_LIMIT_AUTHORIZE_MAX: int = 20
     RATE_LIMIT_AUTHORIZE_WINDOW: int = 60
+    # Por IP: una oficina detrás de un NAT puede activar varias cuentas seguidas. El token
+    # del enlace (256 bits) no se adivina; el límite es contra abuso, no contra fuerza bruta.
+    RATE_LIMIT_CREDENTIAL_MAX: int = 30
+    RATE_LIMIT_CREDENTIAL_WINDOW: int = 900
+
+    # --- Ciclo de vida de la credencial ------------------------------------
+    # Vigencia de los enlaces de un solo uso para fijar la contraseña. Un enlace vencido
+    # no se renueva solo: el administrador genera otro (que invalida al anterior).
+    CREDENTIAL_INVITE_TTL_HOURS: int = 72
+    CREDENTIAL_RESET_TTL_HOURS: int = 24
+    # El que emite el login cuando la contraseña debe cambiarse: se usa en el acto.
+    CREDENTIAL_FORCED_CHANGE_TTL_MINUTES: int = 10
 
     # --- Valores efectivos -------------------------------------------------
     @property

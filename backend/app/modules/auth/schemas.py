@@ -2,7 +2,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app.shared.validators import validate_password_max_bytes
+from app.shared.validators import NewPassword, validate_password_max_bytes
 
 
 class AuthRegister(BaseModel):
@@ -14,6 +14,11 @@ class AuthRegister(BaseModel):
 class AuthLogin(BaseModel):
     email: str
     password: Annotated[str, AfterValidator(validate_password_max_bytes)]
+
+
+class PasswordChange(BaseModel):
+    current_password: Annotated[str, AfterValidator(validate_password_max_bytes)]
+    new_password: NewPassword
 
 
 class AuthTokenResponse(BaseModel):
