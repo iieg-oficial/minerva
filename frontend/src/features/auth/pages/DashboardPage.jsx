@@ -21,6 +21,7 @@ const PURPLE = '#5C2472';
 
 const STATUS_LABELS = {
     active: { text: 'Activo', color: 'green' },
+    pending: { text: 'Pendiente', color: 'gold' },
     inactive: { text: 'Inactivo', color: 'default' },
     suspended: { text: 'Suspendido', color: 'red' },
 };
