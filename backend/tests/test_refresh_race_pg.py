@@ -174,15 +174,21 @@ def _start_paused_rotation(pg_client, ctx, monkeypatch, results, label="winner")
     return thread, release_gate
 
 
-def _make_admin(pg_engine, application_id: str) -> str:
+def _make_admin(pg_engine) -> str:
     """Crea un admin de Minerva en la base de pruebas y devuelve su token de sesión
     (Bearer, `typ=session`) — el mismo mecanismo que `tests.conftest._mint_session_token`
-    pero contra el engine de PostgreSQL en vez del `test_engine` de SQLite."""
+    pero contra el engine de PostgreSQL en vez del `test_engine` de SQLite. El rol
+    `minerva.admin` va en la app `minerva`: en cualquier otra app no concede administración."""
     with Session(pg_engine) as session:
+        minerva_app = session.exec(select(Application).where(Application.slug == "minerva")).first()
+        if not minerva_app:
+            minerva_app = Application(name="Minerva", slug="minerva", status="active")
+            session.add(minerva_app)
+            session.flush()
         admin_user = User(email="race-admin@iieg.gob.mx", full_name="Race Admin", status="active")
         session.add(admin_user)
         session.flush()
-        admin_role = Role(application_id=application_id, name="Admin", slug="minerva.admin")
+        admin_role = Role(application_id=minerva_app.id, name="Admin", slug="minerva.admin")
         session.add(admin_role)
         session.flush()
         session.add(UserRole(user_id=admin_user.id, role_id=admin_role.id))
@@ -326,9 +332,7 @@ def test_endpoint_desactivar_usuario_concurrente_con_rotacion_en_curso(pg_engine
     está rotando ahora mismo (revoke_all_for_user hace FOR UPDATE NOWAIT) no debe
     bloquearse ni dejar el status del usuario parcialmente persistido si falla por
     contención; debe funcionar con normalidad una vez termina la rotación."""
-    with Session(pg_engine) as session:
-        app_id = session.exec(select(Application).where(Application.client_id == ctx["client_id"])).first().id
-    admin_token = _make_admin(pg_engine, application_id=app_id)
+    admin_token = _make_admin(pg_engine)
 
     results: dict[str, object] = {}
     winner_thread, release_gate = _start_paused_rotation(pg_client, ctx, monkeypatch, results)

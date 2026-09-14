@@ -7,6 +7,14 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Security
+
+- **El rol `minerva.admin` solo da administración global si pertenece a la app `minerva`.**
+  `is_minerva_admin` comparaba únicamente el slug del rol, así que un rol con ese nombre en
+  cualquier otra aplicación habría pasado por administrador global. Además, crear roles con el
+  prefijo `minerva.` fuera de la app `minerva` ahora responde 400. Hoy solo un administrador global
+  crea roles, pero el cierre es previo a delegar administración por aplicación.
+
 ## [1.0.0] - 2026-08-21
 
 > **Primer release estable.** Minerva publica el perfil OIDC Authorization Code + PKCE,

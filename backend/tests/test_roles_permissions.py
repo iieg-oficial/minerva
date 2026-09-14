@@ -1,3 +1,35 @@
+from sqlmodel import Session, select
+
+from app.modules.applications.models import Application
+from tests.conftest import test_engine
+
+
+def test_create_reserved_role_in_foreign_app_is_rejected(client, admin_token):
+    app_response = client.post(
+        "/applications",
+        json={"name": "Ajena", "slug": "ajena"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert app_response.status_code == 201
+    response = client.post(
+        f"/roles?application_id={app_response.json()['id']}",
+        json={"name": "Falso admin", "slug": "minerva.admin"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 400
+
+
+def test_create_reserved_role_in_minerva_app_is_allowed(client, admin_token):
+    with Session(test_engine) as session:
+        minerva_app_id = session.exec(select(Application).where(Application.slug == "minerva")).first().id
+    response = client.post(
+        f"/roles?application_id={minerva_app_id}",
+        json={"name": "Auditor", "slug": "minerva.auditor"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 201
+
+
 def test_create_role(client, admin_token):
     app_response = client.post(
         "/applications",
