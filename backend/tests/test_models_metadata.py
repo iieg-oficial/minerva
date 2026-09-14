@@ -12,6 +12,7 @@ EXPECTED_TABLES = {
     "applications",
     "audit_logs",
     "auth_codes",
+    "credential_tokens",
     "groups",
     "group_roles",
     "group_users",

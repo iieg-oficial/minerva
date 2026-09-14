@@ -2,7 +2,9 @@ import { Navigate } from 'react-router-dom';
 import { Flex, Spin } from 'antd';
 import { useSession } from '@features/auth/SessionContext';
 
-export default function ProtectedRoute({ children }) {
+// `requireAdmin={false}` para páginas de cuenta propia (p. ej. cambiar la contraseña),
+// que cualquier usuario con sesión puede usar.
+export default function ProtectedRoute({ children, requireAdmin = true }) {
     const { loading, active, isAdmin } = useSession();
     if (loading) {
         return (
@@ -14,7 +16,7 @@ export default function ProtectedRoute({ children }) {
     if (!active) {
         return <Navigate to="/login" replace />;
     }
-    if (!isAdmin) {
+    if (requireAdmin && !isAdmin) {
         return <Navigate to="/no-access" replace />;
     }
     return children;

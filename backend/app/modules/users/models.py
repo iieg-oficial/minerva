@@ -3,6 +3,10 @@ from datetime import datetime, timezone
 
 from sqlmodel import Field, SQLModel
 
+# Estados en los que se puede emitir y canjear un enlace de credencial: una cuenta inactiva o
+# suspendida no fija contraseña hasta que un administrador la reactive.
+LINKABLE_STATUSES = frozenset({"pending", "active"})
+
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
@@ -11,7 +15,9 @@ class User(SQLModel, table=True):
     email: str = Field(unique=True, index=True, max_length=320)
     full_name: str = Field(max_length=255)
     hashed_password: str | None = Field(default=None)
-    status: str = Field(default="active", max_length=20)
+    status: str = Field(default="active", max_length=20)  # active | pending | inactive | suspended
+    # Obliga a fijar una contraseña propia en el próximo ingreso (p. ej. tras un reset del admin).
+    password_change_required: bool = Field(default=False)
     domain: str | None = Field(default=None, max_length=255)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

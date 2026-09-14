@@ -2,14 +2,15 @@ from fastapi import APIRouter, Depends, Query, Request
 from redis.asyncio import Redis
 from sqlmodel import Session
 
-from app.core.config import settings
 from app.core.dependencies.admin import require_minerva_admin
 from app.core.dependencies.auth import get_current_panel_user
 from app.core.dependencies.db import get_db
 from app.core.redis import get_redis
-from app.core.token_blacklist import invalidate_user_tokens, revoke_jti
 from app.modules.audit.service import AuditService
-from app.modules.users.schemas import UserCreate, UserRead, UserStatusUpdate, UserUpdate
+from app.modules.credentials.schemas import CredentialLink
+from app.modules.credentials.service import CredentialService
+from app.modules.users.invalidation import apply_with_invalidation
+from app.modules.users.schemas import UserCreate, UserCreated, UserRead, UserStatusUpdate, UserUpdate
 from app.modules.users.service import UserService
 from app.shared.pagination import PaginatedResponse
 
@@ -24,32 +25,8 @@ def get_audit_service(session: Session = Depends(get_db)) -> AuditService:
     return AuditService(session)
 
 
-async def _invalidate_user_sessions(redis: Redis, service: UserService, user_id: str) -> None:
-    """Mata las sesiones/tokens vigentes del usuario tras cambiar sus credenciales o
-    status: (1) revoca sus refresh tokens OIDC (pendiente en PG) y blacklistea sus
-    access_jti, y (2) marca el corte por `iat` para los bearer/sesión del panel.
-
-    Deja la revocación de PG pendiente (commit=False): la confirma el router DESPUÉS de
-    que estas escrituras en Redis tengan éxito. Si Redis falla, la excepción sale antes
-    del commit y el router hace rollback → el cambio de credenciales no queda durable sin
-    su invalidación (fail-closed)."""
-    jtis = service.revoke_refresh_tokens(user_id, commit=False)
-    access_ttl = settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES * 60
-    for jti in jtis:
-        await revoke_jti(redis, jti, access_ttl)
-    await invalidate_user_tokens(redis, user_id, settings.effective_token_expire_minutes * 60)
-
-
-async def _apply_with_invalidation(service: UserService, redis: Redis, user_id: str) -> None:
-    """Confirma un cambio que invalida sesiones en el orden fail-closed: las invalidaciones
-    van a Redis primero y solo entonces se confirma PostgreSQL. Si Redis falla, rollback
-    (PG intacto); si PG falla después, queda una invalidación de más (fallo seguro)."""
-    try:
-        await _invalidate_user_sessions(redis, service, user_id)
-    except Exception:
-        service.session.rollback()
-        raise
-    service.session.commit()
+def get_credential_service(session: Session = Depends(get_db)) -> CredentialService:
+    return CredentialService(session)
 
 
 @router.get("", response_model=PaginatedResponse[UserRead])
@@ -72,15 +49,18 @@ def get_user(
     return service.get_user(user_id)
 
 
-@router.post("", response_model=UserRead, status_code=201)
+@router.post("", response_model=UserCreated, status_code=201)
 def create_user(
     data: UserCreate,
     request: Request,
     service: UserService = Depends(get_user_service),
+    credentials: CredentialService = Depends(get_credential_service),
     audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
     result = service.create_user(data, commit=False)
+    # Sin contraseña: el usuario queda pendiente y el admin entrega el enlace de invitación.
+    link = None if data.password else credentials.issue_link(result.id, created_by=_current_user["sub"], commit=False)
     audit.log(
         "user_create",
         actor_user_id=_current_user["sub"],
@@ -89,8 +69,40 @@ def create_user(
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
         event_metadata={"result": "success"},
+        commit=link is None,
     )
-    return result
+    if link is not None:
+        _audit_credential_link(audit, request, _current_user["sub"], result.id, link)
+    return UserCreated(**result.model_dump(), credential_link=link)
+
+
+def _audit_credential_link(
+    audit: AuditService, request: Request, actor_id: str, user_id: str, link: CredentialLink
+) -> None:
+    audit.log(
+        "credential_link_issue",
+        actor_user_id=actor_id,
+        target_type="user",
+        target_id=user_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"result": "success", "purpose": link.purpose},
+    )
+
+
+@router.post("/{user_id}/credential-link", response_model=CredentialLink, status_code=201)
+def issue_credential_link(
+    user_id: str,
+    request: Request,
+    credentials: CredentialService = Depends(get_credential_service),
+    audit: AuditService = Depends(get_audit_service),
+    _current_user: dict = Depends(get_current_panel_user),
+):
+    """Enlace de un solo uso para que la persona fije su contraseña: invitación si sigue
+    pendiente, restablecimiento si ya estaba activa. Invalida los enlaces anteriores."""
+    link = credentials.issue_link(user_id, created_by=_current_user["sub"], commit=False)
+    _audit_credential_link(audit, request, _current_user["sub"], user_id, link)
+    return link
 
 
 @router.patch("/{user_id}", response_model=UserRead)
@@ -119,7 +131,7 @@ async def update_user(
         commit=not invalidating,
     )
     if invalidating:
-        await _apply_with_invalidation(service, redis, user_id)
+        await apply_with_invalidation(service.session, redis, user_id)
     return result
 
 
@@ -146,5 +158,5 @@ async def update_user_status(
         commit=not invalidating,
     )
     if invalidating:
-        await _apply_with_invalidation(service, redis, user_id)
+        await apply_with_invalidation(service.session, redis, user_id)
     return result

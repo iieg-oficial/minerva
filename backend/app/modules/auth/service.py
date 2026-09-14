@@ -20,6 +20,7 @@ from app.modules.applications.service import ApplicationService
 from app.modules.auth.repository import AuthCodeRepository, RefreshTokenRepository, RefreshTokenRowLocked
 from app.modules.auth.schemas import AuthRegister
 from app.modules.authorization.service import AuthorizationService
+from app.modules.credentials.service import CredentialService
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
 from app.modules.oidc.service import OIDCService, claims_for_scopes
 from app.modules.permissions.repository import RolePermissionRepository
@@ -28,6 +29,15 @@ from app.modules.users.service import UserService
 from app.shared.datetime_utils import as_utc
 
 logger = logging.getLogger(__name__)
+
+
+class PasswordChangeRequired(Exception):
+    """Las credenciales son correctas, pero la contraseña debe cambiarse antes de abrir
+    sesión. Lleva el token de un solo uso con el que la SPA fija la nueva."""
+
+    def __init__(self, credential_token: str):
+        super().__init__("password_change_required")
+        self.credential_token = credential_token
 
 
 # Lo que Minerva puede poner en el callback (RFC 6749 §4.1.2 y §4.1.2.1). La lista es
@@ -162,7 +172,13 @@ class AuthService:
 
     def login(self, email: str, password: str) -> dict:
         token = self.user_service.authenticate(email, password)
-        self._touch_last_login(self.user_repo.get_by_email(email))
+        user = self.user_repo.get_by_email(email)
+        if user is not None and user.password_change_required:
+            # Sin sesión hasta que fije una contraseña propia: así ningún otro camino (panel,
+            # /authorize) necesita revisar la marca.
+            raw, _ = CredentialService(self.session).issue_token(user.id, "forced_change")
+            raise PasswordChangeRequired(raw)
+        self._touch_last_login(user)
         return {"access_token": token, "token_type": "bearer", "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60}
 
     def get_me(self, user_id: str) -> dict:

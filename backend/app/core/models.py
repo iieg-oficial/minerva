@@ -11,6 +11,7 @@ def import_models() -> None:
     from app.modules.applications import models as applications_models  # noqa: F401
     from app.modules.audit import models as audit_models  # noqa: F401
     from app.modules.auth import models as auth_models  # noqa: F401
+    from app.modules.credentials import models as credentials_models  # noqa: F401
     from app.modules.devkit import models as devkit_models  # noqa: F401
     from app.modules.groups import models as groups_models  # noqa: F401
     from app.modules.oidc import models as oidc_models  # noqa: F401

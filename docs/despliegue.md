@@ -148,6 +148,11 @@ Implicaciones:
   de los tokens OIDC emitidos a consumidores.
 - `RATE_LIMIT_LOGIN_MAX` / `RATE_LIMIT_LOGIN_WINDOW` / `RATE_LIMIT_AUTHORIZE_MAX` /
   `RATE_LIMIT_AUTHORIZE_WINDOW`: ajustar según tráfico esperado.
+- `RATE_LIMIT_CREDENTIAL_MAX` / `RATE_LIMIT_CREDENTIAL_WINDOW`: límite por IP de los enlaces para
+  fijar contraseña. Súbelo si una oficina detrás de un mismo NAT activa muchas cuentas a la vez.
+- `CREDENTIAL_INVITE_TTL_HOURS` / `CREDENTIAL_RESET_TTL_HOURS` /
+  `CREDENTIAL_FORCED_CHANGE_TTL_MINUTES`: vigencia de los enlaces de invitación, restablecimiento y
+  cambio obligatorio. Los enlaces se construyen con `FRONTEND_URL`.
 - `DATABASE_URL`: apuntar a la instancia real de PostgreSQL (con TLS si la red no es de
   confianza).
 

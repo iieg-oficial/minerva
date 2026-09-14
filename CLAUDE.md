@@ -106,7 +106,8 @@ Minerva firma **todo con RS256/JWKS** (no HS256). Dos modelos de sesión, delibe
   (fijación de sesión). La pérdida/limpieza de Redis invalida las sesiones del panel.
 - **CSRF + Origin:** `backend/app/core/csrf.py` — middleware que exige `X-CSRF-Token` (synchronizer,
   comparación constante) y `Origin` válido en las mutaciones que traen la cookie de panel. Exentos:
-  `/auth/login`, `/auth/register` (crean sesión) y los endpoints OAuth de consumidor.
+  `/auth/login`, `/auth/register` (crean sesión), los endpoints OAuth de consumidor y, por ruta
+  exacta, `/auth/credential` y `/auth/credential/inspect` (se autentican con el token del enlace).
 - **OIDC para consumidores:** módulo `backend/app/modules/auth/` (`/authorize`, `/token`,
   `/revoke`, PKCE, refresh con rotación) + `backend/app/modules/oidc/` (discovery, JWKS,
   `/userinfo`, claves de firma). Guía consumidor: `docs/integracion.md` y skill
@@ -118,8 +119,16 @@ Minerva firma **todo con RS256/JWKS** (no HS256). Dos modelos de sesión, delibe
 - **Invalidación por usuario (cambio de credenciales/status):** cambiar contraseña, correo o poner
   status ≠ `active` mata las sesiones vigentes. `invalidate_user_tokens` marca un corte por `iat` en
   Redis (`minerva:uinval:{sub}`, chequeado en `_resolve_token`) y `UserService.revoke_refresh_tokens`
-  revoca los refresh tokens OIDC (blacklisteando sus access `jti`). Disparado en el router de usuarios
-  (`update_user`/`update_user_status`). Login/authorize/refresh ya rechazan usuarios no-`active`.
+  revoca los refresh tokens OIDC (blacklisteando sus access `jti`). Vive en
+  `backend/app/modules/users/invalidation.py` (`apply_with_invalidation`, fail-closed Redis → PG) y lo
+  disparan el router de usuarios (`update_user`/`update_user_status`), `POST /auth/credential` y
+  `POST /auth/password`. Login/authorize/refresh ya rechazan usuarios no-`active`.
+- **Ciclo de vida de la credencial:** módulo `backend/app/modules/credentials/` (enlaces de un solo
+  uso: invitación, restablecimiento, cambio obligatorio; solo el hash en `credential_tokens`). Alta sin
+  contraseña → usuario `pending`; `password_change_required` hace que el login responda `403
+  password_change_required` sin abrir sesión. SPA: `/activar` (token en el fragmento) y
+  `/cuenta/contrasena` (cambio propio, `ProtectedRoute requireAdmin={false}`). Detalle:
+  `docs/arquitectura.md` § Ciclo de vida de la credencial.
 - **Red en producción (nginx consolidado):** un solo punto público (nginx del servicio `frontend`)
   sirve la SPA y proxea al backend `/.well-known`, `/auth`, `/userinfo`, `/api` (strip) y `/api/v1`
   (preserva). El backend **no publica puerto** en el deploy; el issuer va sin `:9000`. `FORWARDED_ALLOW_IPS`
