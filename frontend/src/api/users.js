@@ -20,6 +20,13 @@ export async function updateUser(userId, data) {
     return res.data;
 }
 
+// Enlace de un solo uso para que la persona fije su contraseña: invitación si sigue
+// pendiente, restablecimiento si no. Invalida los enlaces anteriores del usuario.
+export async function createCredentialLink(userId) {
+    const res = await client.post(`/users/${userId}/credential-link`);
+    return res.data;
+}
+
 export async function updateUserStatus(userId, status) {
     const res = await client.patch(`/users/${userId}/status`, { status });
     return res.data;

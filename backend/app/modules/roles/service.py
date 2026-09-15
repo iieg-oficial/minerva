@@ -1,7 +1,9 @@
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.constants import MINERVA_APP_SLUG, RESERVED_ROLE_PREFIX
+from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.modules.applications.repository import ApplicationRepository
 from app.modules.groups.repository import GroupRoleRepository, UserRoleRepository
 from app.modules.permissions.repository import RolePermissionRepository
 from app.modules.roles.models import Role
@@ -14,6 +16,7 @@ class RoleService:
     def __init__(self, session: Session):
         self.session = session
         self.repo = RoleRepository(session)
+        self.app_repo = ApplicationRepository(session)
         self.user_role_repo = UserRoleRepository(session)
         self.group_role_repo = GroupRoleRepository(session)
         self.role_perm_repo = RolePermissionRepository(session)
@@ -33,6 +36,9 @@ class RoleService:
         return [RoleRead.model_validate(r) for r in roles], total
 
     def create_role(self, app_id: str, data: RoleCreate, commit: bool = True) -> RoleRead:
+        if data.slug.startswith(RESERVED_ROLE_PREFIX) and not self._is_minerva_app(app_id):
+            raise BadRequestError(detail="El prefijo 'minerva.' está reservado para los roles de la aplicación minerva")
+
         existing = self.repo.get_by_slug(app_id, data.slug)
         if existing:
             raise ConflictError(detail="Ya existe un rol con ese slug en esta aplicación")
@@ -46,6 +52,10 @@ class RoleService:
             self.session.rollback()
             raise ConflictError(detail="Ya existe un rol con ese slug en esta aplicación")
         return RoleRead.model_validate(role)
+
+    def _is_minerva_app(self, app_id: str) -> bool:
+        app = self.app_repo.get_by_id(app_id)
+        return app is not None and app.slug == MINERVA_APP_SLUG
 
     def update_role(self, role_id: str, data: RoleUpdate, commit: bool = True) -> RoleRead:
         role = self.repo.get_by_id(role_id)

@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.core.config import settings
+from app.core.constants import MINERVA_ADMIN_ROLE_SLUG, MINERVA_APP_SLUG
 from app.core.csrf import panel_csrf_middleware
 from app.core.database import engine
 from app.core.models import import_models
@@ -83,12 +84,12 @@ def seed_admin(session: Session) -> None:
         session.add(admin_user)
         session.flush()
 
-    minerva_app = session.exec(select(Application).where(Application.slug == "minerva")).first()
+    minerva_app = session.exec(select(Application).where(Application.slug == MINERVA_APP_SLUG)).first()
     if not minerva_app:
         raw_secret = str(uuid.uuid4())
         minerva_app = Application(
             name="Minerva",
-            slug="minerva",
+            slug=MINERVA_APP_SLUG,
             description="Sistema central de identidad y acceso del IIEG",
             client_id=str(uuid.uuid4()),
             client_secret_hash=hash_secret(raw_secret),
@@ -105,13 +106,13 @@ def seed_admin(session: Session) -> None:
         session.add(redirect_uri)
 
     admin_role = session.exec(
-        select(Role).where(Role.application_id == minerva_app.id, Role.slug == "minerva.admin")
+        select(Role).where(Role.application_id == minerva_app.id, Role.slug == MINERVA_ADMIN_ROLE_SLUG)
     ).first()
     if not admin_role:
         admin_role = Role(
             application_id=minerva_app.id,
             name="Administrador",
-            slug="minerva.admin",
+            slug=MINERVA_ADMIN_ROLE_SLUG,
             description="Administrador global de Minerva",
         )
         session.add(admin_role)

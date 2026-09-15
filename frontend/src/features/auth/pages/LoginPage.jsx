@@ -76,6 +76,19 @@ export default function LoginPage() {
         } catch (error) {
             const status = error.response?.status;
             const detail = error.response?.data?.detail;
+            if (status === 403 && error.response?.data?.code === 'password_change_required') {
+                // Credenciales correctas, pero debe fijar una contraseña propia antes de entrar.
+                message.info('Debes cambiar tu contraseña antes de continuar.');
+                // El token va en el state de la navegación, no en la URL: no queda en el historial.
+                navigate('/activar', {
+                    state: {
+                        credentialToken: error.response.data.credential_token,
+                        email: values.email,
+                        next: searchParams.get('next'),
+                    },
+                });
+                return;
+            }
             if (status === 401 || status === 400) {
                 form.setFields([
                     { name: 'password', errors: [detail || 'Usuario o contraseña incorrectos'] },
