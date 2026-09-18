@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { App as AntApp, Button, Flex, Form, Spin, Typography } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
 import * as credentialsAPI from '@/api/credentials';
+import * as sessionAPI from '@/api/session';
 import AuthShell, { BRAND } from '../components/AuthShell';
 import NewPasswordFields from '../components/NewPasswordFields';
 
@@ -77,6 +78,11 @@ export default function SetPasswordPage() {
         setSaving(true);
         try {
             await credentialsAPI.setCredential(token, password);
+            // Reset propio en el mismo navegador: el contenedor de panel conserva la cuenta
+            // ya revocada y el selector ciclaría en el login; se destruye para llegar a un
+            // login en blanco. Si no había sesión (invitación), ambos llamados fallan sin efecto.
+            await sessionAPI.fetchSession().catch(() => {});
+            await sessionAPI.logoutAll().catch(() => {});
             message.success('Contraseña guardada. Ya puedes iniciar sesión.');
             navigate(loginUrl(location.state), { replace: true });
         } catch (err) {

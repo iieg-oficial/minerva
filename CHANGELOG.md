@@ -23,9 +23,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Fixed
 
-- **El cambio de contraseña por enlace dejaba el panel ciclando en el login.** `setCredential` no
-  refrescaba el caché de sesión tras revocar las sesiones del usuario, así que el selector reusaba el
-  estado viejo y rebotaba (login → selector → login). Ahora refresca, como el cambio propio.
+- **El cambio de contraseña por enlace dejaba el panel ciclando en el login.** Al fijar la
+  contraseña por enlace (sin sesión de panel) el backend revoca las sesiones pero no puede limpiar el
+  contenedor del navegador, así que el selector seguía ofreciendo la cuenta ya revocada: elegirla daba
+  401 y rebotaba (login → selector → login). `SetPasswordPage` ahora destruye el contenedor tras
+  guardar, para llegar a un login en blanco.
 - **El panel reventaba (React #31) al mostrar un error de validación 422.** Renderizaba el
   `detail` de FastAPI —un arreglo de objetos— como texto; ahora se normaliza a su mensaje legible.
 - **El aviso de privacidad del login apuntaba a un PDF con fecha en la URL.** El enlace del pie
