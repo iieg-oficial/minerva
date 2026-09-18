@@ -159,6 +159,16 @@ equivalentes heredadas (`DATABASE_URL`, `JWT_SECRET_KEY`, etc.).
 | `RATE_LIMIT_LOGIN_WINDOW` | `900` | Ventana del rate limit de login (segundos). |
 | `RATE_LIMIT_AUTHORIZE_MAX` | `20` | Peticiones a `/authorize` por ventana. |
 | `RATE_LIMIT_AUTHORIZE_WINDOW` | `60` | Ventana del rate limit de `/authorize` (segundos). |
+| `RATE_LIMIT_CREDENTIAL_MAX` | `30` | Peticiones por IP a los enlaces para fijar contraseña, por ventana. |
+| `RATE_LIMIT_CREDENTIAL_WINDOW` | `900` | Ventana de ese rate limit (segundos). |
+
+### Enlaces de contraseña
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `CREDENTIAL_INVITE_TTL_HOURS` | `72` | Vigencia del enlace de invitación (alta sin contraseña). |
+| `CREDENTIAL_RESET_TTL_HOURS` | `24` | Vigencia del enlace de restablecimiento que genera un administrador. |
+| `CREDENTIAL_FORCED_CHANGE_TTL_MINUTES` | `10` | Vigencia del token que emite el login cuando la contraseña debe cambiarse. |
 
 ## 5. Manifests
 

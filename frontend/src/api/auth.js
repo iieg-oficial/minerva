@@ -47,6 +47,17 @@ export function logoutAll() {
     return sessionLogoutAll();
 }
 
+// Cambio de contraseña propio: exige la actual. El backend invalida todas las sesiones del
+// usuario y saca su cuenta del navegador, así que después hay que volver a iniciar sesión.
+export async function changePassword(currentPassword, newPassword) {
+    await client.post('/auth/password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+    });
+    // Refleja en el caché que la cuenta salió; si falla, el cambio ya quedó hecho igual.
+    await fetchSession().catch(() => {});
+}
+
 export async function register(full_name, email, password) {
     const { data } = await client.post('/auth/register', { full_name, email, password });
     setCsrf(data.csrf);

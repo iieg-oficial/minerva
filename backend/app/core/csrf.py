@@ -28,6 +28,10 @@ _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # `Origin` de arriba se sigue aplicando, y la defensa del consumidor contra login-CSRF
 # es su `state`.
 _CSRF_EXEMPT_PREFIXES = ("/auth/login", "/auth/register", "/auth/token", "/auth/revoke", "/auth/authorize")
+# Los enlaces de credencial se autentican con su token de un solo uso, no con la sesión: quien
+# los abre puede no tener sesión o tener la de otra cuenta. Rutas exactas, no prefijo, para no
+# eximir por accidente una ruta futura que empiece igual.
+_CSRF_EXEMPT_PATHS = frozenset({"/auth/credential", "/auth/credential/inspect"})
 
 
 async def panel_csrf_middleware(request: Request, call_next):
@@ -37,7 +41,8 @@ async def panel_csrf_middleware(request: Request, call_next):
             origin = request.headers.get("origin")
             if origin and origin.rstrip("/") != settings.FRONTEND_URL.rstrip("/"):
                 return JSONResponse({"detail": "Origin no permitido"}, status_code=403)
-            if not request.url.path.startswith(_CSRF_EXEMPT_PREFIXES):
+            path = request.url.path
+            if not path.startswith(_CSRF_EXEMPT_PREFIXES) and path not in _CSRF_EXEMPT_PATHS:
                 container = await panel_session.read(get_redis(), sid)
                 if container is None or not panel_session.csrf_valid(container, request.headers.get("x-csrf-token")):
                     return JSONResponse({"detail": "Token CSRF inválido o ausente"}, status_code=403)

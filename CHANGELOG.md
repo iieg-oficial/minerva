@@ -20,6 +20,53 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   objeto en el bucket, sin tocar este repo ni desplegar. Es el mismo destino que usan mariachi y
   sieej, así que el usuario ve el mismo aviso en las tres pantallas.
 
+## [1.0.1] - 2026-09-14
+
+> **Release intermedio.** Las personas fijan y cambian su propia contraseña (invitación,
+> restablecimiento, cambio obligatorio y cambio propio), y el rol `minerva.admin` deja de conceder
+> administración global fuera de la app `minerva`. Incluye la migración `012_credential_lifecycle`.
+> ⚠️ **Cambio de contrato:** `PATCH /users/{id}` con `password` ahora exige cambiarla en el próximo
+> ingreso, salvo que se envíe `"require_change": false` (ver *Changed*).
+
+### Added
+
+- **Ciclo de vida de la credencial.** Hasta ahora la contraseña solo la creaba o cambiaba un
+  administrador global, era obligatoria al dar de alta y nada forzaba a cambiar una temporal.
+  - **Alta por invitación:** `POST /users` sin `password` crea al usuario en estado `pending` y
+    devuelve un enlace de un solo uso (`credential_link`) que el administrador entrega; con él la
+    persona fija su contraseña en `/activar` y la cuenta pasa a `active`. Sin SMTP.
+  - **Restablecimiento:** `POST /users/{id}/credential-link` genera un enlace nuevo (invitación si
+    sigue pendiente, restablecimiento si no) e invalida los anteriores. Es también la vía de
+    recuperación por olvido mientras Minerva no envíe correo.
+  - **Cambio obligatorio:** si un administrador fija la contraseña (`PATCH /users/{id}`), la
+    persona debe cambiarla en su próximo ingreso (`require_change`, activo por defecto). El login
+    responde `403 password_change_required` con un token de un solo uso y **no** abre sesión.
+  - **Cambio propio:** `POST /auth/password` (sesión + CSRF, exige la contraseña actual) y la
+    pantalla `/cuenta/contrasena`, accesible también para quien no es administrador.
+  - Los enlaces guardan solo el hash del token, llevan el token en el fragmento (`#token=`) para
+    que no llegue a logs ni al `Referer`, vencen (`CREDENTIAL_INVITE_TTL_HOURS=72`,
+    `CREDENTIAL_RESET_TTL_HOURS=24`) y tienen rate limit por IP (`RATE_LIMIT_CREDENTIAL_*`). Fijar
+    o cambiar la contraseña invalida todas las sesiones y refresh tokens previos del usuario.
+  - Migración `012_credential_lifecycle`: tabla `credential_tokens` y columna
+    `users.password_change_required`.
+
+### Changed
+
+- **`PATCH /users/{id}` con `password` ahora obliga a cambiarla en el próximo ingreso.** Es un
+  cambio de contrato para quien ya fijaba contraseñas por API: el login responde `403
+  password_change_required` hasta que la persona defina una propia. Para conservar el
+  comportamiento anterior, envía `"require_change": false`.
+- **El estado `pending` solo lo asigna el alta sin contraseña.** Ponerlo a mano responde 400, y
+  fijar una contraseña a un usuario pendiente lo activa y anula su invitación.
+
+### Security
+
+- **El rol `minerva.admin` solo da administración global si pertenece a la app `minerva`.**
+  `is_minerva_admin` comparaba únicamente el slug del rol, así que un rol con ese nombre en
+  cualquier otra aplicación habría pasado por administrador global. Además, crear roles con el
+  prefijo `minerva.` fuera de la app `minerva` ahora responde 400. Hoy solo un administrador global
+  crea roles, pero el cierre es previo a delegar administración por aplicación.
+
 ## [1.0.0] - 2026-08-21
 
 > **Primer release estable.** Minerva publica el perfil OIDC Authorization Code + PKCE,

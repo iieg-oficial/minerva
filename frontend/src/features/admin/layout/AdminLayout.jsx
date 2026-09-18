@@ -19,6 +19,7 @@ import {
     UsergroupAddOutlined,
     CheckCircleOutlined,
     FileTextOutlined,
+    LockOutlined,
     LogoutOutlined,
     PlusOutlined,
     DownOutlined,
@@ -81,6 +82,7 @@ export default function AdminLayout() {
     const menuItems = [
         ...(accountItems.length ? [...accountItems, { type: 'divider' }] : []),
         { key: 'add', icon: <PlusOutlined />, label: 'Agregar otra cuenta' },
+        { key: 'password', icon: <LockOutlined />, label: 'Cambiar contraseña' },
         { key: 'logout', icon: <LogoutOutlined />, label: 'Cerrar sesión', danger: true },
         ...(sessions.length > 1
             ? [{ key: 'logoutAll', label: 'Cerrar todas las sesiones', danger: true }]
@@ -90,6 +92,7 @@ export default function AdminLayout() {
     const onAccountMenu = useCallback(
         async ({ key }) => {
             if (key === 'add') return navigate('/login?add=1');
+            if (key === 'password') return navigate('/cuenta/contrasena');
             if (key === 'logout') {
                 // Logout suave: cierra la cuenta activa; quedan las demás para reingresar.
                 try {

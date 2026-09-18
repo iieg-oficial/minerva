@@ -4,6 +4,8 @@ import LoginPage from '@features/auth/pages/LoginPage';
 import AuthorizePage from '@features/auth/pages/AuthorizePage';
 import LogoutPage from '@features/auth/pages/LogoutPage';
 import NoAccessPage from '@features/auth/pages/NoAccessPage';
+import SetPasswordPage from '@features/auth/pages/SetPasswordPage';
+import ChangePasswordPage from '@features/auth/pages/ChangePasswordPage';
 import DashboardPage from '@features/auth/pages/DashboardPage';
 import AdminLayout from '@features/admin/layout/AdminLayout';
 import ProtectedRoute from '@features/auth/components/ProtectedRoute';
@@ -25,6 +27,16 @@ export default function App() {
                     <Route path="/authorize" element={<AuthorizePage />} />
                     <Route path="/no-access" element={<NoAccessPage />} />
                     <Route path="/logout" element={<LogoutPage />} />
+                    {/* Fuera de /auth/*: nginx proxea ese prefijo al backend. */}
+                    <Route path="/activar" element={<SetPasswordPage />} />
+                    <Route
+                        path="/cuenta/contrasena"
+                        element={
+                            <ProtectedRoute requireAdmin={false}>
+                                <ChangePasswordPage />
+                            </ProtectedRoute>
+                        }
+                    />
                     <Route
                         path="/admin"
                         element={

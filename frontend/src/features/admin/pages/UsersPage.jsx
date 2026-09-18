@@ -1,15 +1,36 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Typography, Space, App, Divider } from 'antd';
-import { PlusOutlined, EditOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
+import {
+    Table,
+    Button,
+    Modal,
+    Form,
+    Input,
+    Select,
+    Typography,
+    Space,
+    App,
+    Divider,
+    Checkbox,
+    Popconfirm,
+} from 'antd';
+import {
+    PlusOutlined,
+    EditOutlined,
+    ReloadOutlined,
+    DeleteOutlined,
+    LinkOutlined,
+} from '@ant-design/icons';
 import * as usersAPI from '@/api/users';
 import * as applicationsAPI from '@/api/applications';
 import * as rolesAPI from '@/api/roles';
 import { assignRoleToUser } from '@/api/groups';
 
-const { Title } = Typography;
+const { Title, Paragraph, Text } = Typography;
 
 const STATUS_OPTIONS = [
     { label: 'Activo', value: 'active' },
+    // Solo lo asigna el alta por invitación; se muestra pero no se puede elegir a mano.
+    { label: 'Pendiente', value: 'pending', disabled: true },
     { label: 'Inactivo', value: 'inactive' },
     { label: 'Suspendido', value: 'suspended' },
 ];
@@ -23,6 +44,8 @@ export default function UsersPage() {
     const [pagination, setPagination] = useState({ offset: 0, limit: 10 });
     const [applications, setApplications] = useState([]);
     const [roles, setRoles] = useState([]);
+    // Enlace recién emitido ({ email, url, purpose, expires_at }): se muestra una sola vez.
+    const [credentialLink, setCredentialLink] = useState(null);
     const [form] = Form.useForm();
     const [editForm] = Form.useForm();
     const { message } = App.useApp();
@@ -59,9 +82,10 @@ export default function UsersPage() {
     }, [message]);
 
     const handleCreate = async (values) => {
-        const { roleAssignments, ...userData } = values;
+        const { roleAssignments, password, ...userData } = values;
         try {
-            const user = await usersAPI.createUser(userData);
+            // Sin contraseña (o borrada) el alta es por invitación: no se manda el campo vacío.
+            const user = await usersAPI.createUser(password ? { ...userData, password } : userData);
             const roleIds = (roleAssignments || []).map((a) => a?.role_id).filter(Boolean);
             for (const roleId of roleIds) {
                 try {
@@ -74,6 +98,9 @@ export default function UsersPage() {
             setModalOpen(false);
             form.resetFields();
             fetchUsers();
+            if (user.credential_link) {
+                setCredentialLink({ email: user.email, ...user.credential_link });
+            }
         } catch (err) {
             message.error(err.response?.data?.detail || 'Error al crear usuario');
         }
@@ -85,6 +112,7 @@ export default function UsersPage() {
             full_name: user.full_name,
             email: user.email,
             password: '',
+            require_change: true,
             status: user.status,
             domain: user.domain || '',
         });
@@ -92,9 +120,12 @@ export default function UsersPage() {
     };
 
     const handleUpdate = async (values) => {
+        // Sin contraseña nueva no se manda el campo (ni su marca de cambio obligatorio).
+        const { password, require_change, ...rest } = values;
+        const payload = password ? { ...rest, password, require_change } : rest;
         try {
             if (editingUser) {
-                await usersAPI.updateUser(editingUser.id, values);
+                await usersAPI.updateUser(editingUser.id, payload);
                 message.success('Usuario actualizado');
             }
             setModalOpen(false);
@@ -104,6 +135,15 @@ export default function UsersPage() {
             fetchUsers();
         } catch (err) {
             message.error(err.response?.data?.detail || 'Error al actualizar usuario');
+        }
+    };
+
+    const handleIssueLink = async (user) => {
+        try {
+            const link = await usersAPI.createCredentialLink(user.id);
+            setCredentialLink({ email: user.email, ...link });
+        } catch (err) {
+            message.error(err.response?.data?.detail || 'No se pudo generar el enlace');
         }
     };
 
@@ -145,14 +185,35 @@ export default function UsersPage() {
         {
             title: '',
             key: 'actions',
-            width: 60,
+            width: 90,
             render: (_, record) => (
-                <Button
-                    type="text"
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={() => handleEdit(record)}
-                />
+                <Space size={0}>
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<EditOutlined />}
+                        aria-label="Editar usuario"
+                        onClick={() => handleEdit(record)}
+                    />
+                    <Popconfirm
+                        title={
+                            record.status === 'pending'
+                                ? '¿Generar un nuevo enlace de invitación?'
+                                : '¿Generar un enlace para restablecer la contraseña?'
+                        }
+                        description="Cualquier enlace anterior de este usuario dejará de funcionar."
+                        okText="Generar"
+                        cancelText="Cancelar"
+                        onConfirm={() => handleIssueLink(record)}
+                    >
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={<LinkOutlined />}
+                            aria-label="Generar enlace de contraseña"
+                        />
+                    </Popconfirm>
+                </Space>
             ),
         },
     ];
@@ -232,8 +293,13 @@ export default function UsersPage() {
                             >
                                 <Input />
                             </Form.Item>
-                            <Form.Item name="password" label="Contraseña" rules={[{ required: true }]}>
-                                <Input.Password />
+                            <Form.Item
+                                name="password"
+                                label="Contraseña (opcional)"
+                                rules={[{ min: 8, message: 'Debe tener al menos 8 caracteres' }]}
+                                extra="Déjala vacía para invitar: se genera un enlace para que la persona defina su contraseña."
+                            >
+                                <Input.Password autoComplete="new-password" />
                             </Form.Item>
 
                             <Divider style={{ margin: '8px 0 16px' }}>
@@ -346,6 +412,11 @@ export default function UsersPage() {
                                     autoComplete="new-password"
                                 />
                             </Form.Item>
+                            <Form.Item name="require_change" valuePropName="checked">
+                                <Checkbox>
+                                    Pedir que la cambie en su próximo ingreso (si pones una nueva)
+                                </Checkbox>
+                            </Form.Item>
                             <Form.Item name="status" label="Estado">
                                 <Select options={STATUS_OPTIONS} />
                             </Form.Item>
@@ -358,6 +429,42 @@ export default function UsersPage() {
                         {isEditMode ? 'Guardar cambios' : 'Crear usuario'}
                     </Button>
                 </Form>
+            </Modal>
+
+            <Modal
+                title={
+                    credentialLink?.purpose === 'invite'
+                        ? 'Enlace de invitación'
+                        : 'Enlace para restablecer la contraseña'
+                }
+                open={!!credentialLink}
+                onCancel={() => setCredentialLink(null)}
+                footer={
+                    <Button type="primary" onClick={() => setCredentialLink(null)}>
+                        Listo
+                    </Button>
+                }
+            >
+                {credentialLink && (
+                    <>
+                        <Paragraph>
+                            Entrega este enlace a <Text strong>{credentialLink.email}</Text> para
+                            que defina su contraseña. Es de un solo uso y vence el{' '}
+                            {new Date(credentialLink.expires_at).toLocaleString('es-MX')}.
+                        </Paragraph>
+                        <Paragraph
+                            code
+                            copyable={{ text: credentialLink.url }}
+                            style={{ wordBreak: 'break-all' }}
+                        >
+                            {credentialLink.url}
+                        </Paragraph>
+                        <Text type="secondary">
+                            No se podrá volver a consultar: si se pierde, genera uno nuevo desde la
+                            lista de usuarios.
+                        </Text>
+                    </>
+                )}
             </Modal>
         </div>
     );

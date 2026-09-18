@@ -15,11 +15,14 @@ export default function NoAccessPage() {
             status="403"
             title="Sin acceso al panel"
             subTitle="Tu cuenta no tiene el rol de administrador de Minerva. Comunícate con un administrador si crees que es un error."
-            extra={
-                <Button type="primary" onClick={handleLogout}>
+            extra={[
+                <Button key="password" onClick={() => navigate('/cuenta/contrasena')}>
+                    Cambiar mi contraseña
+                </Button>,
+                <Button key="logout" type="primary" onClick={handleLogout}>
                     Cerrar sesión
-                </Button>
-            }
+                </Button>,
+            ]}
             style={{
                 minHeight: '100dvh',
                 display: 'flex',

@@ -31,11 +31,22 @@ from app.modules.auth.schemas import (
     AuthRegister,
     AuthTokenResponse,
     PanelSessionResponse,
+    PasswordChange,
     SessionView,
     SetActiveRequest,
 )
-from app.modules.auth.service import AuthService, RefreshReuseError, build_callback_url, session_auth_time
+from app.modules.auth.service import (
+    AuthService,
+    PasswordChangeRequired,
+    RefreshReuseError,
+    build_callback_url,
+    session_auth_time,
+)
 from app.modules.authorization.service import AuthorizationService
+from app.modules.credentials.schemas import CredentialInspection, CredentialSet, CredentialTokenIn
+from app.modules.credentials.service import CredentialService
+from app.modules.users.invalidation import apply_with_invalidation
+from app.modules.users.service import UserService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -85,6 +96,14 @@ def get_auth_service(session: Session = Depends(get_db)) -> AuthService:
 
 def get_audit_service(session: Session = Depends(get_db)) -> AuditService:
     return AuditService(session)
+
+
+def get_credential_service(session: Session = Depends(get_db)) -> CredentialService:
+    return CredentialService(session)
+
+
+def get_user_service(session: Session = Depends(get_db)) -> UserService:
+    return UserService(session)
 
 
 def _set_session_cookie(response: Response, sid: str) -> None:
@@ -177,6 +196,22 @@ async def login(
         result = service.login(data.email, data.password)
         audit.log("manual_login_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
         return await _establish_panel_session(request, response, session, redis, result["access_token"])
+    except PasswordChangeRequired as exc:
+        audit.log(
+            "manual_login_password_change_required",
+            ip_address=request.client.host,
+            user_agent=request.headers.get("user-agent"),
+            event_metadata={"email": data.email},
+        )
+        # Sin cookie ni sesión: la SPA lleva a /activar con este token para fijar la nueva.
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": "Debes cambiar tu contraseña antes de continuar",
+                "code": "password_change_required",
+                "credential_token": exc.credential_token,
+            },
+        )
     except Exception:
         audit.log(
             "manual_login_failed",
@@ -261,6 +296,101 @@ async def logout_all(
     await panel_session.destroy(redis, ps["sid"])
     response.delete_cookie(settings.session_cookie_name, path="/")
     return {"message": "Todas las sesiones cerradas"}
+
+
+async def _enforce_credential_rate_limit(redis: Redis, audit: AuditService, request: Request) -> None:
+    await _enforce_rate_limit_audited(
+        redis,
+        f"minerva:rl:credential:{request.client.host}",
+        settings.RATE_LIMIT_CREDENTIAL_MAX,
+        settings.RATE_LIMIT_CREDENTIAL_WINDOW,
+        audit,
+        request,
+        "credential",
+    )
+
+
+@router.post("/credential/inspect", response_model=CredentialInspection)
+async def inspect_credential(
+    data: CredentialTokenIn,
+    request: Request,
+    credentials: CredentialService = Depends(get_credential_service),
+    audit: AuditService = Depends(get_audit_service),
+    redis: Redis = Depends(get_redis),
+):
+    """Valida un enlace de credencial antes de pedir la contraseña: para qué es y de quién
+    (correo enmascarado). Es POST y no GET para que el token no quede en logs de acceso."""
+    await _enforce_credential_rate_limit(redis, audit, request)
+    return credentials.inspect(data.token)
+
+
+@router.post("/credential")
+async def set_credential(
+    data: CredentialSet,
+    request: Request,
+    credentials: CredentialService = Depends(get_credential_service),
+    audit: AuditService = Depends(get_audit_service),
+    session: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    """Fija la contraseña con un enlace de un solo uso (invitación, restablecimiento o cambio
+    obligatorio). Exento de CSRF: la prueba es el token del enlace, no la sesión. Invalida
+    las sesiones previas del usuario; para entrar, se inicia sesión con la contraseña nueva."""
+    await _enforce_credential_rate_limit(redis, audit, request)
+    token = credentials.consume(data.token, data.password, commit=False)
+    audit.log(
+        "credential_set",
+        actor_user_id=token.user_id,
+        target_type="user",
+        target_id=token.user_id,
+        ip_address=request.client.host,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata={"purpose": token.purpose},
+        commit=False,
+    )
+    await apply_with_invalidation(session, redis, token.user_id)
+    return {"message": "Contraseña establecida"}
+
+
+@router.post("/password")
+async def change_password(
+    data: PasswordChange,
+    request: Request,
+    users: UserService = Depends(get_user_service),
+    audit: AuditService = Depends(get_audit_service),
+    current_user: dict = Depends(get_current_panel_user),
+    ps: dict = Depends(get_panel_session),
+    session: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    """Cambio de contraseña del propio usuario (exige la actual). Invalida todas sus sesiones
+    y refresh tokens —también la de este navegador— y saca su cuenta del contenedor: se
+    vuelve a entrar con la contraseña nueva. Las demás cuentas del navegador no se tocan."""
+    sub = current_user["sub"]
+    await _enforce_rate_limit_audited(
+        redis,
+        f"minerva:rl:password:{sub}",
+        settings.RATE_LIMIT_LOGIN_MAX,
+        settings.RATE_LIMIT_LOGIN_WINDOW,
+        audit,
+        request,
+        "password",
+    )
+    users.change_own_password(sub, data.current_password, data.new_password, commit=False)
+    audit.log(
+        "password_change_self",
+        actor_user_id=sub,
+        target_type="user",
+        target_id=sub,
+        ip_address=request.client.host,
+        user_agent=request.headers.get("user-agent"),
+        commit=False,
+    )
+    await apply_with_invalidation(session, redis, sub)
+    container = ps["container"]
+    panel_session.remove_account(container, sub)
+    await panel_session.write(redis, ps["sid"], container)
+    return {"message": "Contraseña actualizada; inicia sesión de nuevo"}
 
 
 @router.get("/me")
