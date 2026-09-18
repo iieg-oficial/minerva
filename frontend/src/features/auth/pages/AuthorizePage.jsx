@@ -7,6 +7,7 @@ import { useSession } from '@features/auth/SessionContext';
 import { getAppBranding } from '@/api/public';
 import AccountSelector from '../components/AccountSelector';
 import AuthShell from '../components/AuthShell';
+import { formatApiError } from '@/api/errors';
 
 const { Text } = Typography;
 
@@ -89,8 +90,7 @@ export default function AuthorizePage() {
                     navigate(loginNext(), { replace: true });
                     return;
                 }
-                const detail =
-                    err.response?.data?.detail || 'No se pudo completar la autorización.';
+                const detail = formatApiError(err, 'No se pudo completar la autorización.');
                 if (popupMode) postToOpener(redirectUri, { state, error: 'server_error' });
                 message.error(detail);
                 setError(detail);

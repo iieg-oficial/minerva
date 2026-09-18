@@ -120,14 +120,24 @@ class AuthService:
         self.role_perm_repo = RolePermissionRepository(session)
 
     def register(self, data: AuthRegister) -> dict:
-        from app.modules.users.schemas import UserCreate
+        from app.core.security import hash_password
+        from app.modules.users.models import User
 
-        user_data = UserCreate(email=data.email, full_name=data.full_name, password=data.password)
-        user = self.user_service.create_user(user_data)
+        # Auto-registro: la persona define su propia contraseña (distinto del alta por
+        # admin, que es solo por invitación). Cerrado en producción por R4.
+        if self.user_repo.get_by_email(data.email):
+            raise ConflictError(detail="El correo ya está registrado")
+        user = self.user_repo.create(
+            User(
+                email=data.email,
+                full_name=data.full_name,
+                hashed_password=hash_password(data.password),
+                status="active",
+            )
+        )
         # El alta es un evento de autenticación (deja sesión abierta), así que registra
-        # el último acceso igual que el login. `create_user` devuelve el schema de
-        # lectura, no el modelo, así que se recarga.
-        self._touch_last_login(self.user_repo.get_by_id(user.id))
+        # el último acceso igual que el login.
+        self._touch_last_login(user)
         token = self.oidc_service.issue_session_token(user.id, user.email, user.full_name)
         return {
             "access_token": token,

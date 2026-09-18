@@ -29,6 +29,7 @@ import * as appsAPI from '@/api/applications';
 import * as usersAPI from '@/api/users';
 import * as rolesAPI from '@/api/roles';
 import * as groupsAPI from '@/api/groups';
+import { formatApiError } from '@/api/errors';
 
 const { Title, Text } = Typography;
 const FONT = '"Garet", sans-serif';
@@ -93,7 +94,7 @@ function AccessPanel({ apps, users }) {
             setAddValue((prev) => ({ ...prev, [roleId]: undefined }));
             await refreshRole(roleId);
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al agregar usuario');
+            message.error(formatApiError(err, 'Error al agregar usuario'));
         } finally {
             setBusy(false);
         }
@@ -106,7 +107,7 @@ function AccessPanel({ apps, users }) {
             message.success('Usuario removido del rol');
             await refreshRole(roleId);
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al remover usuario');
+            message.error(formatApiError(err, 'Error al remover usuario'));
         } finally {
             setBusy(false);
         }
@@ -251,7 +252,7 @@ function VerifyPanel({ apps, users }) {
         try {
             setResult(await authzAPI.checkPermission(values));
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al verificar permiso');
+            message.error(formatApiError(err, 'Error al verificar permiso'));
         }
     };
 
@@ -259,7 +260,7 @@ function VerifyPanel({ apps, users }) {
         try {
             setMyPerms(await authzAPI.getMePermissions(values.application_slug));
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al consultar permisos');
+            message.error(formatApiError(err, 'Error al consultar permisos'));
         }
     };
 

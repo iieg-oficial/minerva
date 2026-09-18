@@ -4,6 +4,7 @@ import { PlusOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons';
 import * as groupsAPI from '@/api/groups';
 import * as usersAPI from '@/api/users';
 import * as rolesAPI from '@/api/roles';
+import { formatApiError } from '@/api/errors';
 
 const { Title } = Typography;
 
@@ -60,7 +61,7 @@ export default function GroupsPage() {
             form.resetFields();
             fetchGroups();
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al crear grupo');
+            message.error(formatApiError(err, 'Error al crear grupo'));
         }
     };
 
@@ -79,7 +80,7 @@ export default function GroupsPage() {
             editForm.resetFields();
             fetchGroups();
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al actualizar grupo');
+            message.error(formatApiError(err, 'Error al actualizar grupo'));
         }
     };
 
@@ -94,7 +95,7 @@ export default function GroupsPage() {
             message.success('Usuario agregado al grupo');
             memberForm.resetFields();
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al agregar usuario');
+            message.error(formatApiError(err, 'Error al agregar usuario'));
         }
     };
 
@@ -103,7 +104,7 @@ export default function GroupsPage() {
             await groupsAPI.addRoleToGroup(selectedGroup.id, values.role_id);
             message.success('Rol asignado al grupo');
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al asignar rol');
+            message.error(formatApiError(err, 'Error al asignar rol'));
         }
     };
 

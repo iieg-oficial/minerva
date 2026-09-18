@@ -151,6 +151,26 @@ def client():
     return TestClient(app)
 
 
+def _seed_user(email: str, full_name: str, password: str = "testpass123", status: str = "active") -> None:
+    """Siembra un usuario con contraseña directo en la BD. El alta por API es ahora solo
+    por invitación (sin contraseña), así que la suite crea aquí los usuarios logueables;
+    va directo al hash, sin pasar por la política de `NewPassword`."""
+    from app.core.security import hash_password
+
+    with Session(test_engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        if not user:
+            session.add(
+                User(
+                    email=email,
+                    full_name=full_name,
+                    hashed_password=hash_password(password),
+                    status=status,
+                )
+            )
+            session.commit()
+
+
 def _grant_minerva_admin(email: str) -> None:
     """Asigna el rol global minerva.admin a un usuario (creando app/rol si faltan).
 
@@ -195,17 +215,7 @@ def make_session_token():
 
 @pytest.fixture
 def admin_token(client):
-    client.post(
-        "/auth/register",
-        json={
-            "email": "testadmin@iieg.gob.mx",
-            "full_name": "Test Admin",
-            "password": "testpass123",
-        },
-    )
-    # /register fija la cookie de sesión en el jar del TestClient; la limpiamos para
-    # que la suite legacy (que autentica por Bearer) no dispare el middleware CSRF.
-    client.cookies.clear()
+    _seed_user("testadmin@iieg.gob.mx", "Test Admin")
     _grant_minerva_admin("testadmin@iieg.gob.mx")
     return _mint_session_token("testadmin@iieg.gob.mx")
 
@@ -213,15 +223,7 @@ def admin_token(client):
 @pytest.fixture
 def non_admin_token(client):
     """Token de un usuario autenticado pero SIN rol de administrador."""
-    client.post(
-        "/auth/register",
-        json={
-            "email": "plainuser@iieg.gob.mx",
-            "full_name": "Plain User",
-            "password": "testpass123",
-        },
-    )
-    client.cookies.clear()
+    _seed_user("plainuser@iieg.gob.mx", "Plain User")
     return _mint_session_token("plainuser@iieg.gob.mx")
 
 

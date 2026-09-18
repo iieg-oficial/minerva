@@ -1,10 +1,7 @@
 from datetime import datetime
-from typing import Annotated
-
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.credentials.schemas import CredentialLink
-from app.shared.validators import validate_password_max_bytes
 
 
 class UserBase(BaseModel):
@@ -13,17 +10,13 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    # Sin contraseña, el usuario queda `pending` y se emite un enlace de invitación.
-    password: Annotated[str | None, Field(min_length=8), AfterValidator(validate_password_max_bytes)] = None
+    # El admin no fija contraseña: el usuario queda `pending` y se emite un enlace de invitación.
     domain: str | None = None
 
 
 class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=6, max_length=255)
     email: str | None = None
-    password: Annotated[str | None, Field(min_length=8), AfterValidator(validate_password_max_bytes)] = None
-    # Solo aplica si viene `password`: la persona deberá cambiarla en su próximo ingreso.
-    require_change: bool = True
     status: str | None = None
     domain: str | None = None
 

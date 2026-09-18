@@ -59,8 +59,8 @@ def create_user(
     _current_user: dict = Depends(get_current_panel_user),
 ):
     result = service.create_user(data, commit=False)
-    # Sin contraseña: el usuario queda pendiente y el admin entrega el enlace de invitación.
-    link = None if data.password else credentials.issue_link(result.id, created_by=_current_user["sub"], commit=False)
+    # El alta es siempre por invitación: se emite el enlace que el admin entrega.
+    link = credentials.issue_link(result.id, created_by=_current_user["sub"], commit=False)
     audit.log(
         "user_create",
         actor_user_id=_current_user["sub"],
@@ -117,7 +117,7 @@ async def update_user(
 ):
     # Cambiar contraseña, correo o desactivar invalida las sesiones vigentes.
     invalidating = (
-        data.password is not None or data.email is not None or (data.status is not None and data.status != "active")
+        data.email is not None or (data.status is not None and data.status != "active")
     )
     result = service.update_user(user_id, data, commit=False)
     audit.log(

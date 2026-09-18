@@ -48,9 +48,9 @@ class UserService:
         user = User(
             email=data.email,
             full_name=data.full_name,
-            hashed_password=hash_password(data.password) if data.password else None,
-            # Sin contraseña queda pendiente hasta que la persona la fije con su invitación.
-            status="active" if data.password else "pending",
+            hashed_password=None,
+            # El admin no fija contraseña: queda pendiente hasta definirla por invitación.
+            status="pending",
             domain=data.domain,
         )
 
@@ -71,19 +71,13 @@ class UserService:
                 raise ConflictError(detail="El correo ya está registrado")
             user.email = data.email
             email_changed = True
-        if data.password:
-            user.hashed_password = hash_password(data.password)
-            user.password_change_required = data.require_change
-            # Con una contraseña asignada ya no espera su invitación.
-            if user.status == "pending" and data.status is None:
-                user.status = "active"
         if data.status is not None:
             _check_status_change(user.status, data.status)
             user.status = data.status
         if data.domain is not None:
             user.domain = data.domain
         # Un enlace pendiente no debe sobrevivir a un cambio de credenciales ni a una baja.
-        if data.password or email_changed or user.status not in LINKABLE_STATUSES:
+        if email_changed or user.status not in LINKABLE_STATUSES:
             self.credential_repo.invalidate_unused_for_user(user_id)
 
         user = self.repo.update(user, commit=commit)

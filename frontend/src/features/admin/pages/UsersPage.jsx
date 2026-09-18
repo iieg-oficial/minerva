@@ -1,18 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import {
-    Table,
-    Button,
-    Modal,
-    Form,
-    Input,
-    Select,
-    Typography,
-    Space,
-    App,
-    Divider,
-    Checkbox,
-    Popconfirm,
-} from 'antd';
+import { Table, Button, Modal, Form, Input, Select, Typography, Space, App, Divider, Popconfirm } from 'antd';
 import {
     PlusOutlined,
     EditOutlined,
@@ -24,6 +11,7 @@ import * as usersAPI from '@/api/users';
 import * as applicationsAPI from '@/api/applications';
 import * as rolesAPI from '@/api/roles';
 import { assignRoleToUser } from '@/api/groups';
+import { formatApiError } from '@/api/errors';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -82,10 +70,10 @@ export default function UsersPage() {
     }, [message]);
 
     const handleCreate = async (values) => {
-        const { roleAssignments, password, ...userData } = values;
+        const { roleAssignments, ...userData } = values;
         try {
             // Sin contraseña (o borrada) el alta es por invitación: no se manda el campo vacío.
-            const user = await usersAPI.createUser(password ? { ...userData, password } : userData);
+            const user = await usersAPI.createUser(userData);
             const roleIds = (roleAssignments || []).map((a) => a?.role_id).filter(Boolean);
             for (const roleId of roleIds) {
                 try {
@@ -102,7 +90,7 @@ export default function UsersPage() {
                 setCredentialLink({ email: user.email, ...user.credential_link });
             }
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al crear usuario');
+            message.error(formatApiError(err, 'Error al crear usuario'));
         }
     };
 
@@ -111,8 +99,6 @@ export default function UsersPage() {
         editForm.setFieldsValue({
             full_name: user.full_name,
             email: user.email,
-            password: '',
-            require_change: true,
             status: user.status,
             domain: user.domain || '',
         });
@@ -120,9 +106,8 @@ export default function UsersPage() {
     };
 
     const handleUpdate = async (values) => {
-        // Sin contraseña nueva no se manda el campo (ni su marca de cambio obligatorio).
-        const { password, require_change, ...rest } = values;
-        const payload = password ? { ...rest, password, require_change } : rest;
+        // El admin no fija contraseñas: solo datos del usuario. La credencial va por enlace.
+        const payload = values;
         try {
             if (editingUser) {
                 await usersAPI.updateUser(editingUser.id, payload);
@@ -134,7 +119,7 @@ export default function UsersPage() {
             editForm.resetFields();
             fetchUsers();
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al actualizar usuario');
+            message.error(formatApiError(err, 'Error al actualizar usuario'));
         }
     };
 
@@ -143,7 +128,7 @@ export default function UsersPage() {
             const link = await usersAPI.createCredentialLink(user.id);
             setCredentialLink({ email: user.email, ...link });
         } catch (err) {
-            message.error(err.response?.data?.detail || 'No se pudo generar el enlace');
+            message.error(formatApiError(err, 'No se pudo generar el enlace'));
         }
     };
 
@@ -153,7 +138,7 @@ export default function UsersPage() {
             message.success('Estado actualizado');
             fetchUsers();
         } catch (err) {
-            message.error(err.response?.data?.detail || 'Error al cambiar estado');
+            message.error(formatApiError(err, 'Error al cambiar estado'));
         }
     };
 
@@ -293,15 +278,8 @@ export default function UsersPage() {
                             >
                                 <Input />
                             </Form.Item>
-                            <Form.Item
-                                name="password"
-                                label="Contraseña (opcional)"
-                                rules={[{ min: 8, message: 'Debe tener al menos 8 caracteres' }]}
-                                extra="Déjala vacía para invitar: se genera un enlace para que la persona defina su contraseña."
-                            >
-                                <Input.Password autoComplete="new-password" />
-                            </Form.Item>
-
+                            {/* Sin campo de contraseña: al crear se emite un enlace de
+                                invitación para que la persona defina la suya. */}
                             <Divider style={{ margin: '8px 0 16px' }}>
                                 Aplicaciones y roles (opcional)
                             </Divider>
@@ -402,21 +380,8 @@ export default function UsersPage() {
                             >
                                 <Input />
                             </Form.Item>
-                            <Form.Item
-                                name="password"
-                                label="Nueva contraseña"
-                                extra="Déjalo vacío para conservar la contraseña actual"
-                            >
-                                <Input.Password
-                                    placeholder="••••••••"
-                                    autoComplete="new-password"
-                                />
-                            </Form.Item>
-                            <Form.Item name="require_change" valuePropName="checked">
-                                <Checkbox>
-                                    Pedir que la cambie en su próximo ingreso (si pones una nueva)
-                                </Checkbox>
-                            </Form.Item>
+                            {/* La contraseña no se edita aquí: se restablece con el botón de
+                                enlace de la lista, que la persona usa para definir la suya. */}
                             <Form.Item name="status" label="Estado">
                                 <Select options={STATUS_OPTIONS} />
                             </Form.Item>

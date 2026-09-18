@@ -7,8 +7,24 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+
+- **Política de contraseña y medidor de fuerza.** Toda contraseña nueva —activación por
+  invitación y cambio propio— exige mínimo 8 caracteres y al menos 2 de tres familias
+  (mayúscula y minúscula, número, carácter especial), validada en el backend y con un indicador
+  de fuerza en la pantalla. Portado del medidor de mariachi.
+
+### Changed
+
+- **El alta y la edición de usuarios ya no fijan contraseña: siempre es por invitación.** El
+  panel emite un enlace de un solo uso para que la persona defina la suya; se retiró el campo de
+  contraseña y la marca de cambio obligatorio del alta/edición, y `UserCreate`/`UserUpdate` dejan
+  de aceptar `password` (y `require_change`).
+
 ### Fixed
 
+- **El panel reventaba (React #31) al mostrar un error de validación 422.** Renderizaba el
+  `detail` de FastAPI —un arreglo de objetos— como texto; ahora se normaliza a su mensaje legible.
 - **El aviso de privacidad del login apuntaba a un PDF con fecha en la URL.** El enlace del pie
   llevaba a `iieg.gob.mx/ns/wp-content/uploads/2025/06/Aviso_de_Privacidad_Integral_IIEG_06_2025.pdf`,
   así que el día que el instituto publique una versión nueva el enlace queda apuntando a la vieja o
