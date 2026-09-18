@@ -34,13 +34,12 @@ function tokenFromHash(hash) {
 // (cambio obligatorio) y conservando el `next` de un flujo /authorize.
 function loginUrl(state) {
     const params = new URLSearchParams();
-    if (state?.email) {
-        params.set('add', '1');
-        params.set('email', state.email);
-    }
+    // Tras fijar la contraseña se manda siempre al formulario de login normal, no al
+    // selector de cuentas: `add=1` fuerza el formulario aunque el contenedor tenga cuentas.
+    params.set('add', '1');
+    if (state?.email) params.set('email', state.email);
     if (state?.next) params.set('next', state.next);
-    const query = params.toString();
-    return query ? `/login?${query}` : '/login';
+    return `/login?${params.toString()}`;
 }
 
 export default function SetPasswordPage() {
