@@ -27,6 +27,15 @@ function clientIdFromNext(next) {
     return new URLSearchParams(query).get('client_id');
 }
 
+// Un consumidor puede pedir el branding de OTRA app con `app_branding` (p. ej. sieej,
+// que entra con el client de mariachi pero quiere mostrar su propia identidad). Si viene,
+// gana sobre el `client_id`; el login y los permisos siguen siendo los del client real.
+function brandingIdFromNext(next) {
+    if (!next || !next.startsWith('/authorize')) return null;
+    const params = new URLSearchParams(next.slice(next.indexOf('?') + 1));
+    return params.get('app_branding') || params.get('client_id');
+}
+
 export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [branding, setBranding] = useState(null);
@@ -44,6 +53,7 @@ export default function LoginPage() {
 
     const next = safeNext(searchParams.get('next'));
     const clientId = clientIdFromNext(searchParams.get('next'));
+    const brandingId = brandingIdFromNext(searchParams.get('next'));
     // Modo "agregar cuenta": el selector manda aquí con ?add=1 para forzar el
     // formulario aunque ya haya una sesión activa. `email` prellena la cuenta.
     const addMode = !!searchParams.get('add');
@@ -61,11 +71,11 @@ export default function LoginPage() {
     useEffect(() => {
         // Personaliza la pantalla con el branding de la app solicitante. Si la app
         // no existe o no tiene branding, se conserva la identidad genérica de Minerva.
-        if (!clientId) return;
-        getAppBranding(clientId)
+        if (!brandingId) return;
+        getAppBranding(brandingId)
             .then(setBranding)
             .catch(() => setBranding(null));
-    }, [clientId]);
+    }, [brandingId]);
 
     // `initialValues` solo se aplica al montar el Form: si el formulario ya estaba en
     // pantalla, el correo prellenado no llegaba al campo. Se sincroniza a mano.
