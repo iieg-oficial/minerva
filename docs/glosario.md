@@ -1306,9 +1306,11 @@ más que `"bX"` si el secreto empieza con `a`. Repitiendo, se reconstruye el sec
 **Qué es.** Probar credenciales masivamente hasta acertar. La defensa es limitar cuántos
 intentos se aceptan por unidad de tiempo.
 
-**Ejemplo.** Minerva aplica rate limiting por IP real (por eso importa `FORWARDED_ALLOW_IPS`
-detrás del proxy: sin él, todos los intentos parecerían venir de la IP de nginx y el límite se
-aplicaría mal a todo el mundo).
+**Ejemplo.** Minerva limita el login en dos niveles: por **cuenta** (fallos por correo, el que
+frena la fuerza bruta aunque el atacante rote IPs) y por **IP** real, con un umbral alto. La IP sale
+de `X-Forwarded-For` solo si lo puso un proxy de confianza (`MINERVA_TRUSTED_PROXY` en nginx,
+`FORWARDED_ALLOW_IPS` en el backend): si se confiara en el header tal como lo manda el cliente,
+bastaría con cambiarlo en cada intento para esquivar el límite.
 
 ### Phishing
 

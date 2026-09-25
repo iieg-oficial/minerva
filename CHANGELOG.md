@@ -41,6 +41,28 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   objeto en el bucket, sin tocar este repo ni desplegar. Es el mismo destino que usan mariachi y
   sieej, así que el usuario ve el mismo aviso en las tres pantallas.
 
+### Security
+
+- **El límite de intentos del login se esquivaba cambiando `X-Forwarded-For` (#209).** nginx
+  reenviaba el header del cliente con `$proxy_add_x_forwarded_for` y el backend confiaba en
+  cualquier origen (`FORWARDED_ALLOW_IPS="*"`), así que bastaba rotar el header para no topar nunca.
+  Ahora nginx solo cree el `X-Forwarded-For` del proxy de confianza (`MINERVA_TRUSTED_PROXY`, por
+  defecto ninguno) y lo reemplaza por la IP resuelta, y el backend solo confía en la IP fija de
+  nginx (`MINERVA_PROXY_IP` dentro de `MINERVA_SUBNET`). ⚠️ La red interna pasa a subred fija:
+  recrearla una vez (`just down && just up`).
+- **Límite de intentos por cuenta en el login (#209).** Tras `RATE_LIMIT_LOGIN_MAX` fallos de una
+  cuenta en `RATE_LIMIT_LOGIN_WINDOW`, esa cuenta responde 429 con `Retry-After`, con la misma
+  respuesta exista o no. Un login exitoso limpia el contador. El límite por IP se conserva como
+  segundo nivel con `RATE_LIMIT_LOGIN_IP_MAX`/`RATE_LIMIT_LOGIN_IP_WINDOW` (200 en 15 min): detrás
+  de un WAF que no agrega `X-Forwarded-For` todos comparten IP y un tope bajo bloquearía a todos.
+  ⚠️ `RATE_LIMIT_LOGIN_MAX` pasa de contar intentos por IP a contar fallos por cuenta.
+- **Tras cerrar sesión, la cuenta se reactivaba sin contraseña (#210).** «Cerrar sesión» era un
+  logout suave: conservaba el token de 8 h y el selector volvía a activarlo con un clic, así que en
+  un equipo compartido quien llegaba después entraba como la persona anterior. Ahora
+  `POST /auth/logout` revoca el token de la cuenta activa y la deja en el selector como cerrada
+  (`signed_out`), pidiendo contraseña para volver. `POST /auth/session/active` solo activa cuentas
+  con sesión viva y responde 409 si no; cambiar entre cuentas abiertas sigue sin pedir contraseña.
+
 ## [1.0.1] - 2026-09-14
 
 > **Release intermedio.** Las personas fijan y cambian su propia contraseña (invitación,

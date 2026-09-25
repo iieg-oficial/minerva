@@ -88,8 +88,18 @@ class Settings(BaseSettings):
     # invalidación por usuario y el contenedor de sesión del panel (patrón BFF, la
     # fuente de verdad efímera del multi-cuenta). NO es la fuente de verdad de datos.
     REDIS_URL: str = "redis://minerva_redis:6379/0"
+    # Login, primer nivel: fallos por CUENTA (correo normalizado). Es la defensa real contra
+    # fuerza bruta: no depende de la IP, así que no se esquiva rotando X-Forwarded-For ni
+    # repartiendo intentos entre máquinas. Solo cuentan los fallos y un login exitoso limpia
+    # el contador. El cambio de contraseña propio usa los mismos valores, por `sub`.
     RATE_LIMIT_LOGIN_MAX: int = 5
     RATE_LIMIT_LOGIN_WINDOW: int = 900  # segundos (15 min)
+    # Login, segundo nivel: intentos por IP. El umbral es alto a propósito: detrás de un WAF o
+    # borde que no agrega X-Forwarded-For todos los usuarios llegan con la misma IP, y un tope
+    # bajo bloquearía el login de toda la institución a la vez. Queda como freno de volumen
+    # (password spraying, costo de bcrypt), no como límite por persona.
+    RATE_LIMIT_LOGIN_IP_MAX: int = 200
+    RATE_LIMIT_LOGIN_IP_WINDOW: int = 900
     RATE_LIMIT_AUTHORIZE_MAX: int = 20
     RATE_LIMIT_AUTHORIZE_WINDOW: int = 60
     # Por IP: una oficina detrás de un NAT puede activar varias cuentas seguidas. El token

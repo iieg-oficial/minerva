@@ -117,8 +117,15 @@ Implicaciones:
 
 - El **backend NO publica puerto** en el deploy (solo nginx lo alcanza). El issuer queda en
   `http://<host>` **sin `:9000`**.
-- El backend recibe `FORWARDED_ALLOW_IPS=*` (seguro: nadie más que nginx lo alcanza), así honra
-  `X-Forwarded-For` y el **rate limit de login se cuenta por IP real del cliente**, no por la de nginx.
+- **IP real del cliente, sin confiar en lo que mande el cliente.** nginx solo cree el
+  `X-Forwarded-For` que llega desde `MINERVA_TRUSTED_PROXY` (el reverse proxy o gateway de
+  delante; por defecto nadie) y lo **reemplaza** por la IP ya resuelta antes de pasarlo al backend.
+  El backend recibe `FORWARDED_ALLOW_IPS` con **la IP fija de nginx** (`MINERVA_PROXY_IP`, dentro de
+  `MINERVA_SUBNET`), nunca `*`: un cliente que alcanzara el backend por otra vía no puede elegir su
+  IP. Si delante hay un WAF o borde que **no** agrega `X-Forwarded-For`, no lo pongas como proxy de
+  confianza: todos los usuarios llegarán con su IP y por eso el login limita **por cuenta** además
+  de por IP (ver `RATE_LIMIT_LOGIN_*` en §2.3). Cambiar la subred obliga a recrear la red:
+  `just down && just up`.
 - **TLS lo termina un terminador externo** delante de nginx (este nginx sirve HTTP). nginx propaga el
   esquema real del cliente al backend con `X-Forwarded-Proto` (respeta el que envía el terminador;
   si no hay, usa `$scheme`), así el backend ve `https` aunque el salto interno sea HTTP.
@@ -146,8 +153,15 @@ Implicaciones:
   cookie `__Host-` es host-only: dos dominios distintos rompen el BFF (401 silencioso).
 - `MINERVA_ACCESS_TOKEN_TTL_MINUTES` / `MINERVA_REFRESH_TOKEN_TTL_DAYS`: ciclo de vida
   de los tokens OIDC emitidos a consumidores.
-- `RATE_LIMIT_LOGIN_MAX` / `RATE_LIMIT_LOGIN_WINDOW` / `RATE_LIMIT_AUTHORIZE_MAX` /
-  `RATE_LIMIT_AUTHORIZE_WINDOW`: ajustar según tráfico esperado.
+- `RATE_LIMIT_LOGIN_MAX` / `RATE_LIMIT_LOGIN_WINDOW`: fallos de login **por cuenta** antes de
+  responder 429 con `Retry-After` (la misma respuesta exista o no la cuenta). Es el freno real de la
+  fuerza bruta; un login exitoso limpia el contador.
+- `RATE_LIMIT_LOGIN_IP_MAX` / `RATE_LIMIT_LOGIN_IP_WINDOW`: intentos de login **por IP**, segundo
+  nivel. Alto a propósito: detrás de un WAF que no agrega `X-Forwarded-For` es un tope global para
+  toda la institución.
+- `RATE_LIMIT_AUTHORIZE_MAX` / `RATE_LIMIT_AUTHORIZE_WINDOW`: por IP; ajustar según tráfico esperado
+  (con IP compartida detrás de un WAF, también es global).
+- `MINERVA_TRUSTED_PROXY`, `MINERVA_SUBNET`, `MINERVA_PROXY_IP`: IP real del cliente, ver §2.2.
 - `RATE_LIMIT_CREDENTIAL_MAX` / `RATE_LIMIT_CREDENTIAL_WINDOW`: límite por IP de los enlaces para
   fijar contraseña. Súbelo si una oficina detrás de un mismo NAT activa muchas cuentas a la vez.
 - `CREDENTIAL_INVITE_TTL_HOURS` / `CREDENTIAL_RESET_TTL_HOURS` /
