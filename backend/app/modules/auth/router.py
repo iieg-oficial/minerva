@@ -19,7 +19,14 @@ from app.core.dependencies.auth import (
     get_panel_session,
 )
 from app.core.dependencies.db import get_db
-from app.core.exceptions import AppException, BadRequestError, ForbiddenError, NotFoundError, TooManyRequestsError
+from app.core.exceptions import (
+    AppException,
+    BadRequestError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    TooManyRequestsError,
+)
 from app.core.rate_limit import enforce_rate_limit
 from app.core.redis import get_redis
 from app.core.token_blacklist import revoke_jti
@@ -245,20 +252,42 @@ async def login(
 async def get_session(ps: dict = Depends(get_panel_session)):
     """Estado del selector multi-cuenta (cuentas del navegador + activa + CSRF). Fuente
     de verdad del selector: el navegador ya no guarda tokens. Tolera no tener cuenta
-    activa (logout suave) para poder seguir pintando el selector."""
+    activa (tras cerrar sesión) para poder seguir pintando el selector."""
     return panel_session.session_view(ps["container"])
+
+
+async def _account_session_alive(session: Session, redis: Redis, account: dict) -> bool:
+    """Si el token guardado de una cuenta sigue valiendo: no vencido, no revocado y sin
+    corte por usuario (cambio de contraseña, status). Mismo criterio que el panel."""
+    if not panel_session.has_live_token(account):
+        return False
+    try:
+        await _resolve_token(account["token"], session, redis, expected_types={"session"}, audience="minerva")
+    except ValueError:
+        return False
+    return True
 
 
 @router.post("/session/active", response_model=AccountDescriptor)
 async def set_active_account(
     data: SetActiveRequest,
     ps: dict = Depends(get_panel_session),
+    session: Session = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
-    """Cambia la cuenta activa del navegador (dentro del contenedor de sesión)."""
+    """Cambia la cuenta activa del navegador sin pedir contraseña, solo si la sesión de esa
+    cuenta sigue viva (multi-cuenta). Una cuenta cerrada con «Cerrar sesión», vencida o
+    invalidada responde 409: la SPA pide la contraseña y entra por `/auth/login`."""
     container = ps["container"]
-    if not panel_session.set_active(container, data.sub):
+    account = container["accounts"].get(data.sub)
+    if account is None:
         raise NotFoundError(detail="La cuenta no está iniciada en este navegador")
+    if not await _account_session_alive(session, redis, account):
+        # Se descarta el token muerto para que el selector la muestre como cerrada.
+        panel_session.sign_out(container, data.sub)
+        await panel_session.write(redis, ps["sid"], container)
+        raise ConflictError(detail="La sesión de esta cuenta está cerrada; ingresa tu contraseña para continuar")
+    panel_session.set_active(container, data.sub)
     await panel_session.write(redis, ps["sid"], container)
     return panel_session.descriptor(data.sub, container["accounts"][data.sub])
 
@@ -270,12 +299,14 @@ async def logout(
     audit: AuditService = Depends(get_audit_service),
     redis: Redis = Depends(get_redis),
 ):
-    """Logout suave: sale de la cuenta activa pero conserva las cuentas
-    del navegador y sus tokens (para volver a entrar sin re-teclear). NO revoca el jti:
-    para invalidar de verdad están "quitar cuenta" y "cerrar todas las sesiones"."""
+    """Cierra la sesión de la cuenta activa y revoca su token (blacklist del `jti`). La
+    cuenta sigue en el selector para reingresar sin teclear el correo, pero volver a ella
+    pide contraseña: en un equipo compartido, quien llega después no entra como la persona
+    anterior. Las demás cuentas del navegador no se tocan y siguen activables."""
     container = ps["container"]
     active = container.get("active")
-    panel_session.soft_logout(container)
+    if active:
+        await _revoke_account_token(redis, panel_session.sign_out(container, active))
     await panel_session.write(redis, ps["sid"], container)
     audit.log(
         "logout",

@@ -22,6 +22,12 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   segundo nivel con `RATE_LIMIT_LOGIN_IP_MAX`/`RATE_LIMIT_LOGIN_IP_WINDOW` (200 en 15 min): detrás
   de un WAF que no agrega `X-Forwarded-For` todos comparten IP y un tope bajo bloquearía a todos.
   ⚠️ `RATE_LIMIT_LOGIN_MAX` pasa de contar intentos por IP a contar fallos por cuenta.
+- **Tras cerrar sesión, la cuenta se reactivaba sin contraseña (#210).** «Cerrar sesión» era un
+  logout suave: conservaba el token de 8 h y el selector volvía a activarlo con un clic, así que en
+  un equipo compartido quien llegaba después entraba como la persona anterior. Ahora
+  `POST /auth/logout` revoca el token de la cuenta activa y la deja en el selector como cerrada
+  (`signed_out`), pidiendo contraseña para volver. `POST /auth/session/active` solo activa cuentas
+  con sesión viva y responde 409 si no; cambiar entre cuentas abiertas sigue sin pedir contraseña.
 
 ## [1.0.1] - 2026-09-14
 
