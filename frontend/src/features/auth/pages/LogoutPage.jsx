@@ -42,7 +42,7 @@ export default function LogoutPage() {
         // la llamada de logout).
         if (loading) return;
 
-        // logout() es suave (cierra la cuenta activa; las demás quedan para reingresar).
+        // logout() cierra y revoca la cuenta activa; las demás quedan para reingresar.
         // Sin cuenta activa no hay nada que cerrar: solo redirige.
         if (!active) {
             finish();

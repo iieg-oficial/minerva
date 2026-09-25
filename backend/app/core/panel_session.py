@@ -15,7 +15,7 @@ con acceso de lectura a Redis se recupere el `sid` en claro.
 
 Forma del contenedor:
     {
-      "accounts": { "<sub>": {"token","exp","email","name","is_admin"} },
+      "accounts": { "<sub>": {"token","exp","jti","email","name","is_admin"} },
       "active": "<sub>" | None,
       "csrf": "<token>",
     }
@@ -110,16 +110,34 @@ def add_account(
     container["active"] = sub
 
 
+def has_live_token(account: dict) -> bool:
+    """Si la cuenta conserva un token no vencido. No valida firma ni revocación: eso lo
+    hace `_resolve_token`; aquí solo se descarta lo que seguro ya no sirve."""
+    return bool(account.get("token")) and not is_expired(account)
+
+
 def set_active(container: dict, sub: str) -> bool:
-    if sub in container["accounts"]:
-        container["active"] = sub
-        return True
-    return False
+    """Activa una cuenta del contenedor solo si su sesión sigue viva. Una cuenta cerrada o
+    vencida se reactiva únicamente iniciando sesión con contraseña."""
+    account = container["accounts"].get(sub)
+    if account is None or not has_live_token(account):
+        return False
+    container["active"] = sub
+    return True
 
 
-def soft_logout(container: dict) -> None:
-    """Logout suave: sale de la cuenta activa sin borrarla ni revocarla."""
-    container["active"] = None
+def sign_out(container: dict, sub: str) -> dict | None:
+    """Cierra la sesión de una cuenta sin quitarla del selector: descarta su token y la
+    deja vencida, así que volver a ella pide contraseña. Devuelve el registro previo para
+    que el caller revoque su `jti`. Si era la activa, el contenedor queda sin activa."""
+    account = container["accounts"].get(sub)
+    if account is None:
+        return None
+    previous = dict(account)
+    account.update(token=None, jti=None, exp=0)
+    if container.get("active") == sub:
+        container["active"] = None
+    return previous
 
 
 def remove_account(container: dict, sub: str) -> dict | None:
@@ -128,7 +146,7 @@ def remove_account(container: dict, sub: str) -> dict | None:
     account = container["accounts"].pop(sub, None)
     if container.get("active") == sub:
         container["active"] = next(
-            (s for s, a in container["accounts"].items() if not is_expired(a)),
+            (s for s, a in container["accounts"].items() if has_live_token(a)),
             None,
         )
     return account
@@ -165,7 +183,8 @@ def descriptor(sub: str, account: dict) -> dict:
         "name": account.get("name", ""),
         "is_admin": bool(account.get("is_admin")),
         "exp": account.get("exp", 0),
-        "expired": is_expired(account),
+        "expired": not has_live_token(account),
+        "signed_out": not account.get("token"),
     }
 
 
@@ -195,11 +214,15 @@ if __name__ == "__main__":
     assert descriptor("u2", c["accounts"]["u2"])["expired"] is True
     assert descriptor("u1", c["accounts"]["u1"])["expired"] is False
 
-    soft_logout(c)
-    assert c["active"] is None and "u1" in c["accounts"]  # conserva cuentas
+    assert not set_active(c, "u2")  # vencida: no se reactiva sin contraseña
+    add_account(c, "u3", "tok3", email="u3@x", name="U3", is_admin=False, exp=int(time.time()) + 999)
+    closed = sign_out(c, "u3")
+    assert closed["token"] == "tok3" and c["active"] is None and "u3" in c["accounts"]  # sigue en el selector
+    assert descriptor("u3", c["accounts"]["u3"])["signed_out"] is True
+    assert not set_active(c, "u3")  # cerrada: pide contraseña
 
     set_active(c, "u1")
-    removed = remove_account(c, "u1")  # era activa; u2 está expirada → sin activa
+    removed = remove_account(c, "u1")  # era activa; u2 y u3 no están vivas → sin activa
     assert removed["token"] == "tok1" and c["active"] is None
 
     assert csrf_valid(c, c["csrf"]) and not csrf_valid(c, "otro") and not csrf_valid(c, None)

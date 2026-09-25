@@ -38,7 +38,10 @@ class AccountDescriptor(BaseModel):
     name: str
     is_admin: bool
     exp: int
+    # Sin sesión viva (vencida o cerrada): volver a ella pide contraseña.
     expired: bool
+    # Se cerró con «Cerrar sesión»: sigue en el selector, pero su token ya se revocó.
+    signed_out: bool = False
 
 
 class PanelSessionResponse(BaseModel):

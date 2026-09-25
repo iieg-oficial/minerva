@@ -10,7 +10,7 @@ import {
     Typography,
 } from 'antd';
 import { PlusCircleOutlined } from '@ant-design/icons';
-import { getSessions, isExpired, removeSession, setActive } from '@/api/session';
+import { fetchSession, getSessions, isExpired, removeSession, setActive } from '@/api/session';
 import { BRAND } from './AuthShell';
 
 const { Title, Text } = Typography;
@@ -360,12 +360,25 @@ export default function AccountSelector({
     // `exigeContrasena` viene de `prompt=login`: ahí la cuenta puede estar vigente y aun
     // así hay que re-autenticar. Sin esta comprobación bastaba cerrar la tarjeta y volver
     // a tocarla para entrar sin escribir nada.
+    //
+    // Una cuenta cerrada con «Cerrar sesión» llega marcada como vencida. Si aun así el
+    // backend rechaza activarla (409: su sesión se revocó por otra vía), se refresca el
+    // estado y se pide la contraseña igual: sólo una sesión viva entra sin escribirla.
     const handleSelect = async (session) => {
         if (exigeContrasena || isExpired(session)) {
             setAbierta(session.sub);
             return;
         }
-        await setActive(session.sub); // fija la cuenta activa en el backend antes de continuar
+        try {
+            await setActive(session.sub); // fija la cuenta activa en el backend antes de continuar
+        } catch (e) {
+            if (e.response?.status !== 409) throw e;
+            await fetchSession();
+            refresh();
+            onAccountsChanged?.();
+            setAbierta(session.sub);
+            return;
+        }
         onSelect(session);
     };
 

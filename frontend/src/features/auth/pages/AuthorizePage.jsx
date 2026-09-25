@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { App as AntApp, Button, Flex, Result, Spin, Typography } from 'antd';
-import { authorizeUrl } from '@/api/auth';
+import { authorizeUrl, login } from '@/api/auth';
 import { setActive } from '@/api/session';
 import { useSession } from '@features/auth/SessionContext';
 import { getAppBranding } from '@/api/public';
@@ -164,8 +164,13 @@ export default function AuthorizePage() {
         setSelecting(false);
         proceed();
     };
-    const onReauth = (session) =>
-        navigate(loginNext(`&add=1&email=${encodeURIComponent(session.email)}`), { replace: true });
+    // Una cuenta sin sesión viva (cerrada o vencida) pide la contraseña sobre su tarjeta;
+    // al entrar, sigue la autorización con esa cuenta ya activa.
+    const onEntrar = async (email, password) => {
+        await login(email, password);
+        setSelecting(false);
+        proceed();
+    };
     const onAddAccount = () => navigate(loginNext('&add=1'), { replace: true });
 
     if (error) {
@@ -194,7 +199,7 @@ export default function AuthorizePage() {
                     appName={branding?.display_name || branding?.name}
                     brandColor={branding?.brand_color}
                     onSelect={onSelect}
-                    onReauth={onReauth}
+                    onEntrar={onEntrar}
                     onAddAccount={onAddAccount}
                 />
             </AuthShell>

@@ -17,7 +17,8 @@
  *  1. login con cookie + CSRF,
  *  2. /authorize transporta `state` y `max_age`,
  *  3. cambiar de cuenta aísla al consumidor,
- *  4. un logout fallido no navega ni finge haber cerrado la sesión.
+ *  4. un logout fallido no navega ni finge haber cerrado la sesión,
+ *  5. tras cerrar sesión, la cuenta no se reactiva sin contraseña.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -64,14 +65,15 @@ const METODOS_MUTANTES = ['POST', 'PUT', 'PATCH', 'DELETE'];
 // del middleware del backend, acotado a lo que usa el panel.
 const EXENTAS_DE_CSRF = ['/auth/login', '/auth/register'];
 
-function descriptor(cuenta) {
+function descriptor(cuenta, cerrada = false) {
     return {
         sub: cuenta.sub,
         email: cuenta.email,
         name: cuenta.name,
         is_admin: !!cuenta.is_admin,
-        exp: cuenta.exp ?? Math.floor(Date.now() / 1000) + 3600,
-        expired: !!cuenta.expired,
+        exp: cerrada ? 0 : (cuenta.exp ?? Math.floor(Date.now() / 1000) + 3600),
+        expired: cerrada || !!cuenta.expired,
+        signed_out: cerrada,
     };
 }
 
@@ -94,6 +96,8 @@ function crearMinervaFalsa({ usuarios = [], sesionPrevia = null, fallos = {} } =
     const estado = {
         cuentas: sesionPrevia ? [...sesionPrevia.cuentas] : [],
         activa: sesionPrevia?.activa ?? null,
+        // Cuentas cerradas con «Cerrar sesión»: siguen listadas, pero su token se revocó.
+        cerradas: new Set(),
         csrf: sesionPrevia ? 'csrf-inicial' : '',
         // La cookie es HttpOnly: JS nunca la ve. Se simula del lado del servidor
         // porque es justo lo que el navegador reenviaría en cada petición.
@@ -168,6 +172,7 @@ function crearMinervaFalsa({ usuarios = [], sesionPrevia = null, fallos = {} } =
             estado.cookie = `sid-${rotaciones}`;
             estado.csrf = `csrf-${rotaciones}`;
             if (!estado.cuentas.some((c) => c.sub === usuario.sub)) estado.cuentas.push(usuario);
+            estado.cerradas.delete(usuario.sub);
             estado.activa = usuario.sub;
             return responder(config, 200, { active: descriptor(usuario), csrf: estado.csrf });
         }
@@ -176,7 +181,7 @@ function crearMinervaFalsa({ usuarios = [], sesionPrevia = null, fallos = {} } =
             if (!conSesion) return responder(config, 401, { detail: 'No autenticado' });
             const activa = estado.cuentas.find((c) => c.sub === estado.activa);
             return responder(config, 200, {
-                accounts: estado.cuentas.map(descriptor),
+                accounts: estado.cuentas.map((c) => descriptor(c, estado.cerradas.has(c.sub))),
                 active: activa ? descriptor(activa) : null,
                 csrf: estado.csrf,
             });
@@ -189,13 +194,19 @@ function crearMinervaFalsa({ usuarios = [], sesionPrevia = null, fallos = {} } =
                 return responder(config, 404, {
                     detail: 'La cuenta no está iniciada en este navegador',
                 });
+            if (estado.cerradas.has(cuenta.sub))
+                return responder(config, 409, {
+                    detail: 'La sesión de esta cuenta está cerrada; ingresa tu contraseña para continuar',
+                });
             estado.activa = cuenta.sub;
             return responder(config, 200, descriptor(cuenta));
         }
 
         if (metodo === 'POST' && ruta === '/auth/logout') {
             if (!conSesion) return responder(config, 401, { detail: 'No autenticado' });
-            estado.activa = null; // logout suave: las cuentas siguen en el contenedor
+            // Revoca la activa: sigue en el contenedor, pero ya no se activa sin contraseña.
+            if (estado.activa) estado.cerradas.add(estado.activa);
+            estado.activa = null;
             return responder(config, 200, { message: 'Sesión cerrada' });
         }
 
@@ -388,5 +399,34 @@ describe('Smoke E2E de autenticación web', () => {
         expect(peticion('POST', '/auth/logout').csrf).toBe('csrf-inicial');
         expect(getActive()).toBeNull();
         expect(minerva.estado.activa).toBeNull();
+    });
+
+    it('tras cerrar sesión, la cuenta sigue en el selector pero pide contraseña para volver', async () => {
+        instalar(
+            crearMinervaFalsa({
+                usuarios: [ANA],
+                sesionPrevia: { cuentas: [ANA], activa: ANA.sub },
+            })
+        );
+        const user = userEvent.setup();
+        abrir('/logout?redirect_uri=/login');
+
+        expect(await screen.findByText('Pedirá tu contraseña')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: new RegExp(ANA.name) }));
+
+        // Quien llega después al equipo no entra con sólo tocar la cuenta: se pide la
+        // contraseña y no se intenta reactivarla.
+        const campo = await screen.findByPlaceholderText('Contraseña');
+        expect(peticion('POST', '/auth/session/active')).toBeUndefined();
+        expect(minerva.estado.activa).toBeNull();
+
+        await user.type(campo, ANA.password);
+        await user.click(screen.getByRole('button', { name: 'Entrar' }));
+
+        await vi.waitFor(() => expect(minerva.estado.activa).toBe(ANA.sub));
+        expect(peticion('POST', '/auth/login').cuerpo).toEqual({
+            email: ANA.email,
+            password: ANA.password,
+        });
     });
 });

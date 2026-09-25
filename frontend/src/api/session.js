@@ -50,6 +50,7 @@ export async function fetchSession() {
     return _state;
 }
 
+// Solo activa cuentas con sesión viva; una cerrada o revocada responde 409.
 export async function setActive(sub) {
     await client.post('/auth/session/active', { sub });
     return fetchSession();
@@ -60,8 +61,9 @@ export async function removeSession(sub) {
     return fetchSession();
 }
 
-// Logout suave: cierra la cuenta activa sin revocar su token; las
-// cuentas siguen en el contenedor para reingresar rápido.
+// Cierra la cuenta activa y el backend revoca su token. La cuenta sigue en el
+// contenedor (marcada `signed_out`) para reingresar sin teclear el correo, pero
+// volver a ella pide contraseña. Las demás cuentas no se tocan.
 export async function deactivate() {
     await client.post('/auth/logout');
     return fetchSession();

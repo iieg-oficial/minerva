@@ -79,8 +79,8 @@ def test_expired_account_reported(client, fresh_redis):
     assert view["accounts"][0]["expired"] is True
 
 
-# 5. Logout suave: conserva cuentas, sin activa; no revoca.
-def test_soft_logout_keeps_accounts(client, fresh_redis):
+# 5. «Cerrar sesión» revoca la cuenta activa pero la deja en el selector, cerrada.
+def test_logout_revokes_active_and_keeps_it_listed(client, fresh_redis):
     resp = _register(client, "soft@iieg.gob.mx")
     sid = resp.cookies.get(COOKIE)
     csrf = resp.json()["csrf"]
@@ -89,8 +89,67 @@ def test_soft_logout_keeps_accounts(client, fresh_redis):
     assert client.post("/auth/logout", headers=_csrf_headers(csrf)).status_code == 200
     view = client.get("/auth/session").json()
     assert view["active"] is None and len(view["accounts"]) == 1
-    assert asyncio.run(is_revoked(fresh_redis, jti)) is False  # NO revocado (suave)
+    account = view["accounts"][0]
+    assert account["signed_out"] is True and account["expired"] is True
+    assert asyncio.run(is_revoked(fresh_redis, jti)) is True
+    assert all(a["token"] is None for a in _read_container(fresh_redis, sid)["accounts"].values())
     assert client.get("/auth/me").status_code == 401  # sin activa
+
+
+# 5b. Una cuenta cerrada no se reactiva desde el selector sin contraseña (409); con
+#     `/auth/login` vuelve a entrar.
+def test_signed_out_account_requires_password(client):
+    resp = _register(client, "closed@iieg.gob.mx")
+    csrf = resp.json()["csrf"]
+    sub = resp.json()["active"]["sub"]
+    assert client.post("/auth/logout", headers=_csrf_headers(csrf)).status_code == 200
+
+    csrf = client.get("/auth/session").json()["csrf"]
+    r = client.post("/auth/session/active", json={"sub": sub}, headers=_csrf_headers(csrf))
+    assert r.status_code == 409
+    assert client.get("/auth/me").status_code == 401
+
+    relogin = client.post("/auth/login", json={"email": "closed@iieg.gob.mx", "password": "testpass123"})
+    assert relogin.status_code == 200
+    assert client.get("/auth/me").status_code == 200
+
+
+# 5c. Multi-cuenta: cerrar la activa no toca a las demás, que siguen activables sin
+#     contraseña mientras su sesión esté viva.
+def test_logout_keeps_other_live_accounts_switchable(client, fresh_redis):
+    _register(client, "keep-a@iieg.gob.mx")
+    resp_b = _register(client, "keep-b@iieg.gob.mx")  # queda activa
+    sid = resp_b.cookies.get(COOKIE)
+    view = client.get("/auth/session").json()
+    subs = {a["email"]: a["sub"] for a in view["accounts"]}
+    jti_a = _read_container(fresh_redis, sid)["accounts"][subs["keep-a@iieg.gob.mx"]]["jti"]
+
+    assert client.post("/auth/logout", headers=_csrf_headers(view["csrf"])).status_code == 200
+    assert asyncio.run(is_revoked(fresh_redis, jti_a)) is False
+
+    csrf = client.get("/auth/session").json()["csrf"]
+    body = {"sub": subs["keep-a@iieg.gob.mx"]}
+    assert client.post("/auth/session/active", json=body, headers=_csrf_headers(csrf)).status_code == 200
+    assert client.get("/auth/me").json()["user"]["email"] == "keep-a@iieg.gob.mx"
+
+
+# 5d. Si el token guardado ya no vale (revocado por otra vía), el selector tampoco lo
+#     reactiva: responde 409 y la cuenta pasa a mostrarse cerrada.
+def test_set_active_rejects_revoked_token(client, fresh_redis):
+    from app.core.token_blacklist import revoke_jti
+
+    _register(client, "rev-a@iieg.gob.mx")
+    resp_b = _register(client, "rev-b@iieg.gob.mx")
+    sid = resp_b.cookies.get(COOKIE)
+    view = client.get("/auth/session").json()
+    sub_a = next(a["sub"] for a in view["accounts"] if a["email"] == "rev-a@iieg.gob.mx")
+    asyncio.run(revoke_jti(fresh_redis, _read_container(fresh_redis, sid)["accounts"][sub_a]["jti"], 60))
+
+    r = client.post("/auth/session/active", json={"sub": sub_a}, headers=_csrf_headers(view["csrf"]))
+    assert r.status_code == 409
+    closed = next(a for a in client.get("/auth/session").json()["accounts"] if a["sub"] == sub_a)
+    assert closed["signed_out"] is True
+    assert client.get("/auth/me").json()["user"]["email"] == "rev-b@iieg.gob.mx"  # la activa sigue
 
 
 # 6. Quitar una cuenta la revoca sin tocar las demás.

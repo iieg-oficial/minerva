@@ -171,10 +171,9 @@ def test_get_me_unauthorized(client):
     assert response.status_code == 401
 
 
-def test_logout_soft_clears_active_account(client):
-    """Logout suave del panel: cierra la cuenta activa (la SPA vuelve a login) pero
-    NO revoca el token; la cuenta sigue en el contenedor para reingresar. La
-    revocación real se prueba en test_panel_session (quitar cuenta / logout-all)."""
+def test_logout_clears_active_account(client):
+    """Cerrar sesión deja el panel sin cuenta activa (la SPA vuelve a login). La
+    revocación del token y la reactivación con contraseña se prueban en test_panel_session."""
     reg = client.post(
         "/auth/register",
         json={"email": "logout_test@iieg.gob.mx", "full_name": "Logout Test", "password": "testpass123"},
