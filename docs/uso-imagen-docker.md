@@ -155,12 +155,22 @@ equivalentes heredadas (`DATABASE_URL`, `JWT_SECRET_KEY`, etc.).
 | Variable | Default | Descripción |
 |---|---|---|
 | `REDIS_URL` | `redis://minerva_redis:6379/0` | Conexión a Redis (rate limiting, blacklist de tokens, sesiones de `/authorize`). |
-| `RATE_LIMIT_LOGIN_MAX` | `5` | Intentos de login permitidos por ventana. |
-| `RATE_LIMIT_LOGIN_WINDOW` | `900` | Ventana del rate limit de login (segundos). |
+| `RATE_LIMIT_LOGIN_MAX` | `5` | Intentos **fallidos** de login por cuenta (correo normalizado) en la ventana; luego esa cuenta responde 429 con `Retry-After`. Un login exitoso limpia el contador. |
+| `RATE_LIMIT_LOGIN_WINDOW` | `900` | Ventana del límite por cuenta (segundos). |
+| `RATE_LIMIT_LOGIN_IP_MAX` | `200` | Intentos de login por IP en la ventana. Alto a propósito: detrás de un WAF o borde que no agrega `X-Forwarded-For`, todos comparten IP. |
+| `RATE_LIMIT_LOGIN_IP_WINDOW` | `900` | Ventana del límite por IP (segundos). |
 | `RATE_LIMIT_AUTHORIZE_MAX` | `20` | Peticiones a `/authorize` por ventana. |
 | `RATE_LIMIT_AUTHORIZE_WINDOW` | `60` | Ventana del rate limit de `/authorize` (segundos). |
 | `RATE_LIMIT_CREDENTIAL_MAX` | `30` | Peticiones por IP a los enlaces para fijar contraseña, por ventana. |
 | `RATE_LIMIT_CREDENTIAL_WINDOW` | `900` | Ventana de ese rate limit (segundos). |
+
+### Red e IP real del cliente
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `MINERVA_TRUSTED_PROXY` | `127.0.0.1/32` | IP o CIDR del proxy que va delante de nginx (reverse proxy, gateway) cuyo `X-Forwarded-For` se cree. El default no confía en nadie. **No** pongas aquí un WAF que no agregue `X-Forwarded-For`. |
+| `MINERVA_SUBNET` | `172.22.0.0/24` | Subred fija de la red interna de Minerva. Cámbiala si choca con otra red del host. |
+| `MINERVA_PROXY_IP` | `172.22.0.10` | IP fija de nginx dentro de esa subred; es la única en la que confía el backend (`FORWARDED_ALLOW_IPS`). |
 
 ### Enlaces de contraseña
 

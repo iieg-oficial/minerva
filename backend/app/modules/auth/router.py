@@ -24,6 +24,7 @@ from app.core.rate_limit import enforce_rate_limit
 from app.core.redis import get_redis
 from app.core.token_blacklist import revoke_jti
 from app.modules.audit.service import AuditService
+from app.modules.auth import login_throttle
 from app.modules.auth.schemas import (
     AccountDescriptor,
     AuthLogin,
@@ -66,13 +67,17 @@ async def _enforce_rate_limit_audited(
     try:
         await enforce_rate_limit(redis, key, max_requests, window)
     except TooManyRequestsError:
-        audit.log(
-            "rate_limit_exceeded",
-            ip_address=request.client.host,
-            user_agent=request.headers.get("user-agent"),
-            event_metadata={"endpoint": endpoint},
-        )
+        _audit_rate_limit(audit, request, {"endpoint": endpoint})
         raise
+
+
+def _audit_rate_limit(audit: AuditService, request: Request, metadata: dict) -> None:
+    audit.log(
+        "rate_limit_exceeded",
+        ip_address=request.client.host,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata=metadata,
+    )
 
 
 def _login_redirect_url(query: str) -> str:
@@ -183,20 +188,27 @@ async def login(
     session: Session = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
+    # Dos niveles: por IP (umbral alto, ver RATE_LIMIT_LOGIN_IP_MAX en config) y por cuenta,
+    # que es el que frena la fuerza bruta aunque todos compartan IP detrás del WAF.
     await _enforce_rate_limit_audited(
         redis,
         f"minerva:rl:login:{request.client.host}",
-        settings.RATE_LIMIT_LOGIN_MAX,
-        settings.RATE_LIMIT_LOGIN_WINDOW,
+        settings.RATE_LIMIT_LOGIN_IP_MAX,
+        settings.RATE_LIMIT_LOGIN_IP_WINDOW,
         audit,
         request,
         "login",
     )
     try:
+        await login_throttle.enforce(redis, data.email)
+    except TooManyRequestsError:
+        _audit_rate_limit(audit, request, {"endpoint": "login_account", "email": data.email})
+        raise
+    try:
         result = service.login(data.email, data.password)
-        audit.log("manual_login_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
-        return await _establish_panel_session(request, response, session, redis, result["access_token"])
     except PasswordChangeRequired as exc:
+        # La contraseña fue correcta: el contador de la cuenta se limpia igual que en un éxito.
+        await login_throttle.clear(redis, data.email)
         audit.log(
             "manual_login_password_change_required",
             ip_address=request.client.host,
@@ -212,7 +224,11 @@ async def login(
                 "credential_token": exc.credential_token,
             },
         )
-    except Exception:
+    except Exception as exc:
+        # Solo los rechazos del dominio (credenciales, cuenta inactiva) suman al contador de
+        # la cuenta; una falla de infraestructura no es un intento contra la contraseña.
+        if isinstance(exc, AppException):
+            await login_throttle.record(redis, data.email)
         audit.log(
             "manual_login_failed",
             ip_address=request.client.host,
@@ -220,6 +236,9 @@ async def login(
             event_metadata={"email": data.email},
         )
         raise
+    await login_throttle.clear(redis, data.email)
+    audit.log("manual_login_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
+    return await _establish_panel_session(request, response, session, redis, result["access_token"])
 
 
 @router.get("/session", response_model=SessionView)

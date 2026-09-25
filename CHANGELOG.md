@@ -7,6 +7,22 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Security
+
+- **El límite de intentos del login se esquivaba cambiando `X-Forwarded-For` (#209).** nginx
+  reenviaba el header del cliente con `$proxy_add_x_forwarded_for` y el backend confiaba en
+  cualquier origen (`FORWARDED_ALLOW_IPS="*"`), así que bastaba rotar el header para no topar nunca.
+  Ahora nginx solo cree el `X-Forwarded-For` del proxy de confianza (`MINERVA_TRUSTED_PROXY`, por
+  defecto ninguno) y lo reemplaza por la IP resuelta, y el backend solo confía en la IP fija de
+  nginx (`MINERVA_PROXY_IP` dentro de `MINERVA_SUBNET`). ⚠️ La red interna pasa a subred fija:
+  recrearla una vez (`just down && just up`).
+- **Límite de intentos por cuenta en el login (#209).** Tras `RATE_LIMIT_LOGIN_MAX` fallos de una
+  cuenta en `RATE_LIMIT_LOGIN_WINDOW`, esa cuenta responde 429 con `Retry-After`, con la misma
+  respuesta exista o no. Un login exitoso limpia el contador. El límite por IP se conserva como
+  segundo nivel con `RATE_LIMIT_LOGIN_IP_MAX`/`RATE_LIMIT_LOGIN_IP_WINDOW` (200 en 15 min): detrás
+  de un WAF que no agrega `X-Forwarded-For` todos comparten IP y un tope bajo bloquearía a todos.
+  ⚠️ `RATE_LIMIT_LOGIN_MAX` pasa de contar intentos por IP a contar fallos por cuenta.
+
 ## [1.0.1] - 2026-09-14
 
 > **Release intermedio.** Las personas fijan y cambian su propia contraseña (invitación,

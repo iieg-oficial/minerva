@@ -16,9 +16,10 @@ services:
       # viene íntegramente de .env, que es la única fuente de verdad.
       MINERVA_MANIFESTS_PATH: /app/manifests
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
-      # uvicorn/gunicorn honran X-Forwarded-For → request.client.host es la IP real
-      # (rate limit por cliente, no por la IP de nginx).
-      FORWARDED_ALLOW_IPS: "*"
+      # uvicorn/gunicorn solo honran X-Forwarded-For si la conexión viene de nginx (su IP
+      # fija en la red interna). Nunca "*": cualquiera que alcanzara el backend podría
+      # elegir su IP y esquivar el rate limit. nginx ya manda un único valor resuelto.
+      FORWARDED_ALLOW_IPS: ${MINERVA_PROXY_IP:-172.22.0.10}
     volumes:
       - ./backend:/app
       - ./manifests:/app/manifests
@@ -44,11 +45,17 @@ services:
     container_name: minerva_frontend
     ports:
       - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      # Proxy (IP o CIDR) cuyo X-Forwarded-For se cree, p. ej. el reverse proxy o gateway
+      # que va delante. El default no confía en nadie. Ver frontend/nginx.conf.
+      MINERVA_TRUSTED_PROXY: ${MINERVA_TRUSTED_PROXY:-127.0.0.1/32}
     depends_on:
       backend:
         condition: service_healthy
     networks:
-      - minerva_network
+      minerva_network:
+        # IP fija: es la única en la que confía el backend (FORWARDED_ALLOW_IPS).
+        ipv4_address: ${MINERVA_PROXY_IP:-172.22.0.10}
 
   minerva_redis:
     image: redis:7-alpine
@@ -105,3 +112,8 @@ volumes:
 networks:
   minerva_network:
     driver: bridge
+    # Subred fija para poder dar a nginx una IP estable. Si choca con otra red del host,
+    # cambia MINERVA_SUBNET y MINERVA_PROXY_IP juntos (la IP debe caer dentro de la subred).
+    ipam:
+      config:
+        - subnet: ${MINERVA_SUBNET:-172.22.0.0/24}

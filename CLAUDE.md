@@ -131,8 +131,10 @@ Minerva firma **todo con RS256/JWKS** (no HS256). Dos modelos de sesión, delibe
   `docs/arquitectura.md` § Ciclo de vida de la credencial.
 - **Red en producción (nginx consolidado):** un solo punto público (nginx del servicio `frontend`)
   sirve la SPA y proxea al backend `/.well-known`, `/auth`, `/userinfo`, `/api` (strip) y `/api/v1`
-  (preserva). El backend **no publica puerto** en el deploy; el issuer va sin `:9000`. `FORWARDED_ALLOW_IPS`
-  hace que el rate limit cuente por IP real. `nginx.conf` emite además cabeceras defensivas (CSP con
+  (preserva). El backend **no publica puerto** en el deploy; el issuer va sin `:9000`. nginx solo cree el
+  `X-Forwarded-For` de `MINERVA_TRUSTED_PROXY` y lo reemplaza por la IP resuelta; el backend solo
+  confía en la IP fija de nginx (`FORWARDED_ALLOW_IPS=MINERVA_PROXY_IP`). El login limita por cuenta
+  (fallos por correo) y, con umbral alto, por IP. `nginx.conf` emite además cabeceras defensivas (CSP con
   `frame-ancestors 'none'` y `img-src ... https:` para logos de branding, `nosniff`, `Referrer-Policy`).
   **HSTS no se emite aquí** (nginx sirve HTTP): va en el terminador TLS externo, sin `preload`. Detalle:
   `frontend/nginx.conf` y `docs/despliegue.md` §2.2.
