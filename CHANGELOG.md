@@ -63,6 +63,12 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   (`signed_out`), pidiendo contraseña para volver. `POST /auth/session/active` solo activa cuentas
   con sesión viva y responde 409 si no; cambiar entre cuentas abiertas sigue sin pedir contraseña.
 
+### Security
+
+- **`python-jose` sube su mínimo a 3.4** en el backend y en el SDK. Con `>=3.3` una instalación podía
+  quedarse en 3.3.0, afectada por CVE-2024-33663 (confusión de algoritmos) y CVE-2024-33664 (DoS con
+  JWE comprimido).
+
 ## [1.0.1] - 2026-09-14
 
 > **Release intermedio.** Las personas fijan y cambian su propia contraseña (invitación,
