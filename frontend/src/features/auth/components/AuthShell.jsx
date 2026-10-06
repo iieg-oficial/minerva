@@ -72,33 +72,37 @@ export default function AuthShell({ appName, brandColor = BRAND.purple, logoUrl,
                     {mostrarLogoApp && (
                         <img
                             src={logoUrl}
-                            alt=""
-                            aria-hidden="true"
+                            alt={appName || ''}
                             referrerPolicy="no-referrer"
                             onError={() => setLogoFallo(true)}
                             style={{
-                                height: 56,
+                                height: 48,
                                 width: 'auto',
-                                maxWidth: 140,
+                                maxWidth: 'min(280px, 80vw)',
                                 objectFit: 'contain',
+                                // Va sobre el fondo morado: el logo de la app se pinta en
+                                // blanco para que contraste, sea cual sea su color.
+                                filter: 'brightness(0) invert(1)',
                             }}
                         />
                     )}
-                    <Title
-                        level={1}
-                        style={{
-                            margin: 0,
-                            // Va sobre el fondo morado, fuera de la card: el color de
-                            // marca no contrasta ahí, el blanco sí.
-                            color: '#fff',
-                            fontWeight: 800,
-                            letterSpacing: 1,
-                            fontSize: 26,
-                            fontFamily: '"Garet", sans-serif',
-                        }}
-                    >
-                        {appName || 'Minerva'}
-                    </Title>
+                    {!mostrarLogoApp && (
+                        <Title
+                            level={1}
+                            style={{
+                                margin: 0,
+                                // Va sobre el fondo morado, fuera de la card: el color de
+                                // marca no contrasta ahí, el blanco sí.
+                                color: '#fff',
+                                fontWeight: 800,
+                                letterSpacing: 1,
+                                fontSize: 26,
+                                fontFamily: '"Garet", sans-serif',
+                            }}
+                        >
+                            {appName || 'Minerva'}
+                        </Title>
+                    )}
                 </Flex>
             )}
 
@@ -158,8 +162,8 @@ export default function AuthShell({ appName, brandColor = BRAND.purple, logoUrl,
                                     src={
                                         logoUrl || `${import.meta.env.BASE_URL}iieg-favicon-192.png`
                                     }
-                                    alt=""
-                                    aria-hidden="true"
+                                    alt={mostrarLogoApp ? appName || '' : ''}
+                                    aria-hidden={mostrarLogoApp ? undefined : 'true'}
                                     ref={logoRef}
                                     // El logo puede venir de un host externo (branding por app):
                                     // no filtres el referer del panel a ese tercero.
@@ -167,37 +171,45 @@ export default function AuthShell({ appName, brandColor = BRAND.purple, logoUrl,
                                     style={{
                                         height: 86,
                                         width: 'auto',
-                                        maxWidth: 200,
+                                        // Con logo propio el logo ya trae el nombre de la app:
+                                        // va solo y puede ocupar todo el ancho del lockup.
+                                        maxWidth: mostrarLogoApp ? 'min(420px, 100%)' : 200,
                                         objectFit: 'contain',
                                     }}
                                     onError={(e) => {
                                         e.currentTarget.src = `${import.meta.env.BASE_URL}iieg-favicon-192.png`;
                                     }}
                                 />
-                                <div
-                                    style={{
-                                        width: 2,
-                                        height: 54,
-                                        background: BRAND.orange,
-                                        visibility: lockupEnDosLineas ? 'hidden' : 'visible',
-                                    }}
-                                    aria-hidden
-                                />
-                                <Title
-                                    level={1}
-                                    ref={nombreRef}
-                                    style={{
-                                        margin: 0,
-                                        color: appName ? brandColor : '#5B6770',
-                                        fontWeight: 800,
-                                        letterSpacing: 0,
-                                        fontSize: appName && appName.length > 8 ? 40 : 58,
-                                        lineHeight: 1,
-                                        fontFamily: '"Garet", sans-serif',
-                                    }}
-                                >
-                                    {appName || 'Minerva'}
-                                </Title>
+                                {!mostrarLogoApp && (
+                                    <>
+                                        <div
+                                            style={{
+                                                width: 2,
+                                                height: 54,
+                                                background: BRAND.orange,
+                                                visibility: lockupEnDosLineas
+                                                    ? 'hidden'
+                                                    : 'visible',
+                                            }}
+                                            aria-hidden
+                                        />
+                                        <Title
+                                            level={1}
+                                            ref={nombreRef}
+                                            style={{
+                                                margin: 0,
+                                                color: appName ? brandColor : '#5B6770',
+                                                fontWeight: 800,
+                                                letterSpacing: 0,
+                                                fontSize: appName && appName.length > 8 ? 40 : 58,
+                                                lineHeight: 1,
+                                                fontFamily: '"Garet", sans-serif',
+                                            }}
+                                        >
+                                            {appName || 'Minerva'}
+                                        </Title>
+                                    </>
+                                )}
                             </Flex>
                             <Text
                                 style={{
