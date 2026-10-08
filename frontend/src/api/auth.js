@@ -34,9 +34,9 @@ export async function getMyProfile() {
     return data;
 }
 
-// Logout suave de la cuenta activa: NO revoca el token; solo cierra
-// la sesión activa. Para invalidar de verdad están "Cerrar todas las sesiones"
-// (logoutAll) y "Gestionar cuentas" → quitar (removeSession).
+// Cierra la sesión de la cuenta activa y revoca su token: volver a ella pide
+// contraseña. "Cerrar todas las sesiones" (logoutAll) y quitar una cuenta
+// (removeSession) además la sacan del navegador.
 export function logout() {
     return deactivate();
 }

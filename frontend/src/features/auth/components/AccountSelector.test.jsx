@@ -9,6 +9,7 @@ const accounts = [
 ];
 
 vi.mock('@/api/session', () => ({
+    fetchSession: vi.fn(),
     getActive: vi.fn(),
     getSessions: vi.fn(),
     isExpired: vi.fn(),
@@ -54,5 +55,21 @@ describe('AccountSelector', () => {
 
         expect(sessionAPI.setActive).toHaveBeenCalledWith('u-2');
         expect(onSelect).toHaveBeenCalledWith(accounts[1]);
+    });
+
+    it('pide la contraseña si el backend ya no reconoce viva la sesión de la cuenta', async () => {
+        const user = userEvent.setup();
+        const onSelect = vi.fn();
+        const onReauth = vi.fn();
+        sessionAPI.setActive.mockRejectedValue({ response: { status: 409 } });
+        render(<AccountSelector onSelect={onSelect} onReauth={onReauth} />);
+
+        await user.click(screen.getByRole('button', { name: 'Ver otras cuentas' }));
+        await user.click(screen.getByRole('button', { name: /Cuenta alterna/ }));
+        await user.click(screen.getByRole('button', { name: 'Continuar' }));
+
+        expect(sessionAPI.fetchSession).toHaveBeenCalled();
+        expect(onReauth).toHaveBeenCalledWith(accounts[1]);
+        expect(onSelect).not.toHaveBeenCalled();
     });
 });

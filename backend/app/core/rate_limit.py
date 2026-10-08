@@ -38,3 +38,39 @@ async def enforce_rate_limit(redis: Redis, key: str, max_requests: int, window: 
     allowed = await check_rate_limit(redis, key, max_requests, window)
     if not allowed:
         raise TooManyRequestsError(retry_after=window)
+
+
+# --- Contador de fallos ------------------------------------------------------
+# A diferencia de `check_rate_limit`, que cuenta toda petición, estos helpers solo
+# registran intentos fallidos: el límite por cuenta del login no debe consumirse con
+# los ingresos correctos, y un éxito lo limpia.
+
+
+async def enforce_failure_limit(redis: Redis, key: str, max_failures: int, window: int) -> None:
+    """Rechaza con 429 si la clave ya acumula `max_failures` fallos en la ventana. No
+    registra nada: el fallo se anota después con `record_failure`, cuando se sabe.
+
+    `Retry-After` es lo que falta para que el fallo más viejo salga de la ventana, que es
+    cuando se vuelve a admitir un intento."""
+    now = time.time()
+    pipe = redis.pipeline()
+    pipe.zremrangebyscore(key, 0, now - window)
+    pipe.zcard(key)
+    pipe.zrange(key, 0, 0, withscores=True)
+    _, count, oldest = await pipe.execute()
+    if count < max_failures:
+        return
+    retry_after = int(oldest[0][1] + window - now) + 1 if oldest else window
+    raise TooManyRequestsError(retry_after=max(retry_after, 1))
+
+
+async def record_failure(redis: Redis, key: str, window: int) -> None:
+    now = time.time()
+    pipe = redis.pipeline()
+    pipe.zadd(key, {f"{now}-{uuid.uuid4().hex}": now})
+    pipe.expire(key, window)
+    await pipe.execute()
+
+
+async def clear_failures(redis: Redis, key: str) -> None:
+    await redis.delete(key)

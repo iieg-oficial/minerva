@@ -9,7 +9,14 @@ import {
     SettingOutlined,
     UpOutlined,
 } from '@ant-design/icons';
-import { getActive, getSessions, isExpired, removeSession, setActive } from '@/api/session';
+import {
+    fetchSession,
+    getActive,
+    getSessions,
+    isExpired,
+    removeSession,
+    setActive,
+} from '@/api/session';
 import { BRAND } from './AuthShell';
 
 const { Title, Text } = Typography;
@@ -18,14 +25,14 @@ function initial(session) {
     return (session?.name || session?.email || '?').trim().slice(0, 1).toUpperCase();
 }
 
-// Pill de estado de la sesión: activa (punto verde) o vencida (reloj gris).
-function StatusPill({ expired }) {
+// Pill de estado de la sesión: activa (punto verde), o vencida o cerrada (reloj gris).
+function StatusPill({ expired, signedOut }) {
     if (expired) {
         return (
             <Flex align="center" gap={6}>
                 <ClockCircleOutlined style={{ color: '#8E8E8E', fontSize: 13 }} />
                 <Text style={{ color: '#8E8E8E', fontSize: 13, fontFamily: '"Garet", sans-serif' }}>
-                    Sesión vencida
+                    {signedOut ? 'Sesión cerrada' : 'Sesión vencida'}
                 </Text>
             </Flex>
         );
@@ -67,7 +74,7 @@ function AccountRow({ session, brandColor, onClick, extra, dim }) {
                     {session.email}
                 </Text>
             </Flex>
-            <StatusPill expired={isExpired(session)} />
+            <StatusPill expired={isExpired(session)} signedOut={!!session.signed_out} />
             {extra}
         </>
     );
@@ -136,10 +143,21 @@ export default function AccountSelector({
         setOpen(false);
     };
 
+    // Una cuenta cerrada con «Cerrar sesión» llega marcada como vencida. Si aun así el
+    // backend rechaza activarla (409: su sesión se revocó por otra vía), se refresca el
+    // estado y se pide la contraseña igual: sólo una sesión viva entra sin escribirla.
     const handleContinue = async () => {
         if (!selected) return;
         if (isExpired(selected)) return onReauth(selected);
-        await setActive(selected.sub); // fija la cuenta activa en el backend antes de continuar
+        try {
+            await setActive(selected.sub); // fija la cuenta activa en el backend antes de continuar
+        } catch (e) {
+            if (e.response?.status !== 409) throw e;
+            await fetchSession();
+            refresh();
+            onAccountsChanged?.();
+            return onReauth(selected);
+        }
         onSelect(selected);
     };
 

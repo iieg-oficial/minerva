@@ -53,8 +53,8 @@ Reglas:
   (`features/auth/SessionContext.jsx`) vía `useSession()` (`{loading, active, accounts, isAdmin,
   refresh}`), que consumen `ProtectedRoute`, `AccountSelector`, `AdminLayout`, `LoginPage`,
   `AuthorizePage`. `api/client.js` va con `withCredentials` y adjunta `X-CSRF-Token` en mutaciones.
-  `logout()` es **suave** (cierra la cuenta activa sin revocar); `logoutAll()` y quitar cuenta revocan
-  en el backend. El selector (`components/AccountSelector.jsx`) y el formulario de login comparten el
+  `logout()` cierra la cuenta activa y revoca su token (queda en el selector con `signed_out` y pide
+  contraseña); `logoutAll()` y quitar cuenta también revocan en el backend. El selector (`components/AccountSelector.jsx`) y el formulario de login comparten el
   shell `components/AuthShell.jsx`. **No** vuelvas a meter tokens/`is_admin` en `localStorage`.
 - **Al crear una página nueva, registra su ruta** en `App.jsx` (dentro de `ProtectedRoute` si aplica).
 

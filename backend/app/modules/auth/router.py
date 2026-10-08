@@ -19,11 +19,19 @@ from app.core.dependencies.auth import (
     get_panel_session,
 )
 from app.core.dependencies.db import get_db
-from app.core.exceptions import AppException, BadRequestError, ForbiddenError, NotFoundError, TooManyRequestsError
+from app.core.exceptions import (
+    AppException,
+    BadRequestError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    TooManyRequestsError,
+)
 from app.core.rate_limit import enforce_rate_limit
 from app.core.redis import get_redis
 from app.core.token_blacklist import revoke_jti
 from app.modules.audit.service import AuditService
+from app.modules.auth import login_throttle
 from app.modules.auth.schemas import (
     AccountDescriptor,
     AuthLogin,
@@ -66,13 +74,17 @@ async def _enforce_rate_limit_audited(
     try:
         await enforce_rate_limit(redis, key, max_requests, window)
     except TooManyRequestsError:
-        audit.log(
-            "rate_limit_exceeded",
-            ip_address=request.client.host,
-            user_agent=request.headers.get("user-agent"),
-            event_metadata={"endpoint": endpoint},
-        )
+        _audit_rate_limit(audit, request, {"endpoint": endpoint})
         raise
+
+
+def _audit_rate_limit(audit: AuditService, request: Request, metadata: dict) -> None:
+    audit.log(
+        "rate_limit_exceeded",
+        ip_address=request.client.host,
+        user_agent=request.headers.get("user-agent"),
+        event_metadata=metadata,
+    )
 
 
 def _login_redirect_url(query: str) -> str:
@@ -183,20 +195,27 @@ async def login(
     session: Session = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
+    # Dos niveles: por IP (umbral alto, ver RATE_LIMIT_LOGIN_IP_MAX en config) y por cuenta,
+    # que es el que frena la fuerza bruta aunque todos compartan IP detrás del WAF.
     await _enforce_rate_limit_audited(
         redis,
         f"minerva:rl:login:{request.client.host}",
-        settings.RATE_LIMIT_LOGIN_MAX,
-        settings.RATE_LIMIT_LOGIN_WINDOW,
+        settings.RATE_LIMIT_LOGIN_IP_MAX,
+        settings.RATE_LIMIT_LOGIN_IP_WINDOW,
         audit,
         request,
         "login",
     )
     try:
+        await login_throttle.enforce(redis, data.email)
+    except TooManyRequestsError:
+        _audit_rate_limit(audit, request, {"endpoint": "login_account", "email": data.email})
+        raise
+    try:
         result = service.login(data.email, data.password)
-        audit.log("manual_login_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
-        return await _establish_panel_session(request, response, session, redis, result["access_token"])
     except PasswordChangeRequired as exc:
+        # La contraseña fue correcta: el contador de la cuenta se limpia igual que en un éxito.
+        await login_throttle.clear(redis, data.email)
         audit.log(
             "manual_login_password_change_required",
             ip_address=request.client.host,
@@ -212,7 +231,11 @@ async def login(
                 "credential_token": exc.credential_token,
             },
         )
-    except Exception:
+    except Exception as exc:
+        # Solo los rechazos del dominio (credenciales, cuenta inactiva) suman al contador de
+        # la cuenta; una falla de infraestructura no es un intento contra la contraseña.
+        if isinstance(exc, AppException):
+            await login_throttle.record(redis, data.email)
         audit.log(
             "manual_login_failed",
             ip_address=request.client.host,
@@ -220,26 +243,51 @@ async def login(
             event_metadata={"email": data.email},
         )
         raise
+    await login_throttle.clear(redis, data.email)
+    audit.log("manual_login_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent"))
+    return await _establish_panel_session(request, response, session, redis, result["access_token"])
 
 
 @router.get("/session", response_model=SessionView)
 async def get_session(ps: dict = Depends(get_panel_session)):
     """Estado del selector multi-cuenta (cuentas del navegador + activa + CSRF). Fuente
     de verdad del selector: el navegador ya no guarda tokens. Tolera no tener cuenta
-    activa (logout suave) para poder seguir pintando el selector."""
+    activa (tras cerrar sesión) para poder seguir pintando el selector."""
     return panel_session.session_view(ps["container"])
+
+
+async def _account_session_alive(session: Session, redis: Redis, account: dict) -> bool:
+    """Si el token guardado de una cuenta sigue valiendo: no vencido, no revocado y sin
+    corte por usuario (cambio de contraseña, status). Mismo criterio que el panel."""
+    if not panel_session.has_live_token(account):
+        return False
+    try:
+        await _resolve_token(account["token"], session, redis, expected_types={"session"}, audience="minerva")
+    except ValueError:
+        return False
+    return True
 
 
 @router.post("/session/active", response_model=AccountDescriptor)
 async def set_active_account(
     data: SetActiveRequest,
     ps: dict = Depends(get_panel_session),
+    session: Session = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
-    """Cambia la cuenta activa del navegador (dentro del contenedor de sesión)."""
+    """Cambia la cuenta activa del navegador sin pedir contraseña, solo si la sesión de esa
+    cuenta sigue viva (multi-cuenta). Una cuenta cerrada con «Cerrar sesión», vencida o
+    invalidada responde 409: la SPA pide la contraseña y entra por `/auth/login`."""
     container = ps["container"]
-    if not panel_session.set_active(container, data.sub):
+    account = container["accounts"].get(data.sub)
+    if account is None:
         raise NotFoundError(detail="La cuenta no está iniciada en este navegador")
+    if not await _account_session_alive(session, redis, account):
+        # Se descarta el token muerto para que el selector la muestre como cerrada.
+        panel_session.sign_out(container, data.sub)
+        await panel_session.write(redis, ps["sid"], container)
+        raise ConflictError(detail="La sesión de esta cuenta está cerrada; ingresa tu contraseña para continuar")
+    panel_session.set_active(container, data.sub)
     await panel_session.write(redis, ps["sid"], container)
     return panel_session.descriptor(data.sub, container["accounts"][data.sub])
 
@@ -251,12 +299,14 @@ async def logout(
     audit: AuditService = Depends(get_audit_service),
     redis: Redis = Depends(get_redis),
 ):
-    """Logout suave: sale de la cuenta activa pero conserva las cuentas
-    del navegador y sus tokens (para volver a entrar sin re-teclear). NO revoca el jti:
-    para invalidar de verdad están "quitar cuenta" y "cerrar todas las sesiones"."""
+    """Cierra la sesión de la cuenta activa y revoca su token (blacklist del `jti`). La
+    cuenta sigue en el selector para reingresar sin teclear el correo, pero volver a ella
+    pide contraseña: en un equipo compartido, quien llega después no entra como la persona
+    anterior. Las demás cuentas del navegador no se tocan y siguen activables."""
     container = ps["container"]
     active = container.get("active")
-    panel_session.soft_logout(container)
+    if active:
+        await _revoke_account_token(redis, panel_session.sign_out(container, active))
     await panel_session.write(redis, ps["sid"], container)
     audit.log(
         "logout",

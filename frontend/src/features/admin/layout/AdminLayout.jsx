@@ -76,7 +76,9 @@ export default function AdminLayout() {
                     {initial(s)}
                 </Avatar>
             ),
-            label: isExpired(s) ? `${s.email} (expirada)` : s.name || s.email,
+            label: isExpired(s)
+                ? `${s.email} (${s.signed_out ? 'sesión cerrada' : 'expirada'})`
+                : s.name || s.email,
         }));
 
     const menuItems = [
@@ -94,7 +96,8 @@ export default function AdminLayout() {
             if (key === 'add') return navigate('/login?add=1');
             if (key === 'password') return navigate('/cuenta/contrasena');
             if (key === 'logout') {
-                // Logout suave: cierra la cuenta activa; quedan las demás para reingresar.
+                // Cierra y revoca la cuenta activa; queda en el selector pidiendo contraseña.
+                // Las demás cuentas del navegador siguen vivas.
                 try {
                     await authAPI.logout();
                 } catch {
@@ -117,12 +120,22 @@ export default function AdminLayout() {
                 return navigate('/login', { replace: true });
             }
             const [action, sub] = key.split(':');
-            if (action === 'switch') {
-                await setActive(sub);
-                window.location.assign('/admin'); // recarga para re-leer la cuenta activa
-            } else if (action === 'reauth') {
+            const reauth = () => {
                 const s = sessions.find((x) => x.sub === sub);
                 navigate(`/login?add=1&email=${encodeURIComponent(s?.email || '')}`);
+            };
+            if (action === 'switch') {
+                try {
+                    await setActive(sub);
+                } catch (e) {
+                    // 409: la sesión de esa cuenta ya no vale; se entra con contraseña.
+                    if (e.response?.status === 409) return reauth();
+                    message.error('No se pudo cambiar de cuenta. Intenta de nuevo.');
+                    return;
+                }
+                window.location.assign('/admin'); // recarga para re-leer la cuenta activa
+            } else if (action === 'reauth') {
+                reauth();
             }
         },
         [navigate, sessions, refresh, message]
