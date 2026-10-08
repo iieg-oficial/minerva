@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { App as AntApp, Button, Flex, Result, Spin, Typography } from 'antd';
-import { authorizeUrl } from '@/api/auth';
+import { authorizeUrl, login } from '@/api/auth';
 import { setActive } from '@/api/session';
 import { useSession } from '@features/auth/SessionContext';
 import { getAppBranding } from '@/api/public';
 import AccountSelector from '../components/AccountSelector';
 import AuthShell from '../components/AuthShell';
+import { formatApiError } from '@/api/errors';
 
 const { Text } = Typography;
 
@@ -89,8 +90,7 @@ export default function AuthorizePage() {
                     navigate(loginNext(), { replace: true });
                     return;
                 }
-                const detail =
-                    err.response?.data?.detail || 'No se pudo completar la autorización.';
+                const detail = formatApiError(err, 'No se pudo completar la autorización.');
                 if (popupMode) postToOpener(redirectUri, { state, error: 'server_error' });
                 message.error(detail);
                 setError(detail);
@@ -124,13 +124,16 @@ export default function AuthorizePage() {
         }
 
         if (prompt === 'login') {
-            // Re-autenticación forzada: formulario aunque exista sesión (add=1). Quitamos
-            // `prompt` del resume para que, tras el login fresco, esta rama no se
-            // vuelva a disparar (evita el loop formulario→authorize→formulario).
+            // Re-autenticación forzada. Si la cuenta ya está en el navegador no hace
+            // falta el formulario completo: `reauth=1` deja el selector y pide sólo la
+            // contraseña sobre su tarjeta. Sin cuentas guardadas, el propio selector
+            // cae al formulario. Quitamos `prompt` del resume para que, tras el login
+            // fresco, esta rama no se vuelva a disparar (evita el loop
+            // formulario→authorize→formulario).
             const resumeParams = new URLSearchParams(params);
             resumeParams.delete('prompt');
             navigate(
-                `/login?next=${encodeURIComponent(`/authorize?${resumeParams.toString()}`)}&add=1`,
+                `/login?next=${encodeURIComponent(`/authorize?${resumeParams.toString()}`)}&reauth=1`,
                 {
                     replace: true,
                 }
@@ -161,8 +164,13 @@ export default function AuthorizePage() {
         setSelecting(false);
         proceed();
     };
-    const onReauth = (session) =>
-        navigate(loginNext(`&add=1&email=${encodeURIComponent(session.email)}`), { replace: true });
+    // Una cuenta sin sesión viva (cerrada o vencida) pide la contraseña sobre su tarjeta;
+    // al entrar, sigue la autorización con esa cuenta ya activa.
+    const onEntrar = async (email, password) => {
+        await login(email, password);
+        setSelecting(false);
+        proceed();
+    };
     const onAddAccount = () => navigate(loginNext('&add=1'), { replace: true });
 
     if (error) {
@@ -191,7 +199,7 @@ export default function AuthorizePage() {
                     appName={branding?.display_name || branding?.name}
                     brandColor={branding?.brand_color}
                     onSelect={onSelect}
-                    onReauth={onReauth}
+                    onEntrar={onEntrar}
                     onAddAccount={onAddAccount}
                 />
             </AuthShell>

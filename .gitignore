@@ -114,3 +114,13 @@ desktop.ini
 # ─────────────────────────────────────────────
 docs/oidc-pendiente.md
 docs/minerva-roadmap-checklist.md
+
+# ─────────────────────────────────────────────
+# Manifiestos de aplicaciones consumidoras
+# ─────────────────────────────────────────────
+# `manifests/` es el volumen que monta el compose para el autoimport, no una
+# carpeta de fuentes: cada consumidor declara su `manifest.minerva.yml` en su
+# propio repo (docs/integracion.md §2) y lo entrega por API o copiándolo aquí.
+# El ejemplo sí se versiona.
+manifests/*
+!manifests/*.example
