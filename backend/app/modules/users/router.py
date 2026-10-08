@@ -116,9 +116,7 @@ async def update_user(
     _current_user: dict = Depends(get_current_panel_user),
 ):
     # Cambiar contraseña, correo o desactivar invalida las sesiones vigentes.
-    invalidating = (
-        data.email is not None or (data.status is not None and data.status != "active")
-    )
+    invalidating = data.email is not None or (data.status is not None and data.status != "active")
     result = service.update_user(user_id, data, commit=False)
     audit.log(
         "user_update",

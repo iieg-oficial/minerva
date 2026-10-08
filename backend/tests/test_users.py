@@ -34,12 +34,6 @@ def test_update_user_status(client, admin_token, admin_user):
     assert response.json()["status"] == "inactive"
 
 
-
-
-
-
-
-
 def test_create_user_rechaza_full_name_mayor_a_255(client, admin_token):
     """`full_name` es VARCHAR(255) en BD; un valor más largo se rechaza con 422 en vez
     de fallar en el INSERT (el modelo SQLModel no valida `max_length` en runtime)."""
@@ -81,8 +75,6 @@ def test_update_user_rechaza_full_name_menor_a_6(client, admin_token, admin_user
     assert resp.status_code == 422, resp.text
 
 
-
-
 def _make_user_with_token(client, admin_token, email, make_session_token):
     """Crea un usuario y devuelve (user_id, su_token_de_sesión). Acuña el token
     directamente (el panel es cookie-only: /auth/login ya no devuelve el JWT)."""
@@ -94,8 +86,6 @@ def _make_user_with_token(client, admin_token, email, make_session_token):
     )
     assert created.status_code == 201
     return created.json()["id"], make_session_token(email)
-
-
 
 
 def test_deactivating_user_invalidates_existing_tokens(client, admin_token, make_session_token):

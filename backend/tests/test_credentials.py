@@ -68,8 +68,6 @@ def test_create_without_password_leaves_user_pending_with_invitation(client, adm
     assert _login(client, "invitada@iieg.gob.mx", "cualquiera123").status_code == 400
 
 
-
-
 def test_invitation_sets_password_and_activates_user(client, admin_token):
     token = _token_from(_create_pending(client, admin_token)["credential_link"]["url"])
 
@@ -138,10 +136,6 @@ def test_credential_link_requires_admin(client, non_admin_token, admin_token):
 
 
 # --- Cambio obligatorio ---------------------------------------------------------
-
-
-
-
 
 
 # --- Cambio propio --------------------------------------------------------------
@@ -226,5 +220,3 @@ def test_pending_status_cannot_be_set_by_hand(client, admin_token):
     user = _create_active(client, admin_token)
     resp = client.patch(f"/users/{user['id']}/status", json={"status": "pending"}, headers=_admin(admin_token))
     assert resp.status_code == 400
-
-
