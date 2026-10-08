@@ -87,8 +87,14 @@ jobs:
       #   `[cryptography]` instalado usa el backend de `cryptography` para claves EC; y
       #   Minerva firma y valida SOLO RS256 (`algorithms=["RS256"]`), sin curvas EC.
       #   Revisar el 2027-02-05, o antes si `python-jose` suelta `ecdsa` o aparece un fix.
-      # El scan sigue vivo: cualquier alerta distinta a esta rompe el job.
-      - run: pip-audit -r constraints.txt --no-deps --ignore-vuln PYSEC-2026-1325
+      # EXCEPCIÓN ACOTADA — GHSA-3qf3-8w2g-rqmx (CVE-2026-85394), python-jose 3.5.0:
+      #   El guard contra confusión de algoritmo acepta llaves públicas DER como secreto
+      #   HMAC, así que con la llave pública se forja un HS256. Solo aplica si `jwt.decode`
+      #   no restringe algoritmos; Minerva y el SDK decodifican con `algorithms=["RS256"]`
+      #   y el SDK rechaza cualquier `alg` distinto antes de decodificar. Sin versión
+      #   corregida (python-jose#414). Retirar al migrar a PyJWT o si sale un fix.
+      # El scan sigue vivo: cualquier alerta distinta a estas rompe el job.
+      - run: pip-audit -r constraints.txt --no-deps --ignore-vuln PYSEC-2026-1325 --ignore-vuln GHSA-3qf3-8w2g-rqmx --ignore-vuln CVE-2026-85394
 
   sdk:
     # El SDK se instala en el entorno del consumidor, no en el nuestro: se prueba en los dos
