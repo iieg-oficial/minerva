@@ -20,8 +20,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]" -c constraints.txt # misma resolución que la imagen Docker
@@ -87,8 +87,14 @@ jobs:
       #   `[cryptography]` instalado usa el backend de `cryptography` para claves EC; y
       #   Minerva firma y valida SOLO RS256 (`algorithms=["RS256"]`), sin curvas EC.
       #   Revisar el 2027-02-05, o antes si `python-jose` suelta `ecdsa` o aparece un fix.
-      # El scan sigue vivo: cualquier alerta distinta a esta rompe el job.
-      - run: pip-audit -r constraints.txt --no-deps --ignore-vuln PYSEC-2026-1325
+      # EXCEPCIÓN ACOTADA — GHSA-3qf3-8w2g-rqmx (CVE-2026-85394), python-jose 3.5.0:
+      #   El guard contra confusión de algoritmo acepta llaves públicas DER como secreto
+      #   HMAC, así que con la llave pública se forja un HS256. Solo aplica si `jwt.decode`
+      #   no restringe algoritmos; Minerva y el SDK decodifican con `algorithms=["RS256"]`
+      #   y el SDK rechaza cualquier `alg` distinto antes de decodificar. Sin versión
+      #   corregida (python-jose#414). Retirar al migrar a PyJWT o si sale un fix.
+      # El scan sigue vivo: cualquier alerta distinta a estas rompe el job.
+      - run: pip-audit -r constraints.txt --no-deps --ignore-vuln PYSEC-2026-1325 --ignore-vuln GHSA-3qf3-8w2g-rqmx --ignore-vuln CVE-2026-85394
 
   sdk:
     # El SDK se instala en el entorno del consumidor, no en el nuestro: se prueba en los dos
@@ -111,8 +117,8 @@ jobs:
       run:
         working-directory: sdk
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev]"
@@ -136,8 +142,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           # Vite 8 exige ^20.19.0 || >=22.12.0; 22 es además la de `frontend/Dockerfile`,
           # así que el CI y la imagen compilan con el mismo runtime.
@@ -155,7 +161,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: cp .env.example .env # compose exige el .env (gitignored)
       - run: docker compose config
       - run: docker compose build

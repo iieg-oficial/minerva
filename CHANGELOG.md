@@ -7,6 +7,65 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+
+- **Política de contraseña y medidor de fuerza.** Toda contraseña nueva —activación por
+  invitación y cambio propio— exige mínimo 8 caracteres y al menos 2 de tres familias
+  (mayúscula y minúscula, número, carácter especial), validada en el backend y con un indicador
+  de fuerza en la pantalla. Portado del medidor de mariachi.
+
+### Changed
+
+- **El alta y la edición de usuarios ya no fijan contraseña: siempre es por invitación.** El
+  panel emite un enlace de un solo uso para que la persona defina la suya; se retiró el campo de
+  contraseña y la marca de cambio obligatorio del alta/edición, y `UserCreate`/`UserUpdate` dejan
+  de aceptar `password` (y `require_change`).
+
+### Fixed
+
+- **El cambio de contraseña por enlace dejaba el panel ciclando en el login.** Al fijar la
+  contraseña por enlace (sin sesión de panel) el backend revoca las sesiones pero no puede limpiar el
+  contenedor del navegador, así que el selector seguía ofreciendo la cuenta ya revocada: elegirla daba
+  401 y rebotaba (login → selector → login). `SetPasswordPage` ahora destruye el contenedor tras
+  guardar, para llegar a un login en blanco.
+- **El panel reventaba (React #31) al mostrar un error de validación 422.** Renderizaba el
+  `detail` de FastAPI —un arreglo de objetos— como texto; ahora se normaliza a su mensaje legible.
+- **El aviso de privacidad del login apuntaba a un PDF con fecha en la URL.** El enlace del pie
+  llevaba a `iieg.gob.mx/ns/wp-content/uploads/2025/06/Aviso_de_Privacidad_Integral_IIEG_06_2025.pdf`,
+  así que el día que el instituto publique una versión nueva el enlace queda apuntando a la vieja o
+  responde 404, y arreglarlo obliga a tocar este repo y desplegar. Es el mismo problema que ya
+  corrigieron los otros consumidores.
+
+  Ahora apunta a `https://iieg.jalisco.gob.mx/acervo/iieg/avisos-de-privacidad.pdf`, servido desde
+  el Acervo del instituto: la URL no lleva versión, así que publicar un aviso nuevo es reemplazar el
+  objeto en el bucket, sin tocar este repo ni desplegar. Es el mismo destino que usan mariachi y
+  sieej, así que el usuario ve el mismo aviso en las tres pantallas.
+
+### Security
+
+- **El límite de intentos del login se esquivaba cambiando `X-Forwarded-For` (#209).** nginx
+  reenviaba el header del cliente con `$proxy_add_x_forwarded_for` y el backend confiaba en
+  cualquier origen (`FORWARDED_ALLOW_IPS="*"`), así que bastaba rotar el header para no topar nunca.
+  Ahora nginx solo cree el `X-Forwarded-For` del proxy de confianza (`MINERVA_TRUSTED_PROXY`, por
+  defecto ninguno) y lo reemplaza por la IP resuelta, y el backend solo confía en la IP fija de
+  nginx (`MINERVA_PROXY_IP` dentro de `MINERVA_SUBNET`). ⚠️ La red interna pasa a subred fija:
+  recrearla una vez (`just down && just up`).
+- **Límite de intentos por cuenta en el login (#209).** Tras `RATE_LIMIT_LOGIN_MAX` fallos de una
+  cuenta en `RATE_LIMIT_LOGIN_WINDOW`, esa cuenta responde 429 con `Retry-After`, con la misma
+  respuesta exista o no. Un login exitoso limpia el contador. El límite por IP se conserva como
+  segundo nivel con `RATE_LIMIT_LOGIN_IP_MAX`/`RATE_LIMIT_LOGIN_IP_WINDOW` (200 en 15 min): detrás
+  de un WAF que no agrega `X-Forwarded-For` todos comparten IP y un tope bajo bloquearía a todos.
+  ⚠️ `RATE_LIMIT_LOGIN_MAX` pasa de contar intentos por IP a contar fallos por cuenta.
+- **Tras cerrar sesión, la cuenta se reactivaba sin contraseña (#210).** «Cerrar sesión» era un
+  logout suave: conservaba el token de 8 h y el selector volvía a activarlo con un clic, así que en
+  un equipo compartido quien llegaba después entraba como la persona anterior. Ahora
+  `POST /auth/logout` revoca el token de la cuenta activa y la deja en el selector como cerrada
+  (`signed_out`), pidiendo contraseña para volver. `POST /auth/session/active` solo activa cuentas
+  con sesión viva y responde 409 si no; cambiar entre cuentas abiertas sigue sin pedir contraseña.
+- **`python-jose` sube su mínimo a 3.4** en el backend y en el SDK. Con `>=3.3` una instalación podía
+  quedarse en 3.3.0, afectada por CVE-2024-33663 (confusión de algoritmos) y CVE-2024-33664 (DoS con
+  JWE comprimido).
+
 ## [1.0.1] - 2026-09-14
 
 > **Release intermedio.** Las personas fijan y cambian su propia contraseña (invitación,

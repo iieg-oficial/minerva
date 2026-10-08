@@ -195,8 +195,9 @@ Sobre la respuesta de `/authorize`:
 
 > **Logout de Minerva: no es un endpoint para consumidores.** `POST /auth/logout` pertenece al
 > panel, no a tu integración: se autentica con la **cookie de sesión del panel** (`__Host-minerva_sid`),
-> no con un Bearer, y es un logout **suave** — cierra la cuenta activa del navegador pero **no revoca
-> ningún token**. Mandarle tu `access_token` en el header no hace nada.
+> no con un Bearer, y cierra la cuenta activa del navegador revocando **su token de sesión del panel**
+> (la cuenta sigue en el selector, pero volver a ella pide contraseña). **No** toca los tokens OIDC
+> que ya emitió a los consumidores. Mandarle tu `access_token` en el header no hace nada.
 >
 > Si lo que quieres es invalidar credenciales ya emitidas, usa
 > [`POST /auth/revoke`](#35-revocar-un-refresh-token-rfc-7009) sobre el refresh token: eso sí revoca
@@ -205,7 +206,7 @@ Sobre la respuesta de `/authorize`:
 > `POST /auth/logout-all` (cerrar todas las sesiones), que son acciones de la UI de Minerva.
 >
 > **Logout redirigido (`GET {panel}/logout?redirect_uri=...`).** Es la página del panel que llama a
-> ese mismo `POST /auth/logout` (por tanto igual de **suave**: no revoca) y luego navega al
+> ese mismo `POST /auth/logout` (revoca la sesión del panel, no tus tokens OIDC) y luego navega al
 > destino. `redirect_uri` acepta **solo rutas internas del panel** (`/login`, `/admin/users`…):
 > cualquier URL externa —absoluta, protocol-relative o con caracteres de escape— se descarta y el
 > usuario termina en `/login`. Los destinos externos exigen registro previo de

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { App as AntApp, Button, Flex, Form, Spin, Typography } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
 import * as credentialsAPI from '@/api/credentials';
+import * as sessionAPI from '@/api/session';
 import AuthShell, { BRAND } from '../components/AuthShell';
 import NewPasswordFields from '../components/NewPasswordFields';
 
@@ -33,13 +34,12 @@ function tokenFromHash(hash) {
 // (cambio obligatorio) y conservando el `next` de un flujo /authorize.
 function loginUrl(state) {
     const params = new URLSearchParams();
-    if (state?.email) {
-        params.set('add', '1');
-        params.set('email', state.email);
-    }
+    // Tras fijar la contraseña se manda siempre al formulario de login normal, no al
+    // selector de cuentas: `add=1` fuerza el formulario aunque el contenedor tenga cuentas.
+    params.set('add', '1');
+    if (state?.email) params.set('email', state.email);
     if (state?.next) params.set('next', state.next);
-    const query = params.toString();
-    return query ? `/login?${query}` : '/login';
+    return `/login?${params.toString()}`;
 }
 
 export default function SetPasswordPage() {
@@ -77,6 +77,11 @@ export default function SetPasswordPage() {
         setSaving(true);
         try {
             await credentialsAPI.setCredential(token, password);
+            // Reset propio en el mismo navegador: el contenedor de panel conserva la cuenta
+            // ya revocada y el selector ciclaría en el login; se destruye para llegar a un
+            // login en blanco. Si no había sesión (invitación), ambos llamados fallan sin efecto.
+            await sessionAPI.fetchSession().catch(() => {});
+            await sessionAPI.logoutAll().catch(() => {});
             message.success('Contraseña guardada. Ya puedes iniciar sesión.');
             navigate(loginUrl(location.state), { replace: true });
         } catch (err) {

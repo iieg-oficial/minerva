@@ -17,6 +17,12 @@ desde este repositorio: es lo que permite fijar la instalación a un tag concret
 
 ## [Unreleased]
 
+### Security
+
+- **`python-jose` sube su mínimo a 3.4.** Con `>=3.3` una instalación podía quedarse en 3.3.0, afectada
+  por CVE-2024-33663 (confusión de algoritmos) y CVE-2024-33664 (DoS con JWE comprimido). Las copias
+  vendorizadas no traen `pyproject.toml`: cada consumidor tiene que fijar `>=3.4` en el suyo.
+
 ## [0.3.0] - 2026-08-18
 
 Viaja en Minerva `v0.7.0` y posteriores.

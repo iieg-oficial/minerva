@@ -112,8 +112,10 @@ Minerva firma **todo con RS256/JWKS** (no HS256). Dos modelos de sesión, delibe
   `/revoke`, PKCE, refresh con rotación) + `backend/app/modules/oidc/` (discovery, JWKS,
   `/userinfo`, claves de firma). Guía consumidor: `docs/integracion.md` y skill
   `.claude/skills/minerva-integration/`.
-- **Logout del panel:** `POST /auth/logout` es **suave** (cierra la cuenta activa del contenedor sin
-  revocar; las demás quedan para reingresar). La revocación real (blacklist del `jti` en Redis,
+- **Logout del panel:** `POST /auth/logout` cierra la cuenta activa **y revoca su token** (blacklist
+  del `jti`); la cuenta queda en el selector como cerrada (`signed_out`) y volver a ella pide
+  contraseña. Las demás cuentas del navegador siguen vivas y se activan sin contraseña
+  (`POST /auth/session/active` responde 409 si la sesión de la cuenta ya no vale). La revocación real (blacklist del `jti` en Redis,
   `backend/app/core/token_blacklist.py`) está en `DELETE /auth/session/accounts/{sub}` (quitar cuenta)
   y `POST /auth/logout-all` (cerrar todo + destruir el contenedor + borrar cookie).
 - **Invalidación por usuario (cambio de credenciales/status):** cambiar contraseña, correo o poner
@@ -131,8 +133,10 @@ Minerva firma **todo con RS256/JWKS** (no HS256). Dos modelos de sesión, delibe
   `docs/arquitectura.md` § Ciclo de vida de la credencial.
 - **Red en producción (nginx consolidado):** un solo punto público (nginx del servicio `frontend`)
   sirve la SPA y proxea al backend `/.well-known`, `/auth`, `/userinfo`, `/api` (strip) y `/api/v1`
-  (preserva). El backend **no publica puerto** en el deploy; el issuer va sin `:9000`. `FORWARDED_ALLOW_IPS`
-  hace que el rate limit cuente por IP real. `nginx.conf` emite además cabeceras defensivas (CSP con
+  (preserva). El backend **no publica puerto** en el deploy; el issuer va sin `:9000`. nginx solo cree el
+  `X-Forwarded-For` de `MINERVA_TRUSTED_PROXY` y lo reemplaza por la IP resuelta; el backend solo
+  confía en la IP fija de nginx (`FORWARDED_ALLOW_IPS=MINERVA_PROXY_IP`). El login limita por cuenta
+  (fallos por correo) y, con umbral alto, por IP. `nginx.conf` emite además cabeceras defensivas (CSP con
   `frame-ancestors 'none'` y `img-src ... https:` para logos de branding, `nosniff`, `Referrer-Policy`).
   **HSTS no se emite aquí** (nginx sirve HTTP): va en el terminador TLS externo, sin `preload`. Detalle:
   `frontend/nginx.conf` y `docs/despliegue.md` §2.2.
@@ -145,7 +149,7 @@ Patrón "cambiar de cuenta" multi-sesión. La **fuente de verdad del multi-cuent
 - **Fuente de verdad:** el contenedor de sesión en Redis (`backend/app/core/panel_session.py`).
   `GET /auth/session` devuelve los descriptores (`sub`, email, nombre, `is_admin`, `exp`, `expired`),
   la cuenta activa y el CSRF — **nunca** el JWT. `POST /auth/session/active` cambia la activa;
-  `DELETE /auth/session/accounts/{sub}` quita+revoca; `POST /auth/logout` es logout suave;
+  `DELETE /auth/session/accounts/{sub}` quita+revoca; `POST /auth/logout` cierra y revoca la activa;
   `POST /auth/logout-all` cierra todo.
 - **Cliente:** `frontend/src/api/session.js` es un cliente + caché en memoria de ese estado (sin
   tokens en `localStorage`). `frontend/src/features/auth/SessionContext.jsx` (`SessionProvider`) hace
