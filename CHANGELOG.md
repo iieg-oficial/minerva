@@ -65,6 +65,9 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - **`python-jose` sube su mínimo a 3.4** en el backend y en el SDK. Con `>=3.3` una instalación podía
   quedarse en 3.3.0, afectada por CVE-2024-33663 (confusión de algoritmos) y CVE-2024-33664 (DoS con
   JWE comprimido).
+- **`axios` sube a 1.20.0** en el panel (mínimo `^1.20.0`), que cierra nueve avisos de Dependabot
+  sobre 1.18.0. Ninguno era alcanzable: casi todos viven en los adaptadores `http`/`http2` de Node o
+  en su manejo de proxies, y el panel corre en el navegador con el adaptador `xhr`.
 
 ## [1.0.1] - 2026-09-14
 
