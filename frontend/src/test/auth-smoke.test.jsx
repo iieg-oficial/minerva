@@ -351,10 +351,10 @@ describe('Smoke E2E de autenticación web', () => {
         await user.type(screen.getByLabelText(/Contraseña/), BETO.password);
         await user.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
 
-        // De vuelta en el selector, con Beto activo, el usuario elige a Ana.
-        await user.click(await screen.findByRole('button', { name: 'Ver otras cuentas' }));
-        await user.click(screen.getByRole('button', { name: new RegExp(ANA.name) }));
-        await user.click(screen.getByRole('button', { name: 'Continuar' }));
+        // De vuelta en el selector, con Beto activo, el usuario elige a Ana. El rediseno
+        // muestra las cuentas como filas y activa la elegida al pulsarla, sin el paso
+        // intermedio de «Ver otras cuentas» y «Continuar».
+        await user.click(await screen.findByRole('button', { name: new RegExp(ANA.name) }));
 
         await vi.waitFor(() => expect(navegadoA).not.toBeNull());
         expect(new URL(navegadoA).searchParams.get('code')).toBe(`codigo-${ANA.sub}-1`);
@@ -411,18 +411,17 @@ describe('Smoke E2E de autenticación web', () => {
         const user = userEvent.setup();
         abrir('/logout?redirect_uri=/login');
 
-        expect(await screen.findByText('Sesión cerrada')).toBeInTheDocument();
-        await user.click(screen.getByRole('button', { name: 'Continuar' }));
+        expect(await screen.findByText('Pedirá tu contraseña')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: new RegExp(ANA.name) }));
 
-        // Quien llega después al equipo no entra con sólo continuar: se pide la contraseña
-        // y no se intenta reactivar la cuenta.
-        const correo = await screen.findByLabelText(/Correo electrónico/);
-        expect(correo).toHaveValue(ANA.email);
+        // Quien llega después al equipo no entra con sólo tocar la cuenta: se pide la
+        // contraseña y no se intenta reactivarla.
+        const campo = await screen.findByPlaceholderText('Contraseña');
         expect(peticion('POST', '/auth/session/active')).toBeUndefined();
         expect(minerva.estado.activa).toBeNull();
 
-        await user.type(screen.getByLabelText(/Contraseña/), ANA.password);
-        await user.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
+        await user.type(campo, ANA.password);
+        await user.click(screen.getByRole('button', { name: 'Entrar' }));
 
         await vi.waitFor(() => expect(minerva.estado.activa).toBe(ANA.sub));
         expect(peticion('POST', '/auth/login').cuerpo).toEqual({

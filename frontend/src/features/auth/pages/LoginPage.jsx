@@ -27,6 +27,15 @@ function clientIdFromNext(next) {
     return new URLSearchParams(query).get('client_id');
 }
 
+// Un consumidor puede pedir el branding de OTRA app con `app_branding` (p. ej. sieej,
+// que entra con el client de mariachi pero quiere mostrar su propia identidad). Si viene,
+// gana sobre el `client_id`; el login y los permisos siguen siendo los del client real.
+function brandingIdFromNext(next) {
+    if (!next || !next.startsWith('/authorize')) return null;
+    const params = new URLSearchParams(next.slice(next.indexOf('?') + 1));
+    return params.get('app_branding') || params.get('client_id');
+}
+
 export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [branding, setBranding] = useState(null);
@@ -40,13 +49,17 @@ export default function LoginPage() {
     const [searchParams] = useSearchParams();
     const { token } = useToken();
     const { message } = AntApp.useApp();
-    const { accounts, loading: sessionLoading, refresh } = useSession();
+    const { accounts, active, loading: sessionLoading, refresh } = useSession();
 
     const next = safeNext(searchParams.get('next'));
     const clientId = clientIdFromNext(searchParams.get('next'));
+    const brandingId = brandingIdFromNext(searchParams.get('next'));
     // Modo "agregar cuenta": el selector manda aquí con ?add=1 para forzar el
     // formulario aunque ya haya una sesión activa. `email` prellena la cuenta.
     const addMode = !!searchParams.get('add');
+    // Re-autenticación (`prompt=login`): se queda en el selector y abre la tarjeta de
+    // la cuenta en cuestión para pedir sólo la contraseña.
+    const reauthMode = !!searchParams.get('reauth');
     const prefillEmail = reauthEmail || searchParams.get('email');
 
     // Sin cuentas guardadas → login_first siempre; con cuentas → selector
@@ -58,11 +71,17 @@ export default function LoginPage() {
     useEffect(() => {
         // Personaliza la pantalla con el branding de la app solicitante. Si la app
         // no existe o no tiene branding, se conserva la identidad genérica de Minerva.
-        if (!clientId) return;
-        getAppBranding(clientId)
+        if (!brandingId) return;
+        getAppBranding(brandingId)
             .then(setBranding)
             .catch(() => setBranding(null));
-    }, [clientId]);
+    }, [brandingId]);
+
+    // `initialValues` solo se aplica al montar el Form: si el formulario ya estaba en
+    // pantalla, el correo prellenado no llegaba al campo. Se sincroniza a mano.
+    useEffect(() => {
+        if (showForm && prefillEmail) form.setFieldsValue({ email: prefillEmail });
+    }, [showForm, prefillEmail, form]);
 
     const appName = branding?.display_name || branding?.name;
     const brandColor = branding?.brand_color || BRAND.purple;
@@ -121,17 +140,18 @@ export default function LoginPage() {
         return (
             <AuthShell appName={appName} brandColor={brandColor} logoUrl={branding?.logo_url}>
                 <AccountSelector
-                    appName={appName}
                     brandColor={brandColor}
                     onSelect={async () => {
                         await refresh();
                         navigate(next, { replace: true });
                     }}
+                    abrirSub={reauthMode ? active?.sub || accounts[0]?.sub : null}
+                    exigeContrasena={reauthMode}
                     onAccountsChanged={refresh}
-                    onReauth={(s) => {
-                        setReauthEmail(s.email);
-                        setForceSelector(false);
-                        setForcedForm(true);
+                    onEntrar={async (email, password) => {
+                        await authAPI.login(email, password);
+                        await refresh();
+                        navigate(next, { replace: true });
                     }}
                     onAddAccount={() => {
                         setReauthEmail(null);

@@ -1,8 +1,15 @@
 import { Form, Input } from 'antd';
+import PasswordStrengthIndicator from './PasswordStrengthIndicator';
+import { isStrongEnough } from '../passwordStrength';
 
-// Contraseña nueva + confirmación, compartidas por la activación y el cambio propio.
-// El mínimo replica el del backend (8); el tope de 72 bytes de bcrypt lo valida el servidor.
+const POLICY_MSG =
+    'Mínimo 8 caracteres y al menos 2 de: mayúscula y minúscula, un número, un carácter especial';
+
+// Contraseña nueva + confirmación, compartidas por la activación y el cambio propio. La
+// política y el visor replican los de mariachi; el backend aplica la misma regla.
 export default function NewPasswordFields() {
+    const form = Form.useFormInstance();
+    const password = Form.useWatch('password', form);
     return (
         <>
             <Form.Item
@@ -10,11 +17,17 @@ export default function NewPasswordFields() {
                 name="password"
                 rules={[
                     { required: true, message: 'Ingresa la contraseña nueva' },
-                    { min: 8, message: 'Debe tener al menos 8 caracteres' },
+                    {
+                        validator: (_, value) =>
+                            !value || isStrongEnough(value)
+                                ? Promise.resolve()
+                                : Promise.reject(new Error(POLICY_MSG)),
+                    },
                 ]}
             >
                 <Input.Password autoComplete="new-password" />
             </Form.Item>
+            <PasswordStrengthIndicator password={password} />
             <Form.Item
                 label="Confirma la contraseña nueva"
                 name="confirm"

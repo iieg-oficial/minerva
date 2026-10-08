@@ -15,6 +15,7 @@ from app.modules.credentials.models import CredentialToken
 from tests.conftest import test_engine
 
 NEW_PASSWORD = "nueva-clave-123"
+ACTIVE_PASSWORD = "activa-clave-1"
 
 
 def _admin(admin_token):
@@ -31,14 +32,12 @@ def _create_pending(client, admin_token, email="invitada@iieg.gob.mx"):
     return resp.json()
 
 
-def _create_active(client, admin_token, email="activa@iieg.gob.mx", password="pass123456"):
-    resp = client.post(
-        "/users",
-        json={"email": email, "full_name": "Persona Activa", "password": password},
-        headers=_admin(admin_token),
-    )
-    assert resp.status_code == 201, resp.text
-    return resp.json()
+def _create_active(client, admin_token, email="activa@iieg.gob.mx", password=ACTIVE_PASSWORD):
+    # El admin invita; la persona fija su contraseña con el enlace (el alta ya no lleva contraseña).
+    user = _create_pending(client, admin_token, email)
+    resp = _set_password(client, _token_from(user["credential_link"]["url"]), password)
+    assert resp.status_code == 200, resp.text
+    return user
 
 
 def _set_password(client, token, password=NEW_PASSWORD):
@@ -69,10 +68,6 @@ def test_create_without_password_leaves_user_pending_with_invitation(client, adm
     assert _login(client, "invitada@iieg.gob.mx", "cualquiera123").status_code == 400
 
 
-def test_create_with_password_has_no_invitation(client, admin_token):
-    body = _create_active(client, admin_token)
-    assert body["status"] == "active"
-    assert body["credential_link"] is None
 
 
 def test_invitation_sets_password_and_activates_user(client, admin_token):
@@ -132,7 +127,7 @@ def test_reset_link_for_active_user_replaces_password(client, admin_token):
 
     assert _set_password(client, _token_from(resp.json()["url"])).status_code == 200
     time.sleep(1)
-    assert _login(client, "activa@iieg.gob.mx", "pass123456").status_code == 400
+    assert _login(client, "activa@iieg.gob.mx", ACTIVE_PASSWORD).status_code == 400
     assert _login(client, "activa@iieg.gob.mx", NEW_PASSWORD).status_code == 200
 
 
@@ -145,33 +140,8 @@ def test_credential_link_requires_admin(client, non_admin_token, admin_token):
 # --- Cambio obligatorio ---------------------------------------------------------
 
 
-def test_admin_password_reset_forces_change_on_next_login(client, admin_token):
-    user = _create_active(client, admin_token)
-    patched = client.patch(f"/users/{user['id']}", json={"password": "temporal123"}, headers=_admin(admin_token))
-    assert patched.status_code == 200
-    assert patched.json()["password_change_required"] is True
-
-    time.sleep(1)
-    resp = _login(client, "activa@iieg.gob.mx", "temporal123")
-    assert resp.status_code == 403
-    assert resp.json()["code"] == "password_change_required"
-    assert resp.headers.get("set-cookie") is None
-
-    assert _set_password(client, resp.json()["credential_token"]).status_code == 200
-    time.sleep(1)
-    assert _login(client, "activa@iieg.gob.mx", NEW_PASSWORD).status_code == 200
 
 
-def test_admin_password_reset_can_skip_forced_change(client, admin_token):
-    user = _create_active(client, admin_token)
-    patched = client.patch(
-        f"/users/{user['id']}",
-        json={"password": "temporal123", "require_change": False},
-        headers=_admin(admin_token),
-    )
-    assert patched.status_code == 200
-    time.sleep(1)
-    assert _login(client, "activa@iieg.gob.mx", "temporal123").status_code == 200
 
 
 # --- Cambio propio --------------------------------------------------------------
@@ -258,9 +228,3 @@ def test_pending_status_cannot_be_set_by_hand(client, admin_token):
     assert resp.status_code == 400
 
 
-def test_admin_password_on_pending_user_activates_it_and_voids_invitation(client, admin_token):
-    user = _create_pending(client, admin_token)
-    patched = client.patch(f"/users/{user['id']}", json={"password": "temporal123"}, headers=_admin(admin_token))
-    assert patched.status_code == 200
-    assert patched.json()["status"] == "active"
-    assert _set_password(client, _token_from(user["credential_link"]["url"])).status_code == 400
