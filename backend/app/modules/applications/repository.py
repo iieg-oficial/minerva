@@ -61,8 +61,7 @@ class ApplicationRepository:
         importaciones de manifiesto y los tokens OIDC emitidos (auth_codes y
         refresh_tokens, ambos con FK a `applications.client_id`). Los registros
         de auditoría y los enlaces de credencial se conservan: se les pone
-        `application_id = None`. Es una
-        operación destructiva e irreversible.
+        `application_id = None`. Es una operación destructiva e irreversible.
 
         Se hace `flush()` por niveles de dependencia para forzar el orden de los
         DELETE: sin `relationship()` declaradas, la unit of work de SQLAlchemy no

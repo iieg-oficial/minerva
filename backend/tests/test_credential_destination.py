@@ -111,3 +111,29 @@ def test_destinations_require_admin(client, admin_token, non_admin_token):
         f"/users/{user['id']}/credential-destinations", headers={"Authorization": f"Bearer {non_admin_token}"}
     )
     assert resp.status_code == 403
+
+
+def test_homepage_that_is_not_http_is_never_a_destination(client, admin_token):
+    user = _create_active(client, admin_token)
+    app = _create_app(client, admin_token, "maliciosa", homepage_url="javascript:alert(document.cookie)")
+    _grant(client, admin_token, app, user["id"])
+
+    resp = client.get(f"/users/{user['id']}/credential-destinations", headers=_admin(admin_token))
+
+    assert resp.json() == []
+    assert _issue(client, admin_token, user["id"], app["id"]).status_code == 400
+
+
+def test_destination_is_revalidated_when_the_link_is_opened(client, admin_token):
+    user = _create_active(client, admin_token)
+    app = _create_app(client, admin_token, "mariachi")
+    _grant(client, admin_token, app, user["id"])
+    token = _token_from(_issue(client, admin_token, user["id"], app["id"]).json()["url"])
+
+    resp = client.patch(
+        f"/applications/{app['id']}", json={"homepage_url": "javascript:alert(1)"}, headers=_admin(admin_token)
+    )
+    assert resp.status_code == 200, resp.text
+
+    inspected = client.post("/auth/credential/inspect", json={"token": token})
+    assert inspected.json()["application"] is None

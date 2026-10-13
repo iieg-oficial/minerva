@@ -37,6 +37,8 @@ export default function UsersPage() {
     const [credentialLink, setCredentialLink] = useState(null);
     // Usuario para el que se está generando un enlace (abre el selector de destino).
     const [linkUser, setLinkUser] = useState(null);
+    // Enlace del alta, a mano por si el admin cierra el selector de destino sin generar otro.
+    const [fallbackLink, setFallbackLink] = useState(null);
     const [form] = Form.useForm();
     const [editForm] = Form.useForm();
     const { message } = App.useApp();
@@ -89,8 +91,15 @@ export default function UsersPage() {
             setModalOpen(false);
             form.resetFields();
             fetchUsers();
-            if (user.credential_link) {
-                setCredentialLink({ email: user.email, ...user.credential_link });
+            if (!user.credential_link) return;
+            const createdLink = { email: user.email, ...user.credential_link };
+            // El enlace del alta sale antes de asignar los roles, así que nunca trae destino.
+            // Con roles se ofrece elegirlo; si se cancela, se entrega el del alta.
+            if (roleIds.length > 0) {
+                setFallbackLink(createdLink);
+                setLinkUser(user);
+            } else {
+                setCredentialLink(createdLink);
             }
         } catch (err) {
             message.error(formatApiError(err, 'Error al crear usuario'));
@@ -128,7 +137,14 @@ export default function UsersPage() {
 
     const handleLinkIssued = (link) => {
         setLinkUser(null);
+        setFallbackLink(null);
         setCredentialLink(link);
+    };
+
+    const handleLinkCancel = () => {
+        setLinkUser(null);
+        setCredentialLink(fallbackLink);
+        setFallbackLink(null);
     };
 
     const handleStatusChange = async (userId, status) => {
@@ -386,7 +402,7 @@ export default function UsersPage() {
 
             <IssueLinkModal
                 user={linkUser}
-                onClose={() => setLinkUser(null)}
+                onClose={handleLinkCancel}
                 onIssued={handleLinkIssued}
             />
 

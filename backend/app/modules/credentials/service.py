@@ -7,7 +7,6 @@ from app.core.config import settings
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.security import hash_password, hash_token
 from app.modules.applications.models import Application
-from app.modules.applications.repository import ApplicationRepository
 from app.modules.authorization.service import AuthorizationService
 from app.modules.credentials.models import CredentialToken
 from app.modules.credentials.repository import CredentialTokenRepository
@@ -46,7 +45,6 @@ class CredentialService:
         self.session = session
         self.repo = CredentialTokenRepository(session)
         self.user_repo = UserRepository(session)
-        self.app_repo = ApplicationRepository(session)
         self.authorization = AuthorizationService(session)
 
     def issue_token(
@@ -127,12 +125,16 @@ class CredentialService:
         user = self.user_repo.get_by_id(token.user_id)
         if not user:
             raise BadRequestError(detail=INVALID_LINK_DETAIL)
-        app = self.app_repo.get_by_id(token.application_id) if token.application_id else None
+        # Se revalida al abrir el enlace: la aplicación pudo desactivarse, perder su
+        # `homepage_url` o retirarle los roles a la persona desde que se emitió.
+        destination = None
+        if token.application_id:
+            destination = next((d for d in self.destinations(user.id) if d.id == token.application_id), None)
         return CredentialInspection(
             purpose=token.purpose,
             email=mask_email(user.email),
             expires_at=as_utc(token.expires_at),
-            application=destination_of(app) if app and app.status == "active" and app.homepage_url else None,
+            application=destination,
         )
 
     def consume(self, raw: str, new_password: str, commit: bool = True) -> CredentialToken:
