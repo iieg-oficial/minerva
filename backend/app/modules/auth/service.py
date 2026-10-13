@@ -222,6 +222,8 @@ class AuthService:
                 {"id": p.id, "name": p.name, "slug": p.slug, "application_id": p.application_id}
                 for p in all_permissions
             ],
+            # Para mandar a quien no administra Minerva a las aplicaciones que sí usa.
+            "applications": [d.model_dump() for d in CredentialService(self.session).destinations(user_id)],
         }
 
     def validate_client_and_redirect(self, client_id: str, redirect_uri: str) -> None:

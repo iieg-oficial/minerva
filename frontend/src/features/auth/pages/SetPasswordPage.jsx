@@ -82,6 +82,13 @@ export default function SetPasswordPage() {
             // login en blanco. Si no había sesión (invitación), ambos llamados fallan sin efecto.
             await sessionAPI.fetchSession().catch(() => {});
             await sessionAPI.logoutAll().catch(() => {});
+            // Con destino, la persona sigue en la aplicación que usa: el panel de Minerva es
+            // solo para administradores. El destino lo fija el servidor, no el enlace.
+            if (info.application) {
+                message.success(`Contraseña guardada. Te llevamos a ${info.application.name}.`);
+                window.location.assign(info.application.homepage_url);
+                return;
+            }
             message.success('Contraseña guardada. Ya puedes iniciar sesión.');
             navigate(loginUrl(location.state), { replace: true });
         } catch (err) {
@@ -122,6 +129,7 @@ export default function SetPasswordPage() {
                 {info && !error && (
                     <Text style={{ fontSize: 12, fontFamily: FONT }}>
                         {copy.subtitle} Cuenta: {info.email}
+                        {info.application && ` · Para entrar a ${info.application.name}`}
                     </Text>
                 )}
             </Flex>
