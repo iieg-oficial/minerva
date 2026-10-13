@@ -90,6 +90,29 @@ describe('SetPasswordPage', () => {
         expect(credentialsAPI.setCredential).toHaveBeenCalledWith('abc', 'nueva-clave-123');
     });
 
+    it('con destino manda a la aplicación en vez del login', async () => {
+        const assign = vi.fn();
+        vi.stubGlobal('location', { ...window.location, assign });
+        credentialsAPI.inspectCredential.mockResolvedValue({
+            ...INVITE,
+            purpose: 'reset',
+            application: {
+                id: 'app-1',
+                name: 'Mariachi',
+                homepage_url: 'https://mariachi.example/',
+            },
+        });
+        credentialsAPI.setCredential.mockResolvedValue({});
+        renderPage('/activar#token=abc');
+
+        expect(await screen.findByText(/Para entrar a Mariachi/)).toBeInTheDocument();
+        await fillAndSubmit('nueva-clave-123');
+
+        await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('https://mariachi.example/'));
+        expect(screen.queryByText(/pantalla de login/)).not.toBeInTheDocument();
+        vi.unstubAllGlobals();
+    });
+
     it('no envía si la confirmación no coincide', async () => {
         credentialsAPI.inspectCredential.mockResolvedValue(INVITE);
         renderPage('/activar#token=abc');

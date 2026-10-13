@@ -13,6 +13,12 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   invitación y cambio propio— exige mínimo 8 caracteres y al menos 2 de tres familias
   (mayúscula y minúscula, número, carácter especial), validada en el backend y con un indicador
   de fuerza en la pantalla. Portado del medidor de mariachi.
+- **El enlace de contraseña puede llevar a la aplicación de la persona.** Al generarlo, el panel
+  ofrece las aplicaciones donde tiene roles y con `homepage_url`; al guardar la contraseña se le
+  manda ahí en vez del login de Minerva, cuyo panel es solo para administradores. El destino vive
+  en `credential_tokens.application_id` (migración `013`), no en el enlace, así que no se puede
+  alterar. Nuevos `GET /users/{id}/credential-destinations` y el cuerpo opcional
+  `{"application_id"}` en `POST /users/{id}/credential-link`.
 
 ### Changed
 
@@ -22,6 +28,10 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   de aceptar `password` (y `require_change`).
 
 ### Fixed
+
+- **Quien no administra Minerva terminaba en un 403 después de iniciar sesión en él.** `/no-access`
+  ahora ofrece ir a las aplicaciones que la persona usa (`/auth/me` devuelve `applications`) y solo
+  muestra el aviso de acceso cuando no tiene ninguna.
 
 - **El cambio de contraseña por enlace dejaba el panel ciclando en el login.** Al fijar la
   contraseña por enlace (sin sesión de panel) el backend revoca las sesiones pero no puede limpiar el

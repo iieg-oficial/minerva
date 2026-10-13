@@ -1,13 +1,23 @@
+from urllib.parse import urlparse
+
 from sqlmodel import Session
 
 from app.core.constants import MINERVA_ADMIN_ROLE_SLUG, MINERVA_APP_SLUG
 from app.core.exceptions import NotFoundError
+from app.modules.applications.models import Application
 from app.modules.applications.service import ApplicationService
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
 from app.modules.permissions.repository import RolePermissionRepository
 from app.modules.permissions.schemas import PermissionRead
 from app.modules.roles.schemas import RoleRead
 from app.modules.users.repository import UserRepository
+
+
+def _is_web_url(url: str | None) -> bool:
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
 
 
 class AuthorizationService:
@@ -82,3 +92,22 @@ class AuthorizationService:
             "roles": [RoleRead.model_validate(r) for r in app_roles],
             "permissions": [PermissionRead.model_validate(p) for p in effective_perms],
         }
+
+    def get_user_applications(self, user_id: str) -> list[Application]:
+        """Aplicaciones a las que se puede mandar a la persona: activas, con `homepage_url`
+        y con al menos un rol efectivo suyo (directo o por grupo). Minerva no cuenta: su
+        panel es solo para administradores.
+
+        `homepage_url` acaba en `location.assign` y en un `href` del frontend, y llega sin
+        validar desde el panel o el `base_url` de un manifiesto: solo se acepta http(s), para
+        que un `javascript:` no se ejecute en el origen de Minerva."""
+        app_ids = {r.application_id for r in self._get_effective_roles(user_id)}
+        apps = [self.app_service.repo.get_by_id(app_id) for app_id in app_ids]
+        return sorted(
+            (
+                app
+                for app in apps
+                if app and app.status == "active" and _is_web_url(app.homepage_url) and app.slug != MINERVA_APP_SLUG
+            ),
+            key=lambda app: (app.display_name or app.name).lower(),
+        )
