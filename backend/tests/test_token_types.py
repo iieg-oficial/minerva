@@ -3,6 +3,7 @@ o un dev token no cruzan a los endpoints de panel/admin ni al refresh de sesión
 
 import time
 
+import pytest
 from jose import jwt
 from sqlmodel import Session
 
@@ -78,6 +79,14 @@ def test_userinfo_rejects_id_token(client):
 
 def test_userinfo_accepts_access_token(client):
     assert client.get("/userinfo", headers=_auth(_consumer_access_token())).status_code == 200
+
+
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_userinfo_without_slash_answers_without_redirect(client, method):
+    """El path que anuncia el discovery responde directo: un 307 a `/userinfo/`
+    perdía el puerto interno y rompía el canje de MapaLab."""
+    resp = getattr(client, method)("/userinfo", headers=_auth(_consumer_access_token()), follow_redirects=False)
+    assert resp.status_code == 200
 
 
 def test_hs256_token_rejected(client, admin_token):

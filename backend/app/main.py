@@ -219,6 +219,23 @@ app.mount("/.well-known", wellknown_app)
 app.mount("/userinfo", userinfo_app)
 
 
+class _UserinfoSinBarra:
+    """El discovery anuncia `/userinfo` sin barra, pero un mount solo resuelve
+    `/userinfo/`: sin esto el router responde 307 a una URL que pierde el puerto
+    interno y los consumidores server-to-server no completan el login."""
+
+    def __init__(self, asgi_app):
+        self.app = asgi_app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"] == "/userinfo":
+            scope = {**scope, "path": "/userinfo/", "raw_path": b"/userinfo/"}
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_UserinfoSinBarra)
+
+
 @app.get("/")
 def root():
     return {
