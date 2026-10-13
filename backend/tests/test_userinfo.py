@@ -118,3 +118,14 @@ def test_userinfo_rejects_revoked_token(client, app_ctx, fresh_redis):
 
     resp = client.get("/userinfo", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 401
+
+
+def test_userinfo_without_slash_answers_without_redirect(client, app_ctx):
+    """El discovery anuncia `/userinfo` sin barra: un 307 a `/userinfo/` pierde el puerto
+    interno detrás del proxy y el consumidor server-to-server no completa el login."""
+    token = _access_token(client, app_ctx, "openid")
+    for method in ("get", "post"):
+        resp = getattr(client, method)(
+            "/userinfo", headers={"Authorization": f"Bearer {token}"}, follow_redirects=False
+        )
+        assert resp.status_code == 200, (method, resp.status_code)

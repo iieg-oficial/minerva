@@ -29,6 +29,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **`/userinfo` sin barra respondía 307.** El discovery lo anuncia sin barra, pero el mount solo
+  resolvía `/userinfo/`; detrás del proxy la redirección perdía el puerto interno y los
+  consumidores server-to-server no completaban el login. Un middleware reescribe la ruta antes de
+  llegar al router.
+
 - **Quien no administra Minerva terminaba en un 403 después de iniciar sesión en él.** `/no-access`
   ahora ofrece ir a las aplicaciones que la persona usa (`/auth/me` devuelve `applications`) y solo
   muestra el aviso de acceso cuando no tiene ninguna.
