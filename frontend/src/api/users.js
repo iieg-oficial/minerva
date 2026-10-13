@@ -21,9 +21,17 @@ export async function updateUser(userId, data) {
 }
 
 // Enlace de un solo uso para que la persona fije su contraseña: invitación si sigue
-// pendiente, restablecimiento si no. Invalida los enlaces anteriores del usuario.
-export async function createCredentialLink(userId) {
-    const res = await client.post(`/users/${userId}/credential-link`);
+// pendiente, restablecimiento si no. Invalida los enlaces anteriores del usuario. Con
+// `applicationId`, al guardar la contraseña la persona sigue a esa aplicación.
+export async function createCredentialLink(userId, applicationId = null) {
+    const body = applicationId ? { application_id: applicationId } : undefined;
+    const res = await client.post(`/users/${userId}/credential-link`, body);
+    return res.data;
+}
+
+// Aplicaciones a las que puede llevar el enlace: las que la persona usa y tienen inicio.
+export async function listCredentialDestinations(userId) {
+    const res = await client.get(`/users/${userId}/credential-destinations`);
     return res.data;
 }
 

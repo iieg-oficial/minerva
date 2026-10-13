@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Typography, Space, App, Divider, Popconfirm } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, Typography, Space, App, Divider } from 'antd';
 import {
     PlusOutlined,
     EditOutlined,
@@ -12,6 +12,7 @@ import * as applicationsAPI from '@/api/applications';
 import * as rolesAPI from '@/api/roles';
 import { assignRoleToUser } from '@/api/groups';
 import { formatApiError } from '@/api/errors';
+import IssueLinkModal from '@features/admin/components/IssueLinkModal';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -34,6 +35,8 @@ export default function UsersPage() {
     const [roles, setRoles] = useState([]);
     // Enlace recién emitido ({ email, url, purpose, expires_at }): se muestra una sola vez.
     const [credentialLink, setCredentialLink] = useState(null);
+    // Usuario para el que se está generando un enlace (abre el selector de destino).
+    const [linkUser, setLinkUser] = useState(null);
     const [form] = Form.useForm();
     const [editForm] = Form.useForm();
     const { message } = App.useApp();
@@ -123,13 +126,9 @@ export default function UsersPage() {
         }
     };
 
-    const handleIssueLink = async (user) => {
-        try {
-            const link = await usersAPI.createCredentialLink(user.id);
-            setCredentialLink({ email: user.email, ...link });
-        } catch (err) {
-            message.error(formatApiError(err, 'No se pudo generar el enlace'));
-        }
+    const handleLinkIssued = (link) => {
+        setLinkUser(null);
+        setCredentialLink(link);
     };
 
     const handleStatusChange = async (userId, status) => {
@@ -180,24 +179,13 @@ export default function UsersPage() {
                         aria-label="Editar usuario"
                         onClick={() => handleEdit(record)}
                     />
-                    <Popconfirm
-                        title={
-                            record.status === 'pending'
-                                ? '¿Generar un nuevo enlace de invitación?'
-                                : '¿Generar un enlace para restablecer la contraseña?'
-                        }
-                        description="Cualquier enlace anterior de este usuario dejará de funcionar."
-                        okText="Generar"
-                        cancelText="Cancelar"
-                        onConfirm={() => handleIssueLink(record)}
-                    >
-                        <Button
-                            type="text"
-                            size="small"
-                            icon={<LinkOutlined />}
-                            aria-label="Generar enlace de contraseña"
-                        />
-                    </Popconfirm>
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<LinkOutlined />}
+                        aria-label="Generar enlace de contraseña"
+                        onClick={() => setLinkUser(record)}
+                    />
                 </Space>
             ),
         },
@@ -396,6 +384,12 @@ export default function UsersPage() {
                 </Form>
             </Modal>
 
+            <IssueLinkModal
+                user={linkUser}
+                onClose={() => setLinkUser(null)}
+                onIssued={handleLinkIssued}
+            />
+
             <Modal
                 title={
                     credentialLink?.purpose === 'invite'
@@ -416,6 +410,8 @@ export default function UsersPage() {
                             Entrega este enlace a <Text strong>{credentialLink.email}</Text> para
                             que defina su contraseña. Es de un solo uso y vence el{' '}
                             {new Date(credentialLink.expires_at).toLocaleString('es-MX')}.
+                            {credentialLink.application &&
+                                ` Al guardarla irá a ${credentialLink.application.name}.`}
                         </Paragraph>
                         <Paragraph
                             code

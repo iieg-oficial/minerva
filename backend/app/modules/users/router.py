@@ -7,7 +7,7 @@ from app.core.dependencies.auth import get_current_panel_user
 from app.core.dependencies.db import get_db
 from app.core.redis import get_redis
 from app.modules.audit.service import AuditService
-from app.modules.credentials.schemas import CredentialLink
+from app.modules.credentials.schemas import CredentialDestination, CredentialLink, CredentialLinkIn
 from app.modules.credentials.service import CredentialService
 from app.modules.users.invalidation import apply_with_invalidation
 from app.modules.users.schemas import UserCreate, UserCreated, UserRead, UserStatusUpdate, UserUpdate
@@ -86,21 +86,41 @@ def _audit_credential_link(
         target_id=user_id,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
-        event_metadata={"result": "success", "purpose": link.purpose},
+        event_metadata={
+            "result": "success",
+            "purpose": link.purpose,
+            "application_id": link.application.id if link.application else None,
+        },
     )
+
+
+@router.get("/{user_id}/credential-destinations", response_model=list[CredentialDestination])
+def list_credential_destinations(
+    user_id: str,
+    credentials: CredentialService = Depends(get_credential_service),
+    _current_user: dict = Depends(get_current_panel_user),
+):
+    """Aplicaciones a las que puede llevar un enlace de credencial de esta persona."""
+    return credentials.destinations(user_id)
 
 
 @router.post("/{user_id}/credential-link", response_model=CredentialLink, status_code=201)
 def issue_credential_link(
     user_id: str,
     request: Request,
+    data: CredentialLinkIn | None = None,
     credentials: CredentialService = Depends(get_credential_service),
     audit: AuditService = Depends(get_audit_service),
     _current_user: dict = Depends(get_current_panel_user),
 ):
     """Enlace de un solo uso para que la persona fije su contraseña: invitación si sigue
     pendiente, restablecimiento si ya estaba activa. Invalida los enlaces anteriores."""
-    link = credentials.issue_link(user_id, created_by=_current_user["sub"], commit=False)
+    link = credentials.issue_link(
+        user_id,
+        created_by=_current_user["sub"],
+        commit=False,
+        application_id=data.application_id if data else None,
+    )
     _audit_credential_link(audit, request, _current_user["sub"], user_id, link)
     return link
 

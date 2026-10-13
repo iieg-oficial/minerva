@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 from app.modules.applications.models import Application, RedirectURI
 from app.modules.audit.models import AuditLog
 from app.modules.auth.models import AuthCode, RefreshToken
+from app.modules.credentials.models import CredentialToken
 from app.modules.devkit.models import ManifestImport
 from app.modules.groups.models import GroupRole, UserRole
 from app.modules.permissions.models import Permission, RolePermission
@@ -59,7 +60,8 @@ class ApplicationRepository:
         asignaciones de esos roles a usuarios y grupos, el historial de
         importaciones de manifiesto y los tokens OIDC emitidos (auth_codes y
         refresh_tokens, ambos con FK a `applications.client_id`). Los registros
-        de auditoría se conservan: se les pone `application_id = None`. Es una
+        de auditoría y los enlaces de credencial se conservan: se les pone
+        `application_id = None`. Es una
         operación destructiva e irreversible.
 
         Se hace `flush()` por niveles de dependencia para forzar el orden de los
@@ -102,6 +104,12 @@ class ApplicationRepository:
         for log in self.session.exec(select(AuditLog).where(AuditLog.application_id == app.id)).all():
             log.application_id = None
             self.session.add(log)
+        # Los enlaces de credencial siguen sirviendo, solo sin destino.
+        for credential in self.session.exec(
+            select(CredentialToken).where(CredentialToken.application_id == app.id)
+        ).all():
+            credential.application_id = None
+            self.session.add(credential)
         self.session.flush()
 
         # Nivel 3: la aplicación.

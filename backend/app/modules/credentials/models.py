@@ -22,4 +22,7 @@ class CredentialToken(SQLModel, table=True):
     expires_at: datetime = Field()
     used_at: datetime | None = Field(default=None)
     created_by: str | None = Field(default=None, foreign_key="users.id")
+    # Aplicación a la que se manda a la persona al fijar su contraseña. Vive junto al token
+    # y no en el enlace: el destino no se puede cambiar editando la URL (no hay open redirect).
+    application_id: str | None = Field(default=None, foreign_key="applications.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
