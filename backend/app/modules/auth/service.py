@@ -7,10 +7,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from sqlmodel import Session
 
 from app.core.config import settings
+from app.core.constants import MINERVA_APP_SLUG, RESERVED_ROLE_PREFIX
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 from app.core.security import (
     create_access_token_rs256,
     create_id_token,
+    create_service_token_rs256,
     hash_token,
     verify_pkce,
     verify_secret,
@@ -24,6 +26,7 @@ from app.modules.credentials.service import CredentialService
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
 from app.modules.oidc.service import OIDCService, claims_for_scopes
 from app.modules.permissions.repository import RolePermissionRepository
+from app.modules.users.models import USER_KIND_HUMAN
 from app.modules.users.repository import UserRepository
 from app.modules.users.service import UserService
 from app.shared.datetime_utils import as_utc
@@ -308,7 +311,7 @@ class AuthService:
         user = self.user_repo.get_by_id(user_id)
         if not user:
             raise NotFoundError(detail="Usuario no encontrado")
-        if user.status != "active":
+        if user.status != "active" or user.kind != USER_KIND_HUMAN:
             raise ForbiddenError(detail="Usuario inactivo")
 
         if not self._has_app_access(user_id, app.slug):
@@ -573,19 +576,88 @@ class AuthService:
             raise RefreshRotationInProgressError()
 
     def _get_user_permissions(self, user_id: str, app_slug: str) -> tuple[list[str], list[str]]:
+        app_roles = self._get_app_roles(user_id, app_slug)
+        return self._permissions_of(app_roles), [r.slug for r in app_roles]
+
+    def _get_app_roles(self, user_id: str, app_slug: str) -> list:
         direct_roles = self.user_role_repo.list_roles_for_user(user_id)
         group_ids = self.group_user_repo.list_groups_for_user(user_id)
         group_roles = []
         for gid in group_ids:
             group_roles.extend(self.group_role_repo.list_roles_for_group(gid))
         all_roles = list({r.id: r for r in direct_roles + group_roles}.values())
-        app_roles = [r for r in all_roles if self._app_slug_by_id(r.application_id) == app_slug]
+        return [r for r in all_roles if self._app_slug_by_id(r.application_id) == app_slug]
+
+    def _permissions_of(self, roles: list) -> list[str]:
         permissions = []
-        for role in app_roles:
+        for role in roles:
             for perm in self.role_perm_repo.list_permissions_by_role(role.id):
                 if perm.application_id == role.application_id:
                     permissions.append(perm.slug)
-        return permissions, [r.slug for r in app_roles]
+        return permissions
+
+    def issue_client_credentials_token(
+        self, client_id: str, client_secret: str | None, audience: str
+    ) -> tuple[dict, dict]:
+        """Grant `client_credentials` (RFC 6749 §4.4): una aplicación confidencial pide, a
+        nombre de su cuenta de servicio, un token para llamar a otra aplicación.
+
+        Devuelve `(respuesta, contexto_de_auditoría)`. Sin refresh token ni id_token: el
+        cliente vuelve a pedir uno cuando vence, y no hay persona de la que hablar.
+        Los errores llevan su código OAuth y el router los traduce a la respuesta 400."""
+        app = self._authenticate_client(client_id, client_secret)
+        # `_authenticate_client` deja pasar sin secret a los clientes públicos (PKCE es su
+        # prueba en el canje del código). Aquí no hay código: el secret es la única prueba.
+        if app.client_secret_hash is None:
+            raise BadRequestError(
+                detail="El grant client_credentials requiere un cliente confidencial", oauth_error="unauthorized_client"
+            )
+        service_user = self.user_repo.get_service_principal(app.id)
+        if service_user is None or service_user.status != "active":
+            raise BadRequestError(
+                detail="La aplicación no tiene una cuenta de servicio activa", oauth_error="unauthorized_client"
+            )
+        if audience == MINERVA_APP_SLUG:
+            raise BadRequestError(
+                detail="Las cuentas de servicio no pueden pedir tokens para Minerva", oauth_error="invalid_target"
+            )
+        target = self.app_repo.get_by_slug(audience)
+        if target is None or target.status != "active":
+            raise BadRequestError(
+                detail="La aplicación destino no existe o está inactiva", oauth_error="invalid_target"
+            )
+        roles = [
+            r for r in self._get_app_roles(service_user.id, audience) if not r.slug.startswith(RESERVED_ROLE_PREFIX)
+        ]
+        if not roles:
+            raise BadRequestError(
+                detail="La cuenta de servicio no tiene roles en la aplicación destino", oauth_error="invalid_target"
+            )
+
+        access_ttl = settings.MINERVA_ACCESS_TOKEN_TTL_MINUTES
+        jti = uuid.uuid4().hex
+        kid, private_pem = self.oidc_service.get_active_private_pem()
+        access_token = create_service_token_rs256(
+            service_user_id=service_user.id,
+            client_id=app.client_id,
+            audience=audience,
+            email=service_user.email,
+            name=service_user.full_name,
+            preferred_username=f"svc-{app.slug}",
+            kid=kid,
+            private_key_pem=private_pem,
+            roles=[r.slug for r in roles],
+            permissions=self._permissions_of(roles),
+            jti=jti,
+            expires_minutes=access_ttl,
+        )
+        response = {"access_token": access_token, "token_type": "bearer", "expires_in": access_ttl * 60}
+        audit_ctx = {
+            "actor_user_id": service_user.id,
+            "application_id": target.id,
+            "event_metadata": {"client_id": app.client_id, "audience": audience, "jti": jti},
+        }
+        return response, audit_ctx
 
     def _app_slug_by_id(self, app_id: str) -> str:
         app = self.app_repo.get_by_id(app_id)

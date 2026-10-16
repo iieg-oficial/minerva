@@ -83,6 +83,25 @@ class MinervaOIDC:
             },
         )
 
+    async def client_credentials(self, audience: str) -> dict:
+        """Token máquina a máquina (grant `client_credentials`) para llamar a la aplicación
+        `audience` con la cuenta de servicio de este cliente. Exige cliente confidencial.
+
+        El token llega con `typ=service`: `get_current_user` lo rechaza porque no representa
+        a una persona. Validarlo del lado del receptor es una decisión aparte."""
+        if not self.config.client_id or not self.config.client_secret:
+            raise ValueError("client_credentials requiere MINERVA_CLIENT_ID y MINERVA_CLIENT_SECRET")
+        return await self._post(
+            "/auth/token",
+            {
+                "grant_type": "client_credentials",
+                "client_id": self.config.client_id,
+                "client_secret": self.config.client_secret,
+                "audience": audience,
+            },
+            login=False,
+        )
+
     async def revoke(self, refresh_token: str) -> None:
         await self._post(
             "/auth/revoke",
@@ -93,8 +112,8 @@ class MinervaOIDC:
             },
         )
 
-    async def _post(self, path: str, data: dict[str, str]) -> dict:
-        self.config.validate(login=True)
+    async def _post(self, path: str, data: dict[str, str], *, login: bool = True) -> dict:
+        self.config.validate(login=login)
         payload = {key: value for key, value in data.items() if value}
         try:
             async with httpx.AsyncClient(timeout=self.config.request_timeout) as client:

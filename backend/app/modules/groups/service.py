@@ -1,10 +1,13 @@
 from sqlmodel import Session
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.constants import MINERVA_APP_SLUG
+from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.modules.applications.repository import ApplicationRepository
 from app.modules.groups.models import Group, GroupRole, GroupUser, UserRole
 from app.modules.groups.repository import GroupRepository, GroupRoleRepository, GroupUserRepository, UserRoleRepository
 from app.modules.groups.schemas import GroupCreate, GroupRead, GroupUpdate
 from app.modules.roles.repository import RoleRepository
+from app.modules.users.models import USER_KIND_SERVICE
 from app.modules.users.repository import UserRepository
 
 
@@ -17,6 +20,7 @@ class GroupService:
         self.group_user_repo = GroupUserRepository(session)
         self.group_role_repo = GroupRoleRepository(session)
         self.user_role_repo = UserRoleRepository(session)
+        self.app_repo = ApplicationRepository(session)
 
     def get_group(self, group_id: str) -> GroupRead:
         group = self.repo.get_by_id(group_id)
@@ -60,8 +64,13 @@ class GroupService:
         group = self.repo.get_by_id(group_id)
         if not group:
             raise NotFoundError(detail="Grupo no encontrado")
-        if not self.user_repo.get_by_id(user_id):
+        user = self.user_repo.get_by_id(user_id)
+        if not user:
             raise NotFoundError(detail="Usuario no encontrado")
+        if user.kind == USER_KIND_SERVICE:
+            # Los roles de una cuenta de servicio se asignan directo y a la vista: un grupo
+            # le heredaría en silencio los roles que alguien agregue después.
+            raise BadRequestError(detail="Una cuenta de servicio no puede pertenecer a grupos")
         existing = self.group_user_repo.get(group_id, user_id)
         if existing:
             raise ConflictError(detail="El usuario ya pertenece al grupo")
@@ -96,11 +105,14 @@ class GroupService:
         return role.application_id
 
     def assign_role_to_user(self, user_id: str, role_id: str, commit: bool = True) -> str:
-        if not self.user_repo.get_by_id(user_id):
+        user = self.user_repo.get_by_id(user_id)
+        if not user:
             raise NotFoundError(detail="Usuario no encontrado")
         role = self.role_repo.get_by_id(role_id)
         if not role:
             raise NotFoundError(detail="Rol no encontrado")
+        if user.kind == USER_KIND_SERVICE and self._is_minerva_role(role.application_id):
+            raise BadRequestError(detail="Una cuenta de servicio no puede recibir roles de Minerva")
         existing = self.user_role_repo.get(user_id, role_id)
         if existing:
             raise ConflictError(detail="El rol ya está asignado al usuario")
@@ -116,3 +128,7 @@ class GroupService:
             raise NotFoundError(detail="Rol no encontrado")
         self.user_role_repo.remove(ur, commit=commit)
         return role.application_id
+
+    def _is_minerva_role(self, application_id: str) -> bool:
+        app = self.app_repo.get_by_id(application_id)
+        return app is not None and app.slug == MINERVA_APP_SLUG

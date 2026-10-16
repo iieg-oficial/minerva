@@ -217,7 +217,8 @@ seguridad, no de estilo.
 **Ejemplo.**
 - `authorization_code` — el flujo con usuario delante. **El que usa Minerva.**
 - `refresh_token` — renovar sin usuario delante.
-- `client_credentials` — máquina a máquina, sin usuario (un cron llamando una API).
+- `client_credentials` — máquina a máquina, sin usuario (un cron llamando una API). Minerva lo
+  soporta para clientes confidenciales con [cuenta de servicio](#cuenta-de-servicio).
 - `implicit` y `password` — **obsoletos**, no los uses (ver más abajo).
 
 ### Implicit Flow (obsoleto)
@@ -1014,9 +1015,11 @@ perfectamente válida.
 | `access` | Consumidor OIDC | código de la app | 15 min |
 | `id` | ID Token | `client_id` | corta |
 | `dev` | Dev Kit | — | — |
+| `service` | Máquina a máquina (`client_credentials`) | código de la app destino | 15 min |
 
 Cada endpoint acepta solo su clase. El panel exige `typ=session`; el SDK de un consumidor solo
-acepta `typ=access`.
+acepta `typ=access`, así que un token de [cuenta de servicio](#cuenta-de-servicio) nunca pasa
+por una persona.
 
 ### `auth_time`
 
@@ -1367,6 +1370,20 @@ juntos desde el panel.
 
 **Ejemplo.** El grupo "Dirección de Estadística" tiene el rol "Coordinador"; todos sus miembros
 heredan esos permisos, combinados con los que tengan directamente.
+
+### Cuenta de servicio
+
+**Qué es.** La identidad de una aplicación confidencial ante las demás, para el grant
+`client_credentials`. En Minerva es un usuario de clase `service` ligado 1:1 a su aplicación,
+con correo sintético `<slug>@service.minerva.invalid` y **sin contraseña**.
+
+**Para qué sirve.** Que un proceso sin persona delante (un cron, una sincronización) llame a otra
+aplicación con permisos propios, administrados igual que los de cualquiera: por roles. No inicia
+sesión, no entra a grupos, no recibe roles de Minerva ni la administra.
+
+**Ejemplo.** El backend de Portal Demo habilita su cuenta de servicio en el panel; el admin le da
+el rol "Lector" en `reportes`. El cron de Portal Demo pide a `/auth/token` un token con
+`audience=reportes` y llama a la API de reportes con él.
 
 ### Manifiesto (`manifest.minerva.yml`)
 

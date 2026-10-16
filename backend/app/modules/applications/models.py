@@ -24,6 +24,11 @@ class Application(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    @property
+    def is_public(self) -> bool:
+        """Cliente público (sin `client_secret`): no puede tener cuenta de servicio."""
+        return self.client_secret_hash is None
+
 
 class RedirectURI(SQLModel, table=True):
     __tablename__ = "redirect_uris"

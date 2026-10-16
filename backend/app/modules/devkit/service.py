@@ -14,7 +14,7 @@ from app.modules.devkit.schemas import (
 from app.modules.groups.repository import GroupRoleRepository, GroupUserRepository, UserRoleRepository
 from app.modules.oidc.service import OIDCService
 from app.modules.permissions.repository import RolePermissionRepository
-from app.modules.users.models import User
+from app.modules.users.models import USER_KIND_HUMAN, User
 from app.modules.users.repository import UserRepository
 
 
@@ -56,7 +56,8 @@ class DevKitService:
             )
             user = self.user_repo.create(user)
 
-        if user.status != "active":
+        # Una cuenta de servicio no inicia sesión de ninguna forma, tampoco en desarrollo.
+        if user.status != "active" or user.kind != USER_KIND_HUMAN:
             raise ForbiddenError(detail="Usuario inactivo")
 
         roles = self._effective_roles(user.id)

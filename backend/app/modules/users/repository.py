@@ -23,6 +23,10 @@ class UserRepository:
         statement = select(User).where(User.email == normalize_email(email))
         return self.session.exec(statement).first()
 
+    def get_service_principal(self, application_id: str) -> User | None:
+        statement = select(User).where(User.service_application_id == application_id)
+        return self.session.exec(statement).first()
+
     def list_all(self, offset: int = 0, limit: int = 100) -> tuple[list[User], int]:
         statement = select(User).offset(offset).limit(limit)
         items = self.session.exec(statement).all()

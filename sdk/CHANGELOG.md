@@ -17,6 +17,12 @@ desde este repositorio: es lo que permite fijar la instalación a un tag concret
 
 ## [Unreleased]
 
+### Added
+
+- **`MinervaOIDC.client_credentials(audience)`.** Pide un token máquina a máquina con la cuenta de
+  servicio del cliente (exige `MINERVA_CLIENT_SECRET`; no necesita `MINERVA_REDIRECT_URI`). El token
+  llega con `typ=service` y `get_current_user` lo sigue rechazando: no representa a una persona.
+
 ### Security
 
 - **`python-jose` sube su mínimo a 3.4.** Con `>=3.3` una instalación podía quedarse en 3.3.0, afectada
