@@ -107,6 +107,49 @@ def create_access_token_rs256(
     return jwt.encode(payload, private_key_pem, algorithm="RS256", headers={"kid": kid})
 
 
+def create_service_token_rs256(
+    service_user_id: str,
+    client_id: str,
+    audience: str,
+    email: str,
+    name: str,
+    preferred_username: str,
+    kid: str,
+    private_key_pem: str,
+    roles: list[str],
+    permissions: list[str],
+    jti: str,
+    expires_minutes: int,
+) -> str:
+    """Token máquina a máquina del grant `client_credentials`, firmado con RS256.
+
+    `sub` es la cuenta de servicio de la aplicación cliente y `typ=service` lo separa de
+    los access de usuario: `/userinfo`, el Dev Kit y el SDK solo aceptan `typ=access`, así
+    que este token no se puede hacer pasar por una persona. `client_id` y `azp` nombran a
+    la aplicación que lo pidió; `aud` es el slug de la aplicación destino. No lleva
+    `email_verified` ni `auth_time`: nadie se autenticó de forma interactiva.
+    """
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(service_user_id),
+        "typ": "service",
+        "client_id": client_id,
+        "azp": client_id,
+        "aud": audience,
+        "iss": settings.effective_jwt_issuer,
+        "roles": roles,
+        "permissions": permissions,
+        "scope": "",
+        "email": email,
+        "name": name,
+        "preferred_username": preferred_username,
+        "jti": jti,
+        "iat": int(now.timestamp()),
+        "exp": int(now.timestamp()) + (expires_minutes * 60),
+    }
+    return jwt.encode(payload, private_key_pem, algorithm="RS256", headers={"kid": kid})
+
+
 def create_id_token(
     user_id: str,
     client_id: str,

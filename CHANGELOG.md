@@ -7,6 +7,20 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+
+- **Grant `client_credentials` (máquina a máquina).** `POST /auth/token` con
+  `grant_type=client_credentials`, `client_id`, `client_secret` y `audience` emite un token
+  `typ=service` a nombre de la **cuenta de servicio** de una aplicación confidencial, con sus roles
+  y permisos en la aplicación destino; sin refresh token ni `id_token`. La cuenta de servicio es un
+  usuario `kind=service` ligado 1:1 a su aplicación (`users.kind` y
+  `users.service_application_id`, migración `014`), sin contraseña: no inicia sesión, no recibe
+  enlaces de credencial, no entra a grupos, no recibe roles de Minerva ni la administra. Se
+  habilita con `POST /applications/{id}/service-principal` (y se consulta con `GET`) o desde el
+  panel; sus roles se asignan como los de cualquier usuario. Errores `unauthorized_client` e
+  `invalid_target`, discovery anuncia el grant y `ApplicationRead`/`UserRead` exponen `is_public`,
+  `kind` y `service_application_id`. Guía en `docs/integracion.md` §8.
+
 ## [1.1.0] - 2026-10-13
 
 > **Release de mejoras de credenciales y seguridad.** Esta versión añade seguridad alrededor de

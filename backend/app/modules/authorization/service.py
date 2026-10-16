@@ -10,6 +10,7 @@ from app.modules.groups.repository import GroupRoleRepository, GroupUserReposito
 from app.modules.permissions.repository import RolePermissionRepository
 from app.modules.permissions.schemas import PermissionRead
 from app.modules.roles.schemas import RoleRead
+from app.modules.users.models import USER_KIND_HUMAN
 from app.modules.users.repository import UserRepository
 
 
@@ -49,8 +50,12 @@ class AuthorizationService:
         """True si el usuario tiene el rol global de administrador de Minerva.
 
         El rol cuenta solo si pertenece a la app `minerva`: un rol con el mismo slug
-        en otra aplicación no concede administración global.
+        en otra aplicación no concede administración global. Una cuenta de servicio nunca
+        administra Minerva, aunque por error tuviera el rol.
         """
+        user = self.user_repo.get_by_id(user_id)
+        if user is None or user.kind != USER_KIND_HUMAN:
+            return False
         admin_roles = [r for r in self._get_effective_roles(user_id) if r.slug == MINERVA_ADMIN_ROLE_SLUG]
         if not admin_roles:
             return False

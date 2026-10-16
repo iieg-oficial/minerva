@@ -66,6 +66,8 @@ function AccessPanel({ apps, users }) {
         [message]
     );
 
+    const isMinervaApp = apps.find((a) => a.id === selectedApp)?.slug === 'minerva';
+
     const handleSelectApp = (appId) => {
         setSelectedApp(appId);
         setAddValue({});
@@ -147,7 +149,10 @@ function AccessPanel({ apps, users }) {
                     {roles.map((role) => {
                         const assigned = roleUsers[role.id] || [];
                         const assignedIds = new Set(assigned.map((u) => u.id));
-                        const available = users.filter((u) => !assignedIds.has(u.id));
+                        // Una cuenta de servicio no puede recibir roles de Minerva.
+                        const available = users.filter(
+                            (u) => !assignedIds.has(u.id) && !(isMinervaApp && u.kind === 'service')
+                        );
                         return (
                             <Col xs={24} lg={12} key={role.id}>
                                 <Card

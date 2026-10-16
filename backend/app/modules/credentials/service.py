@@ -11,12 +11,13 @@ from app.modules.authorization.service import AuthorizationService
 from app.modules.credentials.models import CredentialToken
 from app.modules.credentials.repository import CredentialTokenRepository
 from app.modules.credentials.schemas import CredentialDestination, CredentialInspection, CredentialLink
-from app.modules.users.models import LINKABLE_STATUSES
+from app.modules.users.models import LINKABLE_STATUSES, USER_KIND_SERVICE
 from app.modules.users.repository import UserRepository
 from app.shared.datetime_utils import as_utc
 
 # Un solo mensaje para enlace inexistente, usado o vencido: no revela cuál de los tres es.
 INVALID_LINK_DETAIL = "El enlace no es válido, ya se usó o expiró. Pide uno nuevo a un administrador."
+SERVICE_ACCOUNT_DETAIL = "Las cuentas de servicio no tienen contraseña"
 
 
 def _ttl(purpose: str) -> timedelta:
@@ -57,6 +58,9 @@ class CredentialService:
     ) -> tuple[str, datetime]:
         """Emite un token nuevo y devuelve su valor en claro (única vez que existe fuera
         del hash). Un token nuevo invalida los anteriores del usuario: solo el último sirve."""
+        user = self.user_repo.get_by_id(user_id)
+        if user is not None and user.kind == USER_KIND_SERVICE:
+            raise BadRequestError(detail=SERVICE_ACCOUNT_DETAIL)
         raw = secrets.token_urlsafe(32)
         expires_at = datetime.now(timezone.utc) + _ttl(purpose)
         self.repo.invalidate_unused_for_user(user_id)
@@ -94,6 +98,8 @@ class CredentialService:
         user = self.user_repo.get_by_id(user_id)
         if not user:
             raise NotFoundError(detail="Usuario no encontrado")
+        if user.kind == USER_KIND_SERVICE:
+            raise BadRequestError(detail=SERVICE_ACCOUNT_DETAIL)
         if user.status not in LINKABLE_STATUSES:
             raise BadRequestError(detail="La cuenta está inactiva o suspendida; reactívala antes de generar el enlace")
         destination = None

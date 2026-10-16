@@ -6,7 +6,7 @@ from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.core.security import hash_password, verify_password
 from app.modules.audit.repository import AuditRepository
 from app.modules.credentials.repository import CredentialTokenRepository
-from app.modules.users.models import LINKABLE_STATUSES, User
+from app.modules.users.models import LINKABLE_STATUSES, USER_KIND_HUMAN, USER_KIND_SERVICE, User
 from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import UserCreate, UserRead, UserStatusUpdate, UserUpdate
 
@@ -65,6 +65,9 @@ class UserService:
         if data.full_name is not None:
             user.full_name = data.full_name
         email_changed = False
+        if user.kind == USER_KIND_SERVICE and data.email is not None and data.email != user.email:
+            # El correo de una cuenta de servicio es sintético y deriva del slug de su aplicación.
+            raise BadRequestError(detail="El correo de una cuenta de servicio no se puede cambiar")
         if data.email is not None and data.email != user.email:
             existing = self.repo.get_by_email(data.email)
             if existing and existing.id != user_id:
@@ -125,7 +128,7 @@ class UserService:
 
     def authenticate(self, email: str, password: str) -> str:
         user = self.repo.get_by_email(email)
-        if not user or not user.hashed_password:
+        if not user or not user.hashed_password or user.kind != USER_KIND_HUMAN:
             raise BadRequestError(detail="Credenciales inválidas")
 
         if user.status != "active":

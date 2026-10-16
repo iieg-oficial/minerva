@@ -243,10 +243,12 @@ export default function GroupsPage() {
                                 filterOption={(input, option) =>
                                     option?.label?.toLowerCase().includes(input.toLowerCase())
                                 }
-                                options={users.map((u) => ({
-                                    label: `${u.full_name} (${u.email})`,
-                                    value: u.id,
-                                }))}
+                                options={users
+                                    .filter((u) => u.kind !== 'service')
+                                    .map((u) => ({
+                                        label: `${u.full_name} (${u.email})`,
+                                        value: u.id,
+                                    }))}
                                 style={{ width: 280 }}
                             />
                         </Form.Item>

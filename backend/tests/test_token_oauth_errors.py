@@ -71,7 +71,7 @@ def test_grant_type_no_soportado_devuelve_error_oauth(client, app_ctx):
     resp = client.post(
         "/auth/token",
         data={
-            "grant_type": "client_credentials",
+            "grant_type": "password",
             "client_id": app_ctx["client_id"],
             "client_secret": CLIENT_SECRET,
             "code": code,

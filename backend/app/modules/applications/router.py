@@ -18,6 +18,7 @@ from app.modules.applications.service import ApplicationService
 from app.modules.audit.service import AuditService
 from app.modules.devkit.manifest import ManifestLoader, parse_manifest, validate_manifest
 from app.modules.devkit.schemas import ManifestImportResult
+from app.modules.users.schemas import UserRead
 from app.shared.pagination import PaginatedResponse
 
 router = APIRouter(prefix="/applications", tags=["Applications"], dependencies=[Depends(require_minerva_admin)])
@@ -278,6 +279,40 @@ def regenerate_secret(
         "application_secret_regenerate",
         "application",
         application_id,
+        "success",
+        application_id=application_id,
+    )
+    return result
+
+
+@router.get("/{application_id}/service-principal", response_model=UserRead)
+def get_service_principal(
+    application_id: str,
+    service: ApplicationService = Depends(get_application_service),
+    _current_user: dict = Depends(get_current_panel_user),
+):
+    """Cuenta de servicio de la aplicación (grant `client_credentials`), si la tiene."""
+    return service.get_service_principal(application_id)
+
+
+@router.post("/{application_id}/service-principal", response_model=UserRead, status_code=201)
+def enable_service_principal(
+    application_id: str,
+    request: Request,
+    service: ApplicationService = Depends(get_application_service),
+    audit: AuditService = Depends(get_audit_service),
+    current_user: dict = Depends(get_current_panel_user),
+):
+    """Habilita la cuenta de servicio de una aplicación confidencial. Sus roles se asignan
+    como los de cualquier usuario (`POST /groups/users/{user_id}/roles/{role_id}`)."""
+    result = service.enable_service_principal(application_id, commit=False)
+    _audit_request_operation(
+        audit,
+        request,
+        current_user,
+        "application_service_principal_enable",
+        "user",
+        result.id,
         "success",
         application_id=application_id,
     )
