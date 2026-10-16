@@ -256,7 +256,8 @@ tokens — trátalo como de un solo uso.
 ### 3.4 Errores del canje
 
 Los errores de `/auth/token` siguen el contrato de RFC 6749 §5.2: status 400 y un cuerpo con
-`error` (uno de `invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type`) y
+`error` (uno de `invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type`; el
+grant máquina a máquina agrega `unauthorized_client` e `invalid_target`, ver §8) y
 `error_description`. Programa contra `error`, no contra `detail` (que se conserva por
 compatibilidad, pero es solo texto para humanos):
 
@@ -532,3 +533,91 @@ La pantalla de login descubre el branding por `client_id` a través de un endpoi
 de solo lectura (`GET /public/apps/{client_id}/branding`) que expone **únicamente** esos
 datos no sensibles — nunca `client_secret` ni las redirect URIs. Si tu app no define
 branding, el login usa la identidad genérica de Minerva.
+
+## 8. Máquina a máquina (client_credentials)
+
+Para procesos **sin persona delante** (un cron, una sincronización entre sistemas) que llaman a
+la API de otra aplicación. El cliente se autentica con su `client_secret` y recibe un token a
+nombre de su **cuenta de servicio**, con los roles y permisos que esa cuenta tenga en la
+aplicación destino. Solo para **clientes confidenciales**.
+
+### 8.1 Preparación (en el panel)
+
+1. En **Aplicaciones**, habilita la cuenta de servicio de tu aplicación (botón «Cuenta de
+   servicio»; por API, `POST /applications/{id}/service-principal`). Se crea un usuario de clase
+   `service` con correo `<tu slug>@service.minerva.invalid`, activo, sin contraseña y sin roles.
+2. En **Autorización**, asígnale los roles de la aplicación destino que necesite, como a
+   cualquier usuario (`POST /groups/users/{id}/roles/{role_id}`). No puede pertenecer a grupos ni
+   recibir roles de Minerva.
+
+### 8.2 Pedir el token
+
+```bash
+curl -X POST {MINERVA_ISSUER}/auth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials" \
+  -d "client_id={tu client_id}" \
+  -d "client_secret={tu client_secret}" \
+  -d "audience={application_code de la app destino}"
+```
+
+`audience` es obligatorio y nombra **una** aplicación. `scope` se acepta y se ignora: lo que el
+token permite lo deciden los roles. Respuesta (con `Cache-Control: no-store`):
+
+```json
+{"access_token": "eyJhbGciOiJSUzI1NiIs...", "token_type": "bearer", "expires_in": 900}
+```
+
+Sin `refresh_token` ni `id_token`: cuando vence, se pide otro. Con el SDK:
+`await MinervaOIDC().client_credentials("reportes")` (no necesita `MINERVA_REDIRECT_URI`). El
+endpoint limita las solicitudes por `client_id` (mismo umbral que `/auth/authorize`; `429` al
+excederlo).
+
+### 8.3 Claims del token
+
+| Claim | Valor |
+|---|---|
+| `typ` | `service` |
+| `sub` | id de la cuenta de servicio |
+| `client_id`, `azp` | `client_id` de la aplicación que lo pidió |
+| `aud` | `application_code` de la aplicación destino |
+| `iss` | issuer de Minerva |
+| `roles`, `permissions` | los de la cuenta de servicio en la aplicación destino |
+| `scope` | `""` |
+| `email`, `name`, `preferred_username` | `<slug>@service.minerva.invalid`, `Cuenta de servicio de <app>`, `svc-<slug>` |
+| `jti`, `iat`, `exp` | como cualquier access token; vida `MINERVA_ACCESS_TOKEN_TTL_MINUTES` (15 min por defecto) |
+
+### 8.4 Validarlo en la aplicación destino
+
+**El SDK rechaza `typ=service`**: `get_current_user` y `require_permission` solo aceptan tokens de
+persona (`typ=access`), y `/userinfo` y `/api/v1/me/permissions` responden `401` a este token. Un
+endpoint que acepte llamadas de servicio valida el JWT contra el JWKS de Minerva (firma RS256,
+`iss`, `aud` = tu `application_code`, `exp`), exige `typ == "service"` y decide con el claim
+`permissions` —**permisos, nunca roles**—. Mantén separados los endpoints de persona y los de
+servicio.
+
+### 8.5 Errores
+
+Mismo contrato que §3.4 (status 400, `error` + `error_description`):
+
+| `error` | Cuándo |
+|---|---|
+| `invalid_request` | falta `client_id` o `audience` |
+| `invalid_client` | `client_id` desconocido, aplicación inactiva, `client_secret` ausente o incorrecto |
+| `unauthorized_client` | cliente público, o la aplicación no tiene cuenta de servicio activa |
+| `invalid_target` | `audience` es `minerva`, no existe, está inactiva, o la cuenta de servicio no tiene roles en ella |
+
+### 8.6 Revocación
+
+El token no se revoca uno por uno: vive como máximo su TTL. Las palancas son, de la más fina a la
+más amplia:
+
+- **Quitar roles** a la cuenta de servicio en la aplicación destino: el siguiente token ya no los
+  trae.
+- **Desactivar la cuenta de servicio** (estado `inactive` o `suspended` en Usuarios): deja de
+  emitirse cualquier token para ella.
+- **Regenerar el `client_secret`** o **desactivar la aplicación**: el cliente deja de
+  autenticarse.
+
+Borrar la aplicación conserva la cuenta de servicio (la auditoría la referencia), pero sin roles,
+sin aplicación e inactiva.

@@ -688,9 +688,11 @@ async def token_exchange(
             audit.log(
                 "token_exchange_success", ip_address=request.client.host, user_agent=request.headers.get("user-agent")
             )
+        elif grant_type == "client_credentials":
+            result = await _client_credentials_grant(body, request, service, audit, redis)
         else:
             raise BadRequestError(
-                detail="grant_type no soportado; use authorization_code o refresh_token",
+                detail="grant_type no soportado; use authorization_code, refresh_token o client_credentials",
                 oauth_error="unsupported_grant_type",
             )
     except AppException as exc:
@@ -699,9 +701,46 @@ async def token_exchange(
         return _oauth_error_response(exc)
 
     # RFC 6749 §5.1: toda respuesta exitosa del token endpoint lleva tokens y no debe
-    # cachearse (issue #79). Un solo punto para ambos grants, tras converger aquí.
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Pragma"] = "no-cache"
+    # cachearse (issue #79). Un solo punto para todos los grants, tras converger aquí.
+    no_store = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+    if grant_type == "client_credentials":
+        # Sin `response_model`: el contrato del grant no lleva refresh_token, id_token ni scope,
+        # ni siquiera en null.
+        return JSONResponse(content=result, headers=no_store)
+    response.headers.update(no_store)
+    return result
+
+
+async def _client_credentials_grant(
+    body: dict, request: Request, service: AuthService, audit: AuditService, redis: Redis
+) -> dict:
+    """Grant máquina a máquina. `scope` se acepta y se ignora: lo que el token permite
+    lo deciden los roles de la cuenta de servicio en la aplicación `audience`."""
+    client_id = body.get("client_id")
+    # Sin secret no se corta aquí: un cliente confidencial cae en invalid_client y uno
+    # público en unauthorized_client, que es lo que de verdad le falta.
+    client_secret = body.get("client_secret")
+    audience = body.get("audience")
+    if not client_id or not audience:
+        raise BadRequestError(
+            detail="Faltan parámetros requeridos: client_id y audience", oauth_error="invalid_request"
+        )
+    await _enforce_rate_limit_audited(
+        redis,
+        f"minerva:rl:token_cc:{client_id}",
+        settings.RATE_LIMIT_AUTHORIZE_MAX,
+        settings.RATE_LIMIT_AUTHORIZE_WINDOW,
+        audit,
+        request,
+        "token_client_credentials",
+    )
+    result, audit_ctx = service.issue_client_credentials_token(client_id, client_secret, audience)
+    audit.log(
+        "token_client_credentials_success",
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        **audit_ctx,
+    )
     return result
 
 

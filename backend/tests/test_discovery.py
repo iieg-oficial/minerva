@@ -32,6 +32,8 @@ def test_discovery_document_shape(client):
     # Anuncia lo que el servidor realmente soporta: PKCE S256 y refresh tokens.
     assert doc["code_challenge_methods_supported"] == ["S256"]
     assert "refresh_token" in doc["grant_types_supported"]
+    # Máquina a máquina: cuentas de servicio de clientes confidenciales.
+    assert "client_credentials" in doc["grant_types_supported"]
     # /auth/revoke existe (RFC 7009): debe descubrirse, no quedar implícito.
     assert doc["revocation_endpoint"].endswith("/auth/revoke")
     # claims_supported debe reflejar lo que realmente emiten id_token/userinfo.

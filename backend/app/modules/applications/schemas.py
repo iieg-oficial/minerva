@@ -37,6 +37,7 @@ class ApplicationRead(BaseModel):
     slug: str
     description: str | None = None
     client_id: str
+    is_public: bool = False
     status: str
     homepage_url: str | None = None
     display_name: str | None = None

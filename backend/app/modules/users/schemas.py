@@ -35,6 +35,8 @@ class UserRead(BaseModel):
     status: str
     password_change_required: bool = False
     domain: str | None = None
+    kind: str = "human"
+    service_application_id: str | None = None
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None = None

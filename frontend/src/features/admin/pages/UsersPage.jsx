@@ -1,5 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Typography, Space, App, Divider } from 'antd';
+import {
+    Table,
+    Button,
+    Modal,
+    Form,
+    Input,
+    Select,
+    Typography,
+    Space,
+    App,
+    Divider,
+    Tag,
+} from 'antd';
 import {
     PlusOutlined,
     EditOutlined,
@@ -119,7 +131,9 @@ export default function UsersPage() {
 
     const handleUpdate = async (values) => {
         // El admin no fija contraseñas: solo datos del usuario. La credencial va por enlace.
-        const payload = values;
+        // El correo de una cuenta de servicio es sintético: no se manda.
+        const { email, ...rest } = values;
+        const payload = editingUser?.kind === 'service' ? rest : { ...rest, email };
         try {
             if (editingUser) {
                 await usersAPI.updateUser(editingUser.id, payload);
@@ -158,7 +172,17 @@ export default function UsersPage() {
     };
 
     const columns = [
-        { title: 'Nombre', dataIndex: 'full_name', key: 'full_name' },
+        {
+            title: 'Nombre',
+            dataIndex: 'full_name',
+            key: 'full_name',
+            render: (name, record) => (
+                <Space size={4}>
+                    {name}
+                    {record.kind === 'service' && <Tag color="geekblue">Servicio</Tag>}
+                </Space>
+            ),
+        },
         { title: 'Email', dataIndex: 'email', key: 'email' },
         {
             title: 'Estado',
@@ -195,13 +219,16 @@ export default function UsersPage() {
                         aria-label="Editar usuario"
                         onClick={() => handleEdit(record)}
                     />
-                    <Button
-                        type="text"
-                        size="small"
-                        icon={<LinkOutlined />}
-                        aria-label="Generar enlace de contraseña"
-                        onClick={() => setLinkUser(record)}
-                    />
+                    {/* Una cuenta de servicio no tiene contraseña: no hay enlace que generar. */}
+                    {record.kind !== 'service' && (
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={<LinkOutlined />}
+                            aria-label="Generar enlace de contraseña"
+                            onClick={() => setLinkUser(record)}
+                        />
+                    )}
                 </Space>
             ),
         },
@@ -377,13 +404,15 @@ export default function UsersPage() {
                             <Form.Item name="full_name" label="Nombre" rules={[{ required: true }]}>
                                 <Input />
                             </Form.Item>
-                            <Form.Item
-                                name="email"
-                                label="Email"
-                                rules={[{ required: true, type: 'email' }]}
-                            >
-                                <Input />
-                            </Form.Item>
+                            {editingUser?.kind !== 'service' && (
+                                <Form.Item
+                                    name="email"
+                                    label="Email"
+                                    rules={[{ required: true, type: 'email' }]}
+                                >
+                                    <Input />
+                                </Form.Item>
+                            )}
                             {/* La contraseña no se edita aquí: se restablece con el botón de
                                 enlace de la lista, que la persona usa para definir la suya. */}
                             <Form.Item name="status" label="Estado">

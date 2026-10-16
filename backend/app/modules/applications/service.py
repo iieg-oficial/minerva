@@ -19,6 +19,13 @@ from app.modules.applications.schemas import (
     RedirectURICreate,
     RedirectURIRead,
 )
+from app.modules.users.models import SERVICE_EMAIL_DOMAIN, USER_KIND_SERVICE, User
+from app.modules.users.repository import UserRepository
+from app.modules.users.schemas import UserRead
+
+
+def service_principal_email(slug: str) -> str:
+    return f"{slug}@{SERVICE_EMAIL_DOMAIN}"
 
 
 def is_safe_redirect_uri(uri: str) -> bool:
@@ -51,6 +58,7 @@ class ApplicationService:
         self.session = session
         self.repo = ApplicationRepository(session)
         self.redirect_repo = RedirectURIRepository(session)
+        self.user_repo = UserRepository(session)
 
     def get_application(self, app_id: str) -> ApplicationRead:
         app = self.repo.get_by_id(app_id)
@@ -94,6 +102,44 @@ class ApplicationService:
         if not app:
             raise NotFoundError(detail="Aplicación no encontrada")
         self.repo.delete(app, commit=commit)
+
+    def get_service_principal(self, app_id: str) -> UserRead:
+        if not self.repo.get_by_id(app_id):
+            raise NotFoundError(detail="Aplicación no encontrada")
+        service_user = self.user_repo.get_service_principal(app_id)
+        if service_user is None:
+            raise NotFoundError(detail="La aplicación no tiene cuenta de servicio")
+        return UserRead.model_validate(service_user)
+
+    def enable_service_principal(self, app_id: str, commit: bool = True) -> UserRead:
+        """Crea la cuenta de servicio de la aplicación: la identidad con la que pide tokens
+        por `client_credentials`. Nace activa y sin roles; el admin le asigna los roles de
+        las aplicaciones a las que podrá llamar."""
+        app = self.repo.get_by_id(app_id)
+        if not app:
+            raise NotFoundError(detail="Aplicación no encontrada")
+        if app.client_secret_hash is None:
+            raise BadRequestError(detail="Solo los clientes confidenciales pueden tener cuenta de servicio")
+        if self.user_repo.get_service_principal(app_id) is not None:
+            raise ConflictError(detail="La aplicación ya tiene cuenta de servicio")
+        email = service_principal_email(app.slug)
+        if self.user_repo.get_by_email(email) is not None:
+            raise ConflictError(detail="El correo de la cuenta de servicio ya está registrado")
+        service_user = User(
+            email=email,
+            full_name=f"Cuenta de servicio de {app.name}",
+            hashed_password=None,
+            status="active",
+            kind=USER_KIND_SERVICE,
+            service_application_id=app.id,
+        )
+        try:
+            service_user = self.user_repo.create(service_user, commit=commit)
+        except IntegrityError:
+            # Dos altas concurrentes: el constraint único de `service_application_id` decide.
+            self.session.rollback()
+            raise ConflictError(detail="La aplicación ya tiene cuenta de servicio")
+        return UserRead.model_validate(service_user)
 
     def regenerate_secret(self, app_id: str, commit: bool = True) -> ApplicationWithSecrets:
         """Genera un nuevo client_secret para la aplicación y lo devuelve una sola vez.

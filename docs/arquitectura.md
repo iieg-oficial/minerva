@@ -129,6 +129,12 @@ un JWT firmado por Minerva no sirva automáticamente en cualquier puerta.
 Las tres primeras resuelven **qué** token usar (el de la cuenta activa en Redis) y luego lo
 validan con `_resolve_token`, igual que las de Bearer.
 
+El token `typ=service` (grant `client_credentials`, ver [`integracion.md`](integracion.md) §8) no
+aparece en la tabla a propósito: ninguna dependencia de Minerva lo acepta. Lo emite `/auth/token`
+para la cuenta de servicio de una aplicación confidencial (un usuario `kind=service` ligado 1:1 a
+la app por `users.service_application_id`, sin contraseña) y lo valida la aplicación destino. No
+lleva refresh token ni `id_token`, y `/userinfo`, el Dev Kit y el SDK lo rechazan por clase.
+
 ### Por qué `.well-known` y `/userinfo` son sub-apps aparte
 
 `app/main.py` monta `wellknown_app` y `userinfo_app` (definidas en

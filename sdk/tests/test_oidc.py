@@ -103,3 +103,43 @@ def test_oauth_error_is_actionable(monkeypatch):
     assert exc.value.error == "invalid_grant"
     assert exc.value.status_code == 400
     assert str(exc.value) == "Código ya utilizado"
+
+
+def test_client_credentials_pide_token_sin_redirect_uri(monkeypatch):
+    calls = []
+
+    class Response:
+        is_success = True
+
+        def json(self):
+            return {"access_token": "service", "token_type": "bearer", "expires_in": 900}
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, data):
+            calls.append((url, data))
+            return Response()
+
+    monkeypatch.setattr("minerva_sdk.oidc.httpx.AsyncClient", Client)
+    result = asyncio.run(MinervaOIDC(_settings(redirect_uri="")).client_credentials("destino"))
+    assert result["access_token"] == "service"
+    assert calls[0][0] == "https://minerva.example/auth/token"
+    assert calls[0][1] == {
+        "grant_type": "client_credentials",
+        "client_id": "client-123",
+        "client_secret": "secret-123",
+        "audience": "destino",
+    }
+
+
+def test_client_credentials_exige_secret():
+    with pytest.raises(ValueError, match="MINERVA_CLIENT_SECRET"):
+        asyncio.run(MinervaOIDC(_settings(client_secret="")).client_credentials("destino"))

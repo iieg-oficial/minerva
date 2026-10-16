@@ -29,6 +29,16 @@ export async function regenerateSecret(appId) {
     return res.data;
 }
 
+export async function getServicePrincipal(appId) {
+    const res = await client.get(`/applications/${appId}/service-principal`);
+    return res.data;
+}
+
+export async function enableServicePrincipal(appId) {
+    const res = await client.post(`/applications/${appId}/service-principal`);
+    return res.data;
+}
+
 export async function listRedirectUris(appId) {
     const res = await client.get(`/applications/${appId}/redirect-uris`);
     return res.data;

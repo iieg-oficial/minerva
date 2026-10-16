@@ -21,6 +21,7 @@ import {
     KeyOutlined,
     UploadOutlined,
     DeleteOutlined,
+    RobotOutlined,
 } from '@ant-design/icons';
 import * as appsAPI from '@/api/applications';
 import ManifestUploadButton from '@features/admin/components/ManifestUploadButton';
@@ -163,6 +164,59 @@ export default function ApplicationsPage() {
         });
     };
 
+    // Cuenta de servicio (grant client_credentials): solo para clientes confidenciales.
+    // Sus roles se asignan en Autorización, como los de cualquier usuario.
+    const showServicePrincipal = (record, principal) => {
+        modal.info({
+            title: `Cuenta de servicio de "${record.name}"`,
+            content: (
+                <Space direction="vertical">
+                    <Typography.Text>
+                        Usuario: <Typography.Text code>{principal.email}</Typography.Text>
+                    </Typography.Text>
+                    <Typography.Text>
+                        Estado: <Tag>{principal.status}</Tag>
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                        Asígnale en Autorización los roles de las aplicaciones a las que podrá
+                        llamar. Pide sus tokens con su client_id y client_secret.
+                    </Typography.Text>
+                </Space>
+            ),
+        });
+    };
+
+    const handleServicePrincipal = async (record) => {
+        try {
+            showServicePrincipal(record, await appsAPI.getServicePrincipal(record.id));
+            return;
+        } catch (err) {
+            if (err.response?.status !== 404) {
+                message.error(
+                    err.response?.data?.detail || 'Error al consultar la cuenta de servicio'
+                );
+                return;
+            }
+        }
+        modal.confirm({
+            title: 'Habilitar cuenta de servicio',
+            content: `"${record.name}" podrá pedir tokens máquina a máquina para las aplicaciones en las que su cuenta de servicio tenga roles.`,
+            okText: 'Habilitar',
+            cancelText: 'Cancelar',
+            onOk: async () => {
+                try {
+                    const principal = await appsAPI.enableServicePrincipal(record.id);
+                    message.success('Cuenta de servicio habilitada');
+                    showServicePrincipal(record, principal);
+                } catch (err) {
+                    message.error(
+                        err.response?.data?.detail || 'Error al habilitar la cuenta de servicio'
+                    );
+                }
+            },
+        });
+    };
+
     const handleEdit = (app) => {
         setEditingApp(app);
         editForm.setFieldsValue({
@@ -233,7 +287,7 @@ export default function ApplicationsPage() {
         {
             title: '',
             key: 'actions',
-            width: 190,
+            width: 220,
             render: (_, record) => (
                 <Space size={0}>
                     <Button
@@ -260,6 +314,16 @@ export default function ApplicationsPage() {
                         title="Regenerar client secret"
                         onClick={() => handleRegenerateSecret(record)}
                     />
+                    {!record.is_public && (
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={<RobotOutlined />}
+                            title="Cuenta de servicio"
+                            aria-label="Cuenta de servicio"
+                            onClick={() => handleServicePrincipal(record)}
+                        />
+                    )}
                     <Button
                         type="text"
                         size="small"

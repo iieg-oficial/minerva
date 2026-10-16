@@ -7,9 +7,10 @@ from app.modules.audit.models import AuditLog
 from app.modules.auth.models import AuthCode, RefreshToken
 from app.modules.credentials.models import CredentialToken
 from app.modules.devkit.models import ManifestImport
-from app.modules.groups.models import GroupRole, UserRole
+from app.modules.groups.models import GroupRole, GroupUser, UserRole
 from app.modules.permissions.models import Permission, RolePermission
 from app.modules.roles.models import Role
+from app.modules.users.models import SERVICE_EMAIL_DOMAIN, User
 
 
 class ApplicationRepository:
@@ -63,6 +64,10 @@ class ApplicationRepository:
         de auditoría y los enlaces de credencial se conservan: se les pone
         `application_id = None`. Es una operación destructiva e irreversible.
 
+        La cuenta de servicio de la app no se borra (la auditoría la referencia): pierde sus
+        roles y grupos, se desliga de la app, queda inactiva y libera su correo sintético
+        para que una app nueva con el mismo slug pueda tener la suya.
+
         Se hace `flush()` por niveles de dependencia para forzar el orden de los
         DELETE: sin `relationship()` declaradas, la unit of work de SQLAlchemy no
         ordena el borrado entre tablas y violaría las FKs en PostgreSQL.
@@ -71,6 +76,16 @@ class ApplicationRepository:
         permissions = self.session.exec(select(Permission).where(Permission.application_id == app.id)).all()
 
         # Nivel 1: vínculos y asignaciones que dependen de roles/permisos de la app.
+        for service_user in self.session.exec(select(User).where(User.service_application_id == app.id)).all():
+            for user_role in self.session.exec(select(UserRole).where(UserRole.user_id == service_user.id)).all():
+                self.session.delete(user_role)
+            for group_user in self.session.exec(select(GroupUser).where(GroupUser.user_id == service_user.id)).all():
+                self.session.delete(group_user)
+            service_user.service_application_id = None
+            service_user.status = "inactive"
+            service_user.email = f"{service_user.id}@{SERVICE_EMAIL_DOMAIN}"
+            service_user.updated_at = datetime.now(timezone.utc)
+            self.session.add(service_user)
         for role in roles:
             for link in self.session.exec(select(RolePermission).where(RolePermission.role_id == role.id)).all():
                 self.session.delete(link)
