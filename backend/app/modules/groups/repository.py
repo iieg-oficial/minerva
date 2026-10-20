@@ -95,6 +95,10 @@ class GroupRoleRepository:
         statement = select(Role).join(GroupRole).where(GroupRole.group_id == group_id)
         return self.session.exec(statement).all()
 
+    def list_groups_for_role(self, role_id: str) -> list[str]:
+        statement = select(GroupRole.group_id).where(GroupRole.role_id == role_id)
+        return list(self.session.exec(statement).all())
+
     def remove_all_for_role(self, role_id: str, commit: bool = True) -> None:
         links = self.session.exec(select(GroupRole).where(GroupRole.role_id == role_id)).all()
         for link in links:

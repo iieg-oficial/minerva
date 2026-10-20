@@ -24,6 +24,7 @@ from app.modules.applications.router import router as applications_router
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
 from app.modules.authorization.router import router as authorization_router
+from app.modules.delegated.router import router as delegated_router
 from app.modules.devkit.router import router as devkit_router
 from app.modules.groups.models import UserRole
 from app.modules.groups.router import router as groups_router
@@ -212,6 +213,7 @@ app.include_router(groups_router)
 app.include_router(authorization_router)
 app.include_router(audit_router)
 app.include_router(devkit_router)
+app.include_router(delegated_router)
 
 # Endpoints públicos de descubrimiento OIDC y UserInfo. Van montados como sub-app
 # por su política de CORS abierta (ver app/modules/oidc/router.py).

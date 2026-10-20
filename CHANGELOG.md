@@ -7,6 +7,20 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+
+- **Administración delegada por aplicación (#201).** Router `/delegated` para que un consumidor
+  confidencial administre usuarios y roles de **su** aplicación en nombre de la persona que lo pide:
+  `Authorization: Bearer` con el access de la persona y `X-Client-Id`/`X-Client-Secret` del client.
+  La aplicación sale del client y tiene que coincidir con el `aud` del token; la persona necesita el
+  permiso `{app}.access.manage`, consultado en la base en cada llamada. Endpoints: `GET /roles`,
+  `GET /users` (con `?email=` exacto), `POST /users` (alta por invitación con roles),
+  `PUT /users/{id}/roles` y `POST /users/{id}/credential-link`. Reglas contra escalamiento: no
+  cambia sus propios roles, no asigna ni retira roles con `{app}.access.manage`, solo restablece
+  cuentas cuyos roles sean todos de la aplicación (las pendientes sí se invitan) y no sale de su
+  aplicación. Grupos, estado de la cuenta y catálogo quedan fuera. La auditoría registra a la
+  persona como actor con `via=delegated` y el `client_id`.
+
 ## [1.2.0] - 2026-10-16
 
 ### Added
