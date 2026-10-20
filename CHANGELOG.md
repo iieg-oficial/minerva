@@ -21,6 +21,12 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   aplicación. Grupos, estado de la cuenta y catálogo quedan fuera. La auditoría registra a la
   persona como actor con `via=delegated` y el `client_id`.
 
+### Fixed
+
+- **`/delegated/` llega al backend.** El nginx del frontend solo reenviaba `/.well-known/`,
+  `/userinfo`, `/auth/` y `/api/`: un consumidor que llamaba a `/delegated/*` en la raíz del issuer
+  recibía el `index.html` de la SPA con 200. Ahora `/delegated/` se reenvía con el path intacto.
+
 ## [1.2.0] - 2026-10-16
 
 ### Added
