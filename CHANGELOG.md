@@ -26,6 +26,11 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - **`/delegated/` llega al backend.** El nginx del frontend solo reenviaba `/.well-known/`,
   `/userinfo`, `/auth/` y `/api/`: un consumidor que llamaba a `/delegated/*` en la raíz del issuer
   recibía el `index.html` de la SPA con 200. Ahora `/delegated/` se reenvía con el path intacto.
+- **La imagen del frontend sube a nginx `1.30.6-alpine`.** La `1.30.4` traía 15 vulnerabilidades HIGH
+  con corrección (nginx, libuuid, libexpat, libx11, pcre2 y tiff) según Trivy; la `1.30.6` sale en
+  cero. `nginx.conf` no necesitó cambios.
+- **`certifi` sube a `2026.10.19`** en `backend/constraints.txt` por PYSEC-2026-4320, que dejaba en
+  rojo el job `audit` del CI.
 
 ## [1.2.0] - 2026-10-16
 
