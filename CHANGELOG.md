@@ -7,6 +7,34 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+
+- **Administración delegada por aplicación (#201).** Router `/delegated` para que un consumidor
+  confidencial administre usuarios y roles de **su** aplicación en nombre de la persona que lo pide:
+  `Authorization: Bearer` con el access de la persona y `X-Client-Id`/`X-Client-Secret` del client.
+  La aplicación sale del client y tiene que coincidir con el `aud` del token; la persona necesita el
+  permiso `{app}.access.manage`, consultado en la base en cada llamada. Endpoints: `GET /roles`,
+  `GET /users` (con `?email=` exacto), `POST /users` (alta por invitación con roles),
+  `PUT /users/{id}/roles` y `POST /users/{id}/credential-link`. Reglas contra escalamiento: no
+  cambia sus propios roles, no asigna ni retira roles con `{app}.access.manage`, solo restablece
+  cuentas cuyos roles sean todos de la aplicación (las pendientes sí se invitan) y no sale de su
+  aplicación. Grupos, estado de la cuenta y catálogo quedan fuera. La auditoría registra a la
+  persona como actor con `via=delegated` y el `client_id`.
+
+### Fixed
+
+- **`/delegated/` llega al backend.** El nginx del frontend solo reenviaba `/.well-known/`,
+  `/userinfo`, `/auth/` y `/api/`: un consumidor que llamaba a `/delegated/*` en la raíz del issuer
+  recibía el `index.html` de la SPA con 200. Ahora `/delegated/` se reenvía con el path intacto.
+- **La imagen del frontend sube a nginx `1.30.6-alpine`.** La `1.30.4` traía 15 vulnerabilidades HIGH
+  con corrección (nginx, libuuid, libexpat, libx11, pcre2 y tiff) según Trivy; la `1.30.6` sale en
+  cero. `nginx.conf` no necesitó cambios.
+- **`certifi` sube a `2026.10.19`** en `backend/constraints.txt` por PYSEC-2026-4320, que dejaba en
+  rojo el job `audit` del CI.
+- **`just rebuild` baja imágenes nuevas antes de construir.** Corre `pull --ignore-buildable` y
+  `build --pull`: postgres, redis y las bases de los Dockerfile se quedaban con lo que el host tuviera
+  en caché. En el espejo, `postgres:16-alpine` y `redis:7-alpine` llevaban desde mayo y junio.
+
 ## [1.2.0] - 2026-10-16
 
 ### Added
