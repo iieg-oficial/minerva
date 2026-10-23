@@ -7,6 +7,10 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-23
+
+`v1.3.0` se etiquetó por error sobre el código de 1.2.0 y no trae cambios propios.
+
 ### Added
 
 - **Administración delegada por aplicación (#201).** Router `/delegated` para que un consumidor
