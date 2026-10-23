@@ -5,7 +5,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.30.4-alpine
+FROM nginx:1.30.6-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 # nginx.conf es plantilla: el entrypoint de la imagen oficial la pasa por envsubst al
 # arrancar y la deja en conf.d/default.conf. El filtro limita la sustitución a las
