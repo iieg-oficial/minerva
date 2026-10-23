@@ -43,9 +43,12 @@ up: env
 dev: env
     {{ compose }} up --build
 
-# Reconstruye sin caché y recrea todos los contenedores.
+# Reconstruye sin caché y recrea todos los contenedores. Antes baja las imágenes de
+# terceros (postgres, redis) y las bases de los Dockerfile: sin eso se reconstruye
+# sobre lo que la máquina tenga en caché y los parches de seguridad no entran.
 rebuild: env
-    {{ compose }} build --no-cache
+    {{ compose }} pull --ignore-buildable
+    {{ compose }} build --no-cache --pull
     {{ compose }} up -d --force-recreate
 
 # Reinicia los contenedores existentes.

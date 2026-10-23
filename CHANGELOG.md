@@ -31,6 +31,9 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   cero. `nginx.conf` no necesitó cambios.
 - **`certifi` sube a `2026.10.19`** en `backend/constraints.txt` por PYSEC-2026-4320, que dejaba en
   rojo el job `audit` del CI.
+- **`just rebuild` baja imágenes nuevas antes de construir.** Corre `pull --ignore-buildable` y
+  `build --pull`: postgres, redis y las bases de los Dockerfile se quedaban con lo que el host tuviera
+  en caché. En el espejo, `postgres:16-alpine` y `redis:7-alpine` llevaban desde mayo y junio.
 
 ## [1.2.0] - 2026-10-16
 
