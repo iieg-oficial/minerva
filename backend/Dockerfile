@@ -10,6 +10,8 @@ COPY app/ ./app/
 RUN pip install --prefix=/install -c constraints.txt .
 
 FROM base AS runtime
+# Los parches de Debian llegan antes que la reconstrucción de la imagen oficial.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /install /usr/local
 COPY scripts/ /app/scripts/
 COPY alembic.ini /app/
