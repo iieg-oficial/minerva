@@ -21,7 +21,7 @@ certifi==2026.10.19
 cffi==2.1.1
 click==8.4.2
 cryptography==50.0.0
-dnspython==2.8.0
+dnspython==2.9.2
 ecdsa==0.19.2
 email-validator==2.3.0
 executing==2.2.1
@@ -55,7 +55,7 @@ psycopg==3.3.4
 psycopg-binary==3.3.4
 ptyprocess==0.7.0
 pure_eval==0.2.3
-pyasn1==0.6.4
+pyasn1==0.6.5
 pycparser==3.0
 pydantic==2.13.4
 pydantic-settings==2.14.2

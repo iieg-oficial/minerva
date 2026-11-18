@@ -6,6 +6,8 @@ COPY . .
 RUN npm run build
 
 FROM nginx:1.30.6-alpine
+# Los parches de Alpine llegan antes que la reconstrucción de la imagen oficial.
+RUN apk upgrade --no-cache
 COPY --from=build /app/dist /usr/share/nginx/html
 # nginx.conf es plantilla: el entrypoint de la imagen oficial la pasa por envsubst al
 # arrancar y la deja en conf.d/default.conf. El filtro limita la sustitución a las

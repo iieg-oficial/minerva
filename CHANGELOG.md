@@ -7,6 +7,16 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-17
+
+### Security
+
+- **Imágenes sin HIGH de Trivy.** El backend hace `apt-get upgrade` al construir (`zlib1g`) y sube `pyasn1` a 0.6.5 y `dnspython` a 2.9.2 en `constraints.txt`; el frontend hace `apk upgrade` sobre `nginx:1.30.6-alpine` (`brotli-libs`, el CRITICAL, más `libxslt`, `libexpat` y `curl`).
+
+## [1.4.0] - 2026-10-23
+
+`v1.3.0` se etiquetó por error sobre el código de 1.2.0 y no trae cambios propios.
+
 ### Added
 
 - **Administración delegada por aplicación (#201).** Router `/delegated` para que un consumidor
