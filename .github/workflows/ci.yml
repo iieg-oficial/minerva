@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [develop, main]
+    branches: [develop, staging, production]
   push:
-    branches: [develop, main]
+    branches: [develop, staging, production]
   # Reutilizable: `docker-publish.yml` lo invoca como gate antes de subir imágenes a ghcr,
   # así la publicación de un tag corre estos mismos jobs sobre el commit etiquetado.
   workflow_call:

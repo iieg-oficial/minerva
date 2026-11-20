@@ -30,12 +30,12 @@ assignees: ""
 - [ ] Redis conserva AOF y revocaciones despues de reiniciar
 - [ ] Smoke test TLS/reverse proxy valida cookies `__Host-`, login, PKCE, refresh y logout
 - [ ] Un consumidor real completa el flujo de autorizacion y cierre de sesion
-- [ ] PR develop → main creado y aprobado
+- [ ] PR develop → staging → production creados y aprobados
 
 ## Checklist de cierre
 
-- [ ] PR mergeado a main
-- [ ] Tag de version creado en main (`git tag v...`)
+- [ ] PR mergeado a production
+- [ ] Tag de version creado en production (`git tag v...`)
 - [ ] Workflow del tag publica las imagenes de backend y frontend
 - [ ] Issue cerrado
 
