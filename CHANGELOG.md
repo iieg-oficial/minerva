@@ -7,6 +7,10 @@ y el proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Imágenes base a Python 3.15 y Node 26.** Backend, consumidor de ejemplo, frontend y CI; `requires-python` admite hasta 3.15. Suben en `constraints.txt` los paquetes sin ruedas para 3.15: `psycopg` 3.3.9, `pydantic` 2.14.4, `pydantic_core` 2.50.5, `typing-inspection` 0.4.5, `httptools` 0.9.0, `uvloop` 0.23.0, `librt` 0.17.0 y `MarkupSafe` 3.0.4.
+
 ## [1.4.1] - 2026-11-17
 
 ### Security

@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       - run: pip install -e ".[dev]" -c constraints.txt # misma resolución que la imagen Docker
       - run: ruff check app alembic tests
       - run: ruff format --check app alembic tests
@@ -60,7 +60,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       - run: pip install -e ".[dev]" -c constraints.txt
       # Sin la variable los tests se saltan en silencio y el job quedaría verde sin haber
       # probado nada: es justo el agujero que este job viene a cerrar.
@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       - run: pip install pip-audit
       # EXCEPCIÓN ACOTADA — PYSEC-2026-1325 (CVE-2024-23342), ecdsa 0.19.2:
       #   Minerva timing attack contra P-256 al FIRMAR con `ecdsa`. Upstream declara los
@@ -111,7 +111,7 @@ jobs:
             python: "3.10"
             pins: "fastapi==0.110.0 httpx==0.27.0" # el piso exacto que declara pyproject.toml
           - name: recientes
-            python: "3.13"
+            python: "3.15"
             pins: ""
     defaults:
       run:
@@ -147,7 +147,7 @@ jobs:
         with:
           # Vite 8 exige ^20.19.0 || >=22.12.0; 22 es además la de `frontend/Dockerfile`,
           # así que el CI y la imagen compilan con el mismo runtime.
-          node-version: "22"
+          node-version: "26"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
